@@ -22,6 +22,8 @@ import { mcpResourceUrl, merchantPort } from "./servers.js";
 import type { DemoContext, DemoWorker } from "./types.js";
 
 const run = promisify(execFile);
+/** Quotes and funding scan every lender strategy on a relay that is sometimes slow: allow ten minutes per tool call. */
+const CALL_TIMEOUT_MS = 600_000;
 const HEDERA_TX_ID = /^\d+\.\d+\.\d+@\d+\.\d+$/;
 
 interface SpendWalletRecord {
@@ -45,7 +47,7 @@ export async function buildContext(env: Env, root: string, log: Log = consoleLog
 
   const connect = async (prefix: AgentPrefix) => {
     const identity = await loadIdentity(env, prefix);
-    const client = AgentClient.connect({ agentKey: identity.key, uaid: identity.uaid, role: identity.role, mandateHash: identity.mandateHash, mcpUrl });
+    const client = AgentClient.connect({ agentKey: identity.key, uaid: identity.uaid, role: identity.role, mandateHash: identity.mandateHash, mcpUrl, callTimeoutMs: CALL_TIMEOUT_MS });
     return { identity, client };
   };
   const sender = (identity: AgentIdentity) => walletCallSender(evmClients(env, identity.key).wallet as AgentWallet);
