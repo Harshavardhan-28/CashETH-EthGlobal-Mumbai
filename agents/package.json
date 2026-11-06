@@ -14,7 +14,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "llm": "tsx src/llm/bin.ts"
+    "llm": "tsx src/llm/bin.ts",
+    "trader": "tsx src/traderCli.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.3.0",
