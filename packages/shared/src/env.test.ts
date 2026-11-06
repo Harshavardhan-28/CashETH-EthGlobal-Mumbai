@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadEnv } from "./env.js";
+import { listenHost, loadEnv } from "./env.js";
 
 const valid = {
   HEDERA_NETWORK: "testnet",
@@ -25,5 +25,13 @@ describe("loadEnv", () => {
   it("parses chain id 296 as number", () => {
     const env = loadEnv({ source: valid });
     expect(env.HEDERA_CHAIN_ID).toBe(296);
+  });
+});
+
+describe("listenHost", () => {
+  it("binds to the loopback interface unless HOST says otherwise", () => {
+    expect(listenHost(loadEnv({ source: valid }))).toBe("127.0.0.1");
+    expect(listenHost(loadEnv({ source: { ...valid, HOST: " " } }))).toBe("127.0.0.1");
+    expect(listenHost(loadEnv({ source: { ...valid, HOST: "0.0.0.0" } }))).toBe("0.0.0.0");
   });
 });

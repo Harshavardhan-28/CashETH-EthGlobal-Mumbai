@@ -28,7 +28,7 @@ Lenders are a **shared liquidity** story (never say "pool"): one wallet backs a 
 | `packages/hedera` | `@casheth/hedera` | Hiero SDK helpers: accounts, HTS tokens, HCS topics, HCS-14 UAIDs, NFTs, 2-of-2 spend wallets, x402 client + co-signed signer, mirror-node queries, viem client with Hashio retries. |
 | `packages/engine` | `@casheth/engine` | pure policy: credit score, spend policy (`checkSpend`), co-signer policy (`approvePayment`), event store, idempotency ledger. |
 | `packages/aqua` | `@casheth/aqua` | lender order builder (all bytes built on-chain via `CashEthOrderBuilder` eth_calls), ship/dock, strategy discovery from Aqua logs, tier presets, cheapest-first solver. Anvil-backed tests need Foundry. |
-| `apps/auth-server` | OAuth 2.1 authorization server (port 4020): JWT-bearer grant gated by on-chain KYA level, ES256 tokens, `aud` = MCP resource URL. |
+| `apps/auth-server` | OAuth 2.1 authorization server (port 4020): JWT-bearer grant gated by on-chain KYA level (the assertion's UAID must match the registry), ES256 tokens, `aud` = MCP resource URL. The authorization-code + PKCE demo grant (consent page, for Claude Code: `docs/CLAUDE_CODE_DEMO.md`) is served only with `AUTH_DEMO_GRANT=true`. Both servers bind to `HOST` (default `127.0.0.1`). |
 | `apps/mcp-server` | MCP server (port 4030, Streamable HTTP, `@modelcontextprotocol/sdk`): protected-resource metadata, bearer auth, 20 tools (incl. `upload_invoice_document` / `get_invoice_document`: the invoice file's keccak256 is the receivable's `detailsCommitment`), orchestrator (`src/orchestrator/*`), live chain adapter (`src/live.ts`), **read API** (`GET /events`, `/agents`, `/lenders`, `/receivables/:id`, `/invoices/:keccak`, `/health`, no auth). Contract: `docs/API.md`. |
 | `apps/merchant` | x402-paywalled service (port 3003): `/research` costs 0.25 USDC, `/catalog`. |
 | `agents/` | `@casheth/agents` | `AgentClient` (discovers auth, gets a token, connects MCP), seller / buyer / worker / lender / trader agents, Hedera Agent Kit wrapper (`kit.ts`), demo runner (`demo.ts`, `pnpm demo`; being finished on a branch). |
@@ -46,8 +46,8 @@ pnpm install
 pnpm -r build
 pnpm -r test                       # TS suites; the aqua anvil project needs FOUNDRY_BIN=<dir with forge/anvil>
 cd contracts && forge test         # 181 tests
-pnpm -F @casheth/auth-server start # :4020
-pnpm -F @casheth/mcp-server start  # :4030  (AGENT_KEYS_IN_PROCESS=true lets the server sign for demo agents)
+pnpm -F @casheth/auth start        # :4020  (AUTH_DEMO_GRANT=true adds the Claude Code sign-in, docs/CLAUDE_CODE_DEMO.md)
+pnpm -F @casheth/mcp start         # :4030  (AGENT_KEYS_IN_PROCESS=true lets the server sign for demo agents)
 pnpm -F @casheth/merchant start    # :3003
 pnpm demo                          # full lifecycle on testnet, appends to docs/EVIDENCE.md
 ```

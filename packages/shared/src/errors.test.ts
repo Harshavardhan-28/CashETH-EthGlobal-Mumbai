@@ -28,6 +28,10 @@ describe("isErrorCode", () => {
     }
   });
 
+  it("knows the auth-server identity codes", () => {
+    for (const code of ["KYA_FAIL", "KYA_LEVEL_TOO_LOW", "UAID_MISMATCH"]) expect(isErrorCode(code), code).toBe(true);
+  });
+
   it("has no duplicate codes", () => {
     expect(new Set(ERROR_CODES).size).toBe(ERROR_CODES.length);
   });

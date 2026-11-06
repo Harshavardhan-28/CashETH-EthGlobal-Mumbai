@@ -275,7 +275,9 @@ undrawn USDC left in the facility goes to the seller agent when the facility clo
 
 ### 4.5 Identity
 
-Every agent has an ECDSA key, a Hedera account, an HCS-14 UAID (published as `AgentRegistered` on the audit topic) and a `KYARegistry` entry (role, level, owner group, mandate hash). The MCP server is an OAuth 2.1 resource server: an agent proves itself to `apps/auth-server` with an ES256K-signed JWT (RFC 7523), the authorization server checks the registry, and issues a short-lived, audience-bound token whose scopes depend on role and level. Tokens are never passed through to other services. Details and all 20 tools: [docs/API.md](docs/API.md).
+Every agent has an ECDSA key, a Hedera account, an HCS-14 UAID (published as `AgentRegistered` on the audit topic) and a `KYARegistry` entry (role, level, owner group, mandate hash). The MCP server is an OAuth 2.1 resource server: an agent proves itself to `apps/auth-server` with an ES256K-signed JWT (RFC 7523), the authorization server checks the registry, and issues a short-lived, audience-bound token whose scopes depend on role and level. Tokens are never passed through to other services. The assertion's UAID must be the one the registry holds for the agent's address. Details and all 20 tools: [docs/API.md](docs/API.md).
+
+Configuration: the authorization and MCP servers bind to `HOST` (default `127.0.0.1`). `AUTH_DEMO_GRANT=true` adds a demo authorization-code + PKCE grant for human MCP clients such as Claude Code ([docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md)): a consent page where you pick a demo role (seller, buyer, worker, lender) and get that agent's scopes, never `agent:admin`. The demo grant exists for the judges' walkthrough and has no owner login, so anyone who reaches the page can act as any demo agent: it is off by default and must never be enabled on a public host. `agent:admin` (`register_agent`) is only granted through JWT-bearer to the configured KYA issuer (`KYA_ISSUER_EVM`).
 
 ### 4.6 Scheduled lifecycle
 
@@ -433,7 +435,8 @@ Everything is recorded in [docs/EVIDENCE.md](docs/EVIDENCE.md) and the run recor
 - **One HSS schedule per transaction.** The first facility design violated this and was redeployed (section 3). Overdue and default checks are chained, and both are also permissionless.
 - **HCS topic contains test probes.** Messages marked `"test": true` (and without `agentUaid`) come from live tests of `@casheth/hedera`; consumers can skip them.
 - **Trusted parties.** The coordinator submits `openAndFund` and `reserve` and the policy co-signer approves payments; the contracts re-check every limit, and the co-signer can refuse but cannot move funds alone. Keys are demo `.env` keys, not a KMS.
-- **Demo identity is an allowlist.** KYA levels are set by one issuer account. There is no sybil resistance beyond owner-group separation between buyer and seller.
+- **Demo identity is an allowlist.** KYA levels are set by one issuer account. There is no sybil resistance beyond owner-group separation between buyer and seller. The demo agents were registered before UAIDs existed, so the registry holds `keccak256(address)` instead of their UAID hash: their tokens carry that hash as `sub` and audit events omit `agentUaid` until they are re-registered.
+- **The auth-code demo grant has no owner login.** It is off unless `AUTH_DEMO_GRANT=true` and meant for a local walkthrough only (section 4.5).
 - **`maxPerBuyer` is cumulative.** `exposure(maker, buyer)` only grows; it caps lifetime advances to a buyer, not outstanding principal.
 - **No concentrated-liquidity strategies.** `XYCConcentrateSwap` was removed to fit EIP-170.
 - **Fixed base rate is out of scope.** A guaranteed base yield would need a subsidy pot.

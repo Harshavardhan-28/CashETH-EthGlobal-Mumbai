@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { loadEnv } from "@casheth/shared";
+import { listenHost, loadEnv } from "@casheth/shared";
 import { isAddress } from "viem";
 import { loadOrCreateSigningKey } from "./keys.js";
 import { createViemKyaReader } from "./kya.js";
@@ -32,7 +32,12 @@ const issuer = new URL(setting(env, "AUTH_ISSUER", `http://localhost:${port}`));
 const resource = new URL(setting(env, "MCP_RESOURCE_URL", "http://localhost:4030/mcp"));
 const keys = await loadOrCreateSigningKey(keysFile);
 const app = createAuthApp({ env, kya: createViemKyaReader(env, kyaRegistry), keys, issuer, resource });
-app.listen(port, (error?: Error) => {
+const host = listenHost(env);
+app.listen(port, host, (error?: Error) => {
   if (error) throw error;
-  console.log(`auth-server listening on http://localhost:${port} (issuer ${issuer.href}, resource ${resource.href}, KYARegistry ${kyaRegistry})`);
+  const demoGrant = env.AUTH_DEMO_GRANT === "true" ? "ON (demo only, never on a public host)" : "off";
+  console.log(
+    `auth-server listening on http://${host}:${port} (issuer ${issuer.href}, resource ${resource.href}, KYARegistry ${kyaRegistry}, ` +
+      `auth-code demo grant ${demoGrant})`,
+  );
 });

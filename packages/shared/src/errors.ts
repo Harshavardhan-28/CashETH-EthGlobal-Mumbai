@@ -19,6 +19,8 @@ export const ERROR_CODES = [
   "PAUSED",
   "INSUFFICIENT_SCOPE",
   "KYA_LEVEL_TOO_LOW",
+  /** Auth server: the assertion's UAID is not the one `KYARegistry` holds for the agent. */
+  "UAID_MISMATCH",
   "BAD_CURRENCY",
   "BAD_STATE",
   "FILL_MISMATCH",

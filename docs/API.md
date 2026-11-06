@@ -17,7 +17,7 @@ All USDC amounts are **6-decimal base-unit strings** (`"250000"` is 0.25 USDC). 
 client ──POST /mcp (no token)──────────────▶ 401  WWW-Authenticate: Bearer error="invalid_token",
                                                    resource_metadata="http://localhost:4030/.well-known/oauth-protected-resource/mcp"
 client ──GET /.well-known/oauth-protected-resource/mcp ─▶ { resource, authorization_servers: [AUTH_ISSUER], scopes_supported }
-client ──POST {AUTH_ISSUER}/token  (RFC 7523 JWT-bearer, or auth code + PKCE for human MCP clients)
+client ──POST {AUTH_ISSUER}/token  (RFC 7523 JWT-bearer; auth code + PKCE for human MCP clients only with AUTH_DEMO_GRANT=true)
           grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer & assertion=<ES256K agent JWT> & resource=<MCP_RESOURCE_URL>
        ◀── { access_token, token_type: "Bearer", expires_in: 600, scope }
 client ──POST /mcp  Authorization: Bearer <access_token> ─▶ tools
@@ -33,7 +33,7 @@ The MCP server verifies each token itself (`src/auth.ts`):
 | Expiry | `exp` in the future, else `401 invalid_token` "Token has expired" |
 | Claims | `sub`, `jti`, `iat`, `exp`, `agent`, `role`, `scope` required |
 
-Identity is the **`agent` claim** (the agent's EVM address). `sub` is the UAID on the JWT-bearer path but the UAID hash on the auth-code path, so nothing is keyed on it; it is only logged (with `jti`) for every call. Tokens are never forwarded to any other service (no token passthrough): the server talks to the chain, the mirror node, HCS and Anthropic with its own credentials.
+Identity is the **`agent` claim** (the agent's EVM address). `sub` is the UAID on the JWT-bearer path but the UAID hash on the auth-code path, so nothing is keyed on it; it is only logged (with `jti`) for every call, and audit events carry it as `agentUaid` only when it is a UAID. On the JWT-bearer path the AS accepts the assertion's `sub` only when `keccak256(sub)` is the `uaidHash` that `KYARegistry` holds for the asserting address (`UAID_MISMATCH` otherwise), so an agent cannot act under another agent's UAID or bind another agent's KYA evidence. The demo agents registered before UAIDs existed hold the placeholder `keccak256(address)`; for them the asserted UAID is ignored, the token `sub` is that registry hash and KYA evidence binds to the address only. Tokens are never forwarded to any other service (no token passthrough): the server talks to the chain, the mirror node, HCS and Anthropic with its own credentials.
 
 Protected resource metadata is served at `/.well-known/oauth-protected-resource/mcp` (RFC 9728 path form) and at `/.well-known/oauth-protected-resource`; the AS metadata is mirrored at `/.well-known/oauth-authorization-server`.
 
@@ -47,7 +47,7 @@ Roles come from `KYARegistry` (`role` claim): 1 seller, 2 buyer, 3 worker, 4 len
 | buyer | `receivable:confirm receivable:read credit:read repay:write stats:read` |
 | worker | `receivable:read credit:read spend:reserve spend:pay spend:commit stats:read` |
 | lender | `receivable:read credit:read stats:read lend:write` |
-| owner (auth-code path, admin switch) | `agent:admin` in addition |
+| KYA issuer (`KYA_ISSUER_EVM`, JWT-bearer only) | `agent:admin` alone (role 0, `sub` = its address) |
 
 Each tool checks the scope first, then the role. A failure is a tool result, not an HTTP error:
 
@@ -56,6 +56,10 @@ Each tool checks the scope first, then the role. A failure is a tool result, not
 ```
 
 Tools also check that the caller is the right party (the seller of the receivable, the buyer, the reservation's worker); otherwise `NOT_PARTY`.
+
+### Demo authorization-code grant (human MCP clients)
+
+`AUTH_DEMO_GRANT=true` makes the authorization server also serve the OAuth 2.1 authorization-code + PKCE (S256) grant for human-operated MCP clients such as Claude Code (walkthrough: [CLAUDE_CODE_DEMO.md](CLAUDE_CODE_DEMO.md)): dynamic client registration (`POST /register`), `GET|POST /authorize` with a consent page, the code exchange and rotating refresh tokens (8 h) at `/token`, and `authorization_endpoint` / `registration_endpoint` / `refresh_token` in the metadata. The consent page has one "Act as <role>" choice per registered demo agent (seller, buyer, worker, lender); the token carries that agent's scopes for its role and current KYA level (re-checked at every exchange and refresh), filtered to the requested ones, and never `agent:admin`. **The demo grant exists for the judges' walkthrough: there is no owner login, so anyone who can reach the page can act as any demo agent. It is off by default and must never be enabled on a public host.** With the flag off, `/register` and `/authorize` answer 404, `/token` accepts only the JWT-bearer grant (`unsupported_grant_type` otherwise) and the metadata advertises only that grant. Both servers bind to `HOST` (default `127.0.0.1`).
 
 ---
 
@@ -326,10 +330,13 @@ HTTP-level errors on `/mcp` come from the SDK bearer middleware: `401 { error: "
 | Variable | Default | Use |
 |---|---|---|
 | `MCP_PORT` | `4030` | listen port |
+| `HOST` | `127.0.0.1` | interface the MCP server (and the authorization server) bind to |
 | `MCP_RESOURCE_URL` | `http://localhost:4030/mcp` | token audience and MCP path |
 | `AUTH_ISSUER` | `http://localhost:4020` | authorization server (metadata fetched at boot, issuer must match) |
 | `COORDINATOR_KEY`, `COSIGNER_KEY` | required | coordinator writes; x402 co-signature |
 | `KYA_ISSUER_KEY` | – | `register_agent` |
+
+Authorization server (`apps/auth-server`): `AUTH_PORT` (`4020`), `AUTH_ISSUER` (`http://localhost:${AUTH_PORT}`), `MCP_RESOURCE_URL` (token audience), `HOST` (`127.0.0.1`), `SKYFIRE_JWKS_ISSUER` (optional KYA evidence), `KYA_ISSUER_EVM` (the identity granted `agent:admin` through JWT-bearer; unset = nobody), `AUTH_DEMO_GRANT` (`false`; `true` serves the demo authorization-code grant above, never on a public host).
 | `HCS_AUDIT_TOPIC_ID`, `RECEIVABLE_NFT_TOKEN_ID` | `deployments/testnet/hedera.json` | audit topic, receivable NFT collection (operator key submits and mints) |
 | `DATA_DIR` | `apps/mcp-server/data` | `events.jsonl`, `idempotency.json`, `pending.json`, `invoices/` |
 | `CORS_ORIGINS` | `http://localhost:3000` | read API browser origins |

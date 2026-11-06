@@ -1,6 +1,7 @@
 import { type AccessTokenClaims, ROLE_SCOPES, signAgentAssertion } from "@casheth/shared";
 import type { Application } from "express";
 import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT, type JSONWebKeySet } from "jose";
+import { keccak256 } from "viem";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLOCK_SKEW_SECONDS } from "./assertion.js";
@@ -112,6 +113,49 @@ describe("POST /token (jwt-bearer)", () => {
     expect(res.body).toMatchObject({ error: "invalid_grant", code: "KYA_LEVEL_TOO_LOW" });
   });
 
+  it("an assertion sub that is not the agent's registered UAID is rejected with UAID_MISMATCH", async () => {
+    const { app, kya } = await testApp();
+    const seller = newAgent(1, 2, {}, kya);
+    const victim = newAgent(2, 3, {}, kya);
+    const assertion = await signAgentAssertion({ privateKey: seller.privateKey, uaid: victim.uaid, audience: ISSUER.href, mandateHash: MANDATE });
+
+    const res = await tokenRequest(app, { assertion }).expect(400);
+    expect(res.body).toMatchObject({ error: "invalid_grant", code: "UAID_MISMATCH" });
+    expect(res.body).not.toHaveProperty("access_token");
+  });
+
+  it("an agent registered with the pre-UAID placeholder hash gets the registry hash as sub, never the asserted UAID", async () => {
+    const { app, kya } = await testApp();
+    const seller = newAgent(1, 2);
+    const placeholder = keccak256(seller.address);
+    kya.set(seller.address, { ...seller.record, uaidHash: placeholder });
+    const assertion = await signAgentAssertion({ privateKey: seller.privateKey, uaid: "uaid:aid:anyone", audience: ISSUER.href, mandateHash: MANDATE });
+
+    const res = await tokenRequest(app, { assertion }).expect(200);
+    const { claims } = await verifyWithJwks(app, res.body.access_token);
+    expect(claims.sub).toBe(placeholder);
+    expect(claims.scope).toBe(ROLE_SCOPES[1]!.join(" "));
+  });
+
+  it("the configured KYA issuer identity gets agent:admin, and only that scope", async () => {
+    const kyaIssuer = newAgent(0, 0);
+    const { app } = await testApp({ KYA_ISSUER_EVM: kyaIssuer.address });
+
+    const res = await tokenRequest(app, { assertion: await assertionFor(kyaIssuer) }).expect(200);
+    expect(res.body.scope).toBe("agent:admin");
+    const { claims } = await verifyWithJwks(app, res.body.access_token);
+    expect(claims).toMatchObject({ agent: kyaIssuer.address, role: 0, sub: kyaIssuer.address, scope: "agent:admin" });
+  });
+
+  it("no registered agent gets agent:admin through the jwt-bearer grant", async () => {
+    const { app, kya } = await testApp({ KYA_ISSUER_EVM: newAgent(0, 0).address });
+    for (const role of [1, 2, 3, 4]) {
+      const agent = newAgent(role, 3, {}, kya);
+      const res = await tokenRequest(app, { assertion: await assertionFor(agent) }).expect(200);
+      expect(res.body.scope.split(" ")).not.toContain("agent:admin");
+    }
+  });
+
   it("resource mismatch is rejected", async () => {
     const { app, kya } = await testApp();
     const seller = newAgent(1, 2, {}, kya);
@@ -195,7 +239,7 @@ describe("POST /token (jwt-bearer)", () => {
           assertion: await assertionFor(worker, { kyaEvidence }),
           resource: RESOURCE.href,
         });
-      return { worker, evidence, grant };
+      return { worker, evidence, grant, kya };
     }
 
     it("kya_evidence from the configured issuer raises the level to 3", async () => {
@@ -211,6 +255,14 @@ describe("POST /token (jwt-bearer)", () => {
       const forged = await evidence(worker.address, (await generateKeyPair("ES256")).privateKey);
 
       await expect(grant(forged)).rejects.toMatchObject({ code: "KYA_FAIL" });
+    });
+
+    it("kya_evidence is bound to the registered UAID only: a placeholder registration accepts the address alone", async () => {
+      const { worker, evidence, grant, kya } = await evidenceSetup();
+      kya.set(worker.address, { ...worker.record, uaidHash: keccak256(worker.address) });
+
+      expect((await grant(await evidence(worker.address))).scope).toBe(ROLE_SCOPES[3]!.join(" "));
+      await expect(grant(await evidence(worker.uaid))).rejects.toMatchObject({ code: "KYA_FAIL" });
     });
 
     it("kya_evidence issued for another agent is rejected with KYA_FAIL", async () => {

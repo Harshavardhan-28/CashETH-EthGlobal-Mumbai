@@ -79,3 +79,12 @@ export function loadEnv(options: LoadEnvOptions = {}): Env {
   }
   return result.data;
 }
+
+/**
+ * Interface the HTTP servers bind to: `HOST`, default the loopback interface, so a server is reachable from other
+ * machines only when someone asks for it.
+ */
+export function listenHost(env: Env): string {
+  const host = env.HOST;
+  return typeof host === "string" && host.trim() !== "" ? host.trim() : "127.0.0.1";
+}

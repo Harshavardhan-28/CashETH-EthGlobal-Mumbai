@@ -1,5 +1,5 @@
 /** Boots the CashETH MCP server with the live orchestrator (`pnpm -F @casheth/mcp start`). */
-import { loadEnv, loadHederaIds } from "@casheth/shared";
+import { listenHost, loadEnv, loadHederaIds } from "@casheth/shared";
 import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { createVerifier } from "./auth.js";
 import { loadConfig } from "./config.js";
@@ -46,10 +46,11 @@ const app = createMcpApp({
   verifier: createVerifier({ issuer: cfg.issuer, resource: cfg.resource, ...(jwksUri ? { jwksUri: new URL(jwksUri) } : {}) }),
   corsOrigins: cfg.corsOrigins,
 });
-app.listen(cfg.port, (error?: Error) => {
+const host = listenHost(env);
+app.listen(cfg.port, host, (error?: Error) => {
   if (error) throw error;
   console.log(
-    `mcp-server listening on http://localhost:${cfg.port} (resource ${cfg.resource.href}, issuer ${cfg.issuer.href}, ` +
+    `mcp-server listening on http://${host}:${cfg.port} (resource ${cfg.resource.href}, issuer ${cfg.issuer.href}, ` +
       `HCS topic ${cfg.hcsTopicId ?? "none"}, lender keys in process ${cfg.lenderKeysInProcess}, agent keys in process ${cfg.agentKeysInProcess})`,
   );
 });

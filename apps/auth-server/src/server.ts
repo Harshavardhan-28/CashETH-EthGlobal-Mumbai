@@ -1,10 +1,12 @@
 /**
- * CashETH OAuth 2.1 authorization server: RFC 7523 JWT-bearer for agents (KYA-checked), auth code
- * + PKCE for human MCP clients (SDK `mcpAuthRouter`), JWKS for the MCP resource server.
+ * CashETH OAuth 2.1 authorization server: RFC 7523 JWT-bearer for agents (KYA-checked) and JWKS for the MCP
+ * resource server. With `AUTH_DEMO_GRANT=true` it also serves the demo authorization-code + PKCE grant for human
+ * MCP clients such as Claude Code (SDK `mcpAuthRouter`: dynamic registration, consent page, refresh tokens).
  */
 import { ALL_SCOPES, type Env } from "@casheth/shared";
 import { createOAuthMetadata, mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import express from "express";
+import { getAddress, isAddress } from "viem";
 import { AuthError } from "./assertion.js";
 import { handleJwtBearerGrant, JtiReplayCache, JWT_BEARER_GRANT, type KyaEvidenceVerifier, skyfireEvidenceVerifier } from "./jwtBearer.js";
 import type { SigningKey } from "./keys.js";
@@ -26,26 +28,40 @@ function optionalString(env: Env, key: string): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
 
+/** RFC 8414 metadata: the SDK's auth-code metadata plus JWT-bearer when the demo grant is on, JWT-bearer alone otherwise. */
+function authServerMetadata(provider: CashEthOAuthProvider, issuer: URL, demoGrant: boolean) {
+  const jwks_uri = new URL("/.well-known/jwks.json", issuer).href;
+  if (demoGrant) {
+    const sdk = createOAuthMetadata({ provider, issuerUrl: issuer, scopesSupported: [...ALL_SCOPES] });
+    return { ...sdk, grant_types_supported: ["authorization_code", "refresh_token", JWT_BEARER_GRANT], jwks_uri };
+  }
+  return {
+    issuer: issuer.href,
+    token_endpoint: new URL("/token", issuer).href,
+    token_endpoint_auth_methods_supported: ["none"],
+    grant_types_supported: [JWT_BEARER_GRANT],
+    response_types_supported: [],
+    scopes_supported: [...ALL_SCOPES],
+    jwks_uri,
+  };
+}
+
 export function createAuthApp(deps: AuthAppDeps): express.Application {
   const { kya, keys, issuer, resource } = deps;
+  const demoGrant = optionalString(deps.env, "AUTH_DEMO_GRANT") === "true";
   const provider = new CashEthOAuthProvider({ kya, keys, issuer, resource });
   const skyfireIssuer = optionalString(deps.env, "SKYFIRE_JWKS_ISSUER");
   const kyaEvidence = deps.kyaEvidence ?? (skyfireIssuer ? skyfireEvidenceVerifier(skyfireIssuer) : undefined);
   const jti = new JtiReplayCache();
-
-  const jwksUri = new URL("/.well-known/jwks.json", issuer);
-  const metadata = {
-    ...createOAuthMetadata({ provider, issuerUrl: issuer, scopesSupported: [...ALL_SCOPES] }),
-    // No refresh tokens are issued; the agent grant is RFC 7523 JWT-bearer.
-    grant_types_supported: ["authorization_code", JWT_BEARER_GRANT],
-    jwks_uri: jwksUri.href,
-  };
+  const kyaIssuer = optionalString(deps.env, "KYA_ISSUER_EVM");
+  const adminAgent = kyaIssuer && isAddress(kyaIssuer) ? getAddress(kyaIssuer) : undefined;
+  const metadata = authServerMetadata(provider, issuer, demoGrant);
 
   const app = express();
   app.get("/health", (_req, res) => {
-    res.json({ ok: true, issuer: issuer.href, resource: resource.href, kid: keys.kid, kyaEvidence: kyaEvidence?.issuer ?? null });
+    res.json({ ok: true, issuer: issuer.href, resource: resource.href, kid: keys.kid, kyaEvidence: kyaEvidence?.issuer ?? null, demoGrant });
   });
-  app.get(jwksUri.pathname, (_req, res) => {
+  app.get(new URL(metadata.jwks_uri).pathname, (_req, res) => {
     res.set("Cache-Control", "public, max-age=300").json({ keys: [keys.publicJwk] });
   });
   // Served ahead of the SDK router so the advertised grants match what /token accepts.
@@ -53,16 +69,17 @@ export function createAuthApp(deps: AuthAppDeps): express.Application {
     res.json(metadata);
   });
 
-  // JWT-bearer is handled here; every other grant falls through to the SDK token handler.
+  // JWT-bearer is handled here; with the demo grant on, every other grant falls through to the SDK token handler.
   app.post("/token", express.urlencoded({ extended: false }), async (req, res, next) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
+    res.set("Cache-Control", "no-store");
     if (body.grant_type !== JWT_BEARER_GRANT) {
-      next();
+      if (demoGrant) next();
+      else res.status(400).json({ error: "unsupported_grant_type", error_description: "only the jwt-bearer grant is enabled (AUTH_DEMO_GRANT is off)" });
       return;
     }
-    res.set("Cache-Control", "no-store");
     try {
-      res.json(await handleJwtBearerGrant({ kya, keys, issuer, resource, jti, kyaEvidence }, body));
+      res.json(await handleJwtBearerGrant({ kya, keys, issuer, resource, jti, kyaEvidence, adminAgent }, body));
     } catch (error) {
       if (error instanceof AuthError) {
         res.status(error.status).json(error.toResponseObject());
@@ -73,6 +90,6 @@ export function createAuthApp(deps: AuthAppDeps): express.Application {
     }
   });
 
-  app.use(mcpAuthRouter({ provider, issuerUrl: issuer, resourceServerUrl: resource, scopesSupported: [...ALL_SCOPES] }));
+  if (demoGrant) app.use(mcpAuthRouter({ provider, issuerUrl: issuer, resourceServerUrl: resource, scopesSupported: [...ALL_SCOPES] }));
   return app;
 }

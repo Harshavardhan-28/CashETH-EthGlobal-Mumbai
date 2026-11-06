@@ -1,14 +1,15 @@
 /**
- * Authorization-code + PKCE path for human-operated MCP clients (D-P8), plugged into the SDK's
- * `mcpAuthRouter` (which validates client_id/redirect_uri and enforces PKCE S256).
+ * Authorization-code + PKCE path for human-operated MCP clients such as Claude Code (D-P8), plugged into the SDK's
+ * `mcpAuthRouter` (dynamic client registration, client_id/redirect_uri validation, PKCE S256). Served only with
+ * `AUTH_DEMO_GRANT=true`.
  *
- * DEMO ONLY: there is no owner login. `GET /authorize` renders a page listing the agents known to
- * the KYA reader with a "Grant" button each; clicking one issues a code bound to that agent, the
- * requested scopes and the PKCE challenge. `agent:admin` is added only when the page is opened
- * with `?admin=1`. A production AS must authenticate the owner and check they own the agent.
+ * DEMO ONLY: there is no owner login. `GET /authorize` renders a consent page with one "Act as <role>" choice per
+ * agent known to the KYA reader; choosing one issues a code bound to that agent, the requested scopes (filtered to
+ * the agent's role and KYA level, never `agent:admin`) and the PKCE challenge. The code exchange also returns a
+ * rotating refresh token. A production AS must authenticate the owner and check they own the agent.
  */
 import { randomBytes } from "node:crypto";
-import { AGENT_ADMIN_SCOPE, scopesForRole } from "@casheth/shared";
+import { scopesForRole } from "@casheth/shared";
 import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import {
   AccessDeniedError,
@@ -17,7 +18,6 @@ import {
   InvalidScopeError,
   InvalidTargetError,
   InvalidTokenError,
-  UnsupportedGrantTypeError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type { AuthorizationParams, OAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
@@ -30,6 +30,8 @@ import type { SigningKey } from "./keys.js";
 import { type KyaReader, requireKyaAgent } from "./kya.js";
 
 const CODE_TTL_SECONDS = 300;
+/** A demo session lasts a working day; each refresh rotates the token. */
+const REFRESH_TTL_SECONDS = 8 * 3600;
 
 interface PendingCode {
   clientId: string;
@@ -37,6 +39,13 @@ interface PendingCode {
   scopes: string[];
   codeChallenge: string;
   redirectUri: string;
+  expiresAt: number;
+}
+
+interface RefreshGrant {
+  clientId: string;
+  agent: `0x${string}`;
+  scopes: string[];
   expiresAt: number;
 }
 
@@ -72,9 +81,15 @@ function kyaToOAuth(error: unknown): never {
   throw error;
 }
 
+function kyaToInvalidGrant(error: unknown): never {
+  if (error instanceof AuthError) throw new InvalidGrantError(`${error.code}: ${error.description}`);
+  throw error;
+}
+
 export class CashEthOAuthProvider implements OAuthServerProvider {
   readonly clientsStore = new InMemoryClientsStore();
   private readonly codes = new Map<string, PendingCode>();
+  private readonly refreshTokens = new Map<string, RefreshGrant>();
 
   constructor(private readonly deps: ProviderDeps) {}
 
@@ -84,10 +99,9 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
     }
     const req = res.req;
     const input = (req.method === "POST" ? req.body : req.query) as Record<string, unknown>;
-    const admin = input.admin === "1";
 
     if (input.grant !== "1") {
-      await this.renderGrantPage(client, params, admin, res);
+      await this.renderGrantPage(client, params, res);
       return;
     }
 
@@ -96,7 +110,7 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
     const nowSeconds = Math.floor(Date.now() / 1000);
     const record = await requireKyaAgent(this.deps.kya, agent, { nowSeconds }).catch(kyaToOAuth);
 
-    const allowed = [...scopesForRole(record.role, record.level), ...(admin ? [AGENT_ADMIN_SCOPE] : [])];
+    const allowed = scopesForRole(record.role, record.level);
     const requested = params.scopes ?? [];
     const scopes = requested.length > 0 ? allowed.filter((s) => requested.includes(s)) : allowed;
     if (scopes.length === 0) throw new InvalidScopeError("none of the requested scopes can be granted to this agent");
@@ -116,7 +130,7 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
     res.redirect(302, target.href);
   }
 
-  private async renderGrantPage(client: OAuthClientInformationFull, params: AuthorizationParams, admin: boolean, res: Response) {
+  private async renderGrantPage(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response) {
     const hidden: Record<string, string | undefined> = {
       response_type: "code",
       client_id: client.client_id,
@@ -126,7 +140,6 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
       state: params.state,
       scope: params.scopes?.length ? params.scopes.join(" ") : undefined,
       resource: params.resource?.href,
-      admin: admin ? "1" : undefined,
       grant: "1",
     };
     const fields = Object.entries(hidden)
@@ -134,13 +147,13 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
       .map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`)
       .join("");
     const action = escapeHtml(new URL("/authorize", this.deps.issuer).href);
-    const agents = await this.deps.kya.listAgents();
+    const agents = (await this.deps.kya.listAgents()).filter((a) => ROLE_NAMES[a.role] !== undefined).sort((x, y) => x.role - y.role);
     const rows = agents
       .map(
         (a) =>
           `<li><form method="post" action="${action}">${fields}<input type="hidden" name="agent" value="${a.address}">` +
-          `<code>${a.address}</code> ${escapeHtml(ROLE_NAMES[a.role] ?? `role ${a.role}`)} (KYA level ${a.level}) ` +
-          `<button type="submit">Grant</button></form></li>`,
+          `<button type="submit">Act as ${ROLE_NAMES[a.role]}</button> <code>${a.address}</code> (KYA level ${a.level}: ` +
+          `${escapeHtml(scopesForRole(a.role, a.level).join(" ") || "no scopes")})</form></li>`,
       )
       .join("");
     res
@@ -149,7 +162,7 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
       .send(
         `<!doctype html><html><head><meta charset="utf-8"><title>CashETH grant</title></head><body>` +
           `<h1>Grant access to ${escapeHtml(client.client_name ?? client.client_id)}</h1>` +
-          `<p>Demo only: no owner login. Pick the agent this client will act as${admin ? " (with agent:admin)" : ""}.</p>` +
+          `<p>Demo only: no owner login. Pick the demo role this client will act as; its token carries that agent's scopes.</p>` +
           `<ul>${rows || "<li>No registered agents.</li>"}</ul></body></html>`,
       );
   }
@@ -175,26 +188,44 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
     if (redirectUri !== undefined && redirectUri !== pending.redirectUri) throw new InvalidGrantError("redirect_uri mismatch");
     if (resource && resource.href !== this.deps.resource.href) throw new InvalidTargetError(`resource must be ${this.deps.resource.href}`);
 
-    // Re-check KYA at exchange time: the agent may have been revoked since the grant.
-    const record = await requireKyaAgent(this.deps.kya, pending.agent, { nowSeconds }).catch((error: unknown) => {
-      if (error instanceof AuthError) throw new InvalidGrantError(`${error.code}: ${error.description}`);
-      throw error;
-    });
-    return mintAccessToken({
+    return this.issueTokens(client, { agent: pending.agent, scopes: pending.scopes }, nowSeconds);
+  }
+
+  /** Rotates the refresh token: the presented one is spent, a new one comes with the new access token. */
+  async exchangeRefreshToken(client: OAuthClientInformationFull, refreshToken: string, scopes?: string[], resource?: URL): Promise<OAuthTokens> {
+    const grant = this.refreshTokens.get(refreshToken);
+    if (!grant || grant.clientId !== client.client_id) throw new InvalidGrantError("invalid refresh token");
+    if (resource && resource.href !== this.deps.resource.href) throw new InvalidTargetError(`resource must be ${this.deps.resource.href}`);
+    if (scopes?.some((s) => !grant.scopes.includes(s))) throw new InvalidScopeError("a refresh cannot add scopes");
+    this.refreshTokens.delete(refreshToken);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (grant.expiresAt < nowSeconds) throw new InvalidGrantError("refresh token expired");
+    return this.issueTokens(client, { agent: grant.agent, scopes: scopes ?? grant.scopes }, nowSeconds);
+  }
+
+  /**
+   * Access token plus a fresh refresh token. KYA is re-checked every time (the agent may have been revoked or
+   * downgraded since the grant), and the scopes are cut to what its role and level allow now.
+   */
+  private async issueTokens(client: OAuthClientInformationFull, grant: { agent: `0x${string}`; scopes: string[] }, nowSeconds: number): Promise<OAuthTokens> {
+    const record = await requireKyaAgent(this.deps.kya, grant.agent, { nowSeconds }).catch(kyaToInvalidGrant);
+    const allowed = scopesForRole(record.role, record.level);
+    const scopes = grant.scopes.filter((s) => allowed.includes(s));
+    if (scopes.length === 0) throw new InvalidGrantError("the agent no longer holds any of the granted scopes");
+    const tokens = await mintAccessToken({
       keys: this.deps.keys,
       issuer: this.deps.issuer,
       resource: this.deps.resource,
       sub: record.uaidHash,
-      agent: pending.agent,
+      agent: grant.agent,
       record,
       level: record.level,
-      scopes: pending.scopes,
+      scopes,
       clientId: client.client_id,
     });
-  }
-
-  async exchangeRefreshToken(): Promise<OAuthTokens> {
-    throw new UnsupportedGrantTypeError("refresh tokens are not issued; tokens live 10 minutes");
+    const refreshToken = randomBytes(32).toString("base64url");
+    this.refreshTokens.set(refreshToken, { clientId: client.client_id, agent: grant.agent, scopes, expiresAt: nowSeconds + REFRESH_TTL_SECONDS });
+    return { ...tokens, refresh_token: refreshToken };
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {

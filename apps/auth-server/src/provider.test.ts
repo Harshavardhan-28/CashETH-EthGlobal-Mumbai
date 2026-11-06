@@ -9,6 +9,7 @@ import { CashEthOAuthProvider } from "./provider.js";
 import { ISSUER, MANDATE, newAgent, RESOURCE, tempKeys, testApp } from "./test/fixtures.js";
 
 const REDIRECT = "http://localhost:6274/oauth/callback";
+const DEMO_GRANT = { AUTH_DEMO_GRANT: "true" };
 
 async function registerClient(app: Application): Promise<string> {
   const res = await request(app)
@@ -46,9 +47,31 @@ async function codeFor(app: Application, clientId: string, challenge: string, ex
   return location.searchParams.get("code")!;
 }
 
+describe("demo grant switch", () => {
+  it("serves no authorization-code grant unless AUTH_DEMO_GRANT=true", async () => {
+    for (const env of [{}, { AUTH_DEMO_GRANT: "false" }, { AUTH_DEMO_GRANT: "1" }]) {
+      const { app } = await testApp(env);
+      await request(app)
+        .post("/register")
+        .send({ client_name: "x", redirect_uris: [REDIRECT], token_endpoint_auth_method: "none" })
+        .expect(404);
+      await request(app).get("/authorize").query(authorizeQuery("any-client", pkce().challenge, { grant: "1" })).expect(404);
+      const token = await request(app).post("/token").type("form").send({ grant_type: "authorization_code", code: "c", code_verifier: "v" }).expect(400);
+      expect(token.body.error).toBe("unsupported_grant_type");
+
+      const metadata = (await request(app).get("/.well-known/oauth-authorization-server").expect(200)).body as Record<string, unknown>;
+      expect(metadata.grant_types_supported).toEqual([JWT_BEARER_GRANT]);
+      expect(metadata).not.toHaveProperty("authorization_endpoint");
+      expect(metadata).not.toHaveProperty("registration_endpoint");
+      expect(metadata.token_endpoint).toBe(new URL("/token", ISSUER).href);
+      expect((await request(app).get("/health").expect(200)).body.demoGrant).toBe(false);
+    }
+  });
+});
+
 describe("auth code + PKCE (demo grant page)", () => {
   it("auth-code + PKCE round trip issues a token for the chosen agent", async () => {
-    const { app, kya } = await testApp();
+    const { app, kya } = await testApp(DEMO_GRANT);
     const seller = newAgent(1, 2, {}, kya);
     const buyer = newAgent(2, 2, {}, kya);
     const clientId = await registerClient(app);
@@ -84,7 +107,7 @@ describe("auth code + PKCE (demo grant page)", () => {
   });
 
   it("auth-code with a wrong code_verifier is rejected", async () => {
-    const { app, kya } = await testApp();
+    const { app, kya } = await testApp(DEMO_GRANT);
     const seller = newAgent(1, 2, {}, kya);
     const clientId = await registerClient(app);
     const { challenge } = pkce();
@@ -98,32 +121,81 @@ describe("auth code + PKCE (demo grant page)", () => {
     expect(res.body.error).toBe("invalid_grant");
   });
 
-  it("agent:admin is granted only with the admin=1 demo switch", async () => {
-    const { app, kya } = await testApp();
+  it("agent:admin is never granted through the demo grant, whatever the request says", async () => {
+    const { app, kya } = await testApp(DEMO_GRANT);
     const seller = newAgent(1, 2, {}, kya);
     const clientId = await registerClient(app);
 
-    const plain = pkce();
-    const plainCode = await codeFor(app, clientId, plain.challenge, { agent: seller.address, grant: "1", scope: "agent:admin credit:read" });
-    const plainRes = await request(app)
-      .post("/token")
-      .type("form")
-      .send({ grant_type: "authorization_code", client_id: clientId, code: plainCode, code_verifier: plain.verifier })
-      .expect(200);
-    expect(plainRes.body.scope).toBe("credit:read");
+    const page = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge, { admin: "1", scope: "agent:admin credit:read" })).expect(200);
+    expect(page.text).not.toContain('name="admin"');
+    expect(page.text).not.toMatch(/with agent:admin/);
 
-    const admin = pkce();
-    const adminCode = await codeFor(app, clientId, admin.challenge, { agent: seller.address, grant: "1", admin: "1", scope: "agent:admin credit:read" });
-    const adminRes = await request(app)
+    const { verifier, challenge } = pkce();
+    const code = await codeFor(app, clientId, challenge, { agent: seller.address, grant: "1", admin: "1", scope: "agent:admin credit:read" });
+    const res = await request(app)
       .post("/token")
       .type("form")
-      .send({ grant_type: "authorization_code", client_id: clientId, code: adminCode, code_verifier: admin.verifier })
+      .send({ grant_type: "authorization_code", client_id: clientId, code, code_verifier: verifier })
       .expect(200);
-    expect(adminRes.body.scope).toBe("credit:read agent:admin");
+    expect(res.body.scope).toBe("credit:read");
+
+    const adminOnly = await request(app)
+      .get("/authorize")
+      .query(authorizeQuery(clientId, pkce().challenge, { agent: seller.address, grant: "1", admin: "1", scope: "agent:admin" }))
+      .expect(302);
+    expect(new URL(adminOnly.headers.location as string).searchParams.get("error")).toBe("invalid_scope");
+  });
+
+  it("the consent page offers one choice per demo role (seller, buyer, worker, lender)", async () => {
+    const { app, kya } = await testApp(DEMO_GRANT);
+    const agents = [newAgent(1, 2, {}, kya), newAgent(2, 3, {}, kya), newAgent(3, 2, {}, kya), newAgent(4, 2, {}, kya)];
+    const clientId = await registerClient(app);
+
+    const page = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge)).expect(200);
+    for (const [i, role] of ["seller", "buyer", "worker", "lender"].entries()) {
+      expect(page.text).toContain(`Act as ${role}`);
+      expect(page.text).toContain(agents[i]!.address);
+    }
+  });
+
+  it("issues a rotating refresh token bound to the client, the agent and the granted scopes", async () => {
+    const { app, kya } = await testApp(DEMO_GRANT);
+    const worker = newAgent(3, 2, {}, kya);
+    const clientId = await registerClient(app);
+    const otherClient = await registerClient(app);
+    const { verifier, challenge } = pkce();
+    const code = await codeFor(app, clientId, challenge, { agent: worker.address, grant: "1" });
+    const first = await request(app)
+      .post("/token")
+      .type("form")
+      .send({ grant_type: "authorization_code", client_id: clientId, code, code_verifier: verifier, redirect_uri: REDIRECT })
+      .expect(200);
+    expect(first.body.refresh_token).toEqual(expect.any(String));
+    const refresh = (form: Record<string, string>) => request(app).post("/token").type("form").send({ grant_type: "refresh_token", ...form });
+
+    expect((await refresh({ client_id: otherClient, refresh_token: first.body.refresh_token }).expect(400)).body.error).toBe("invalid_grant");
+    const second = await refresh({ client_id: clientId, refresh_token: first.body.refresh_token, resource: RESOURCE.href }).expect(200);
+    expect(second.body).toMatchObject({ token_type: "Bearer", expires_in: 600, scope: first.body.scope });
+    expect(second.body.refresh_token).not.toBe(first.body.refresh_token);
+    const jwks = (await request(app).get("/.well-known/jwks.json").expect(200)).body as JSONWebKeySet;
+    const { payload } = await jwtVerify<AccessTokenClaims>(second.body.access_token, createLocalJWKSet(jwks), { issuer: ISSUER.href, audience: RESOURCE.href });
+    expect(payload).toMatchObject({ agent: worker.address, role: 3 });
+
+    // Rotation: the used refresh token is gone.
+    expect((await refresh({ client_id: clientId, refresh_token: first.body.refresh_token }).expect(400)).body.error).toBe("invalid_grant");
+    // Narrowing is allowed, widening is not.
+    expect((await refresh({ client_id: clientId, refresh_token: second.body.refresh_token, scope: "agent:admin" }).expect(400)).body.error).toBe("invalid_scope");
+    const narrowed = await refresh({ client_id: clientId, refresh_token: second.body.refresh_token, scope: "receivable:read" }).expect(200);
+    expect(narrowed.body.scope).toBe("receivable:read");
+
+    // A revoked agent cannot refresh.
+    kya.set(worker.address, { ...worker.record, revoked: true });
+    const revoked = await refresh({ client_id: clientId, refresh_token: narrowed.body.refresh_token }).expect(400);
+    expect(revoked.body).toMatchObject({ error: "invalid_grant", error_description: expect.stringMatching(/KYA_FAIL/) });
   });
 
   it("revoked agent cannot be granted on the demo page", async () => {
-    const { app, kya } = await testApp();
+    const { app, kya } = await testApp(DEMO_GRANT);
     const seller = newAgent(1, 2, { revoked: true }, kya);
     const clientId = await registerClient(app);
 
@@ -137,11 +209,13 @@ describe("auth code + PKCE (demo grant page)", () => {
     expect(location.searchParams.get("code")).toBeNull();
   });
 
-  it("metadata advertises the jwt-bearer grant and S256 PKCE", async () => {
-    const { app } = await testApp();
+  it("metadata advertises the code, refresh and jwt-bearer grants, S256 PKCE and dynamic registration", async () => {
+    const { app } = await testApp(DEMO_GRANT);
     const res = await request(app).get("/.well-known/oauth-authorization-server").expect(200);
     expect(res.body.issuer).toBe(ISSUER.href);
-    expect(res.body.grant_types_supported).toEqual(["authorization_code", JWT_BEARER_GRANT]);
+    expect(res.body.grant_types_supported).toEqual(["authorization_code", "refresh_token", JWT_BEARER_GRANT]);
+    expect(res.body.authorization_endpoint).toBe(new URL("/authorize", ISSUER).href);
+    expect(res.body.registration_endpoint).toBe(new URL("/register", ISSUER).href);
     expect(res.body.code_challenge_methods_supported).toEqual(["S256"]);
     expect(res.body.jwks_uri).toBe(new URL("/.well-known/jwks.json", ISSUER).href);
   });
