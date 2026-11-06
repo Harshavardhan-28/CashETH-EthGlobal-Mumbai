@@ -771,3 +771,16 @@ Source: the user's `Updated_BUILD.md` (sections 1, 2 D11–D13, 3.1, 5.3, 8.2–
 - **Task 7.1 (agents):** lender agent takes a `tier` and `sellerSet`, ships both strategies via `fund_agents`; add the trader agent run to the demo (7.2) before step 6.
 - **Task 8.1 (dashboard):** add a **Fund Agents** page: agent cards with stats, tier selector showing APR and rules, lender yield panel (base, boost, blended) and a "scripted volume" label on base yield.
 - **Task 8.2 (README):** describe shared liquidity (two strategies, one balance), the tiers, and the measured yields with links.
+
+---
+
+# Addendum B (2026-11-06): frontend integration
+
+Task 8.1 (dashboard) is dropped: the frontend is built by a teammate on `origin/feat/nextjs-frontend` (`frontend/`, Next.js). The backend exposes the read API from Ruling R14 (`GET /events`, `/agents`, `/lenders`, `/receivables/:id`) and documents it in `docs/API.md` (Task 6.2).
+
+### Task 8.4: Integrate the teammate's frontend (last task)
+
+- [ ] Merge `origin/feat/nextjs-frontend` into `main` (keep `frontend/` as the app directory, add it to the pnpm workspace as `@casheth/frontend` if it is not already a workspace package; do not rewrite its UI).
+- [ ] Point it at the backend: `NEXT_PUBLIC_API_URL` → MCP server read API; add a thin `frontend/src/lib/api.ts` client for the four endpoints with the R14 types; wire the pages that show lifecycle state, evidence links, agent stats and lender yield to live data where the UI has slots for them (no new pages beyond what the teammate built).
+- [ ] `pnpm -F @casheth/frontend build` and its Vitest suite pass; one smoke test renders live-shaped fixture data.
+- [ ] Commit `feat(frontend): integrate Next.js frontend with the CashETH read API`; document how to run it in the README.
