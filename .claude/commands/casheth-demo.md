@@ -1,7 +1,7 @@
 ---
 description: Run the CashETH end-to-end demo on Hedera testnet - new invoice, buyer signature from the local wallet, financing, a 0.50 USDC x402 purchase from the paid API, non-custodial repayment - and print every HashScan link.
 argument-hint: "[buyerRef] [amount USDC, default 1.20]"
-allowed-tools: Bash(curl:*), Bash(date:*), Bash(jq:*), Bash(pnpm -s tsx scripts/make-invoice-fixture.ts:*), mcp__casheth-seller__get_agent_stats, mcp__casheth-buyer__get_agent_stats, mcp__casheth-worker__get_agent_stats, mcp__casheth-seller__get_quotes, mcp__casheth-seller__get_receivable_status, mcp__casheth-buyer__get_receivable_status, mcp__casheth-wallet__list_accounts, mcp__casheth-wallet__get_balances
+allowed-tools: Bash(curl:*), Bash(date:*), Bash(jq:*), Bash(pnpm -s tsx scripts/make-invoice-fixture.ts:*), mcp__casheth-seller__whoami, mcp__casheth-buyer__whoami, mcp__casheth-worker__whoami, mcp__casheth-seller__get_quotes, mcp__casheth-seller__get_receivable_status, mcp__casheth-buyer__get_receivable_status, mcp__casheth-wallet__list_accounts, mcp__casheth-wallet__get_balances
 ---
 
 Run the CashETH end-to-end flow on Hedera testnet. Act as the `casheth-operator` subagent describes (its phases and guardrails apply here too): one tool call per step, read each result before the next, never invent an id, address, amount, hash or signature, pass tool results through unchanged, and stop at the first refusal or error and report it verbatim.
@@ -16,7 +16,7 @@ Fixed inputs of this demo (from `docs/API.md` section 6):
 
 Steps:
 
-1. Identities. `get_agent_stats` (no arguments) on `casheth-seller`, `casheth-buyer` and `casheth-worker`: note each `address`. `casheth-wallet.list_accounts`: the `buyer` account's address must equal the buyer server's address; if not, stop.
+1. Identities. `whoami` (no arguments) on `casheth-seller`, `casheth-buyer` and `casheth-worker`: note each `address` and check each `role` is seller, buyer and worker. Do not use `get_agent_stats` for this: it scans the chain and can take minutes. `casheth-wallet.list_accounts`: the `buyer` account's address must equal the buyer server's address; if not, stop.
 2. The paid API without payment: `curl -s -i "<paid API URL>"`. Show the HTTP status (402) and the payment requirements (payee, amount, asset).
 3. Invoice: `pnpm -s tsx scripts/make-invoice-fixture.ts --buyer-ref REF --amount <amount>`. It prints JSON with `uploadInvoiceDocument` and `uploadReceivable`.
 4. `casheth-seller.upload_invoice_document` with the `uploadInvoiceDocument` object exactly as printed [upload-doc]. `verification.ok` must be true. Note `keccak256`.

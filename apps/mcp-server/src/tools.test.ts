@@ -76,7 +76,7 @@ async function signConfirmation(typed: { domain: Record<string, unknown>; messag
 }
 
 describe("tool registry", () => {
-  it("tools/list returns all 20 tools", async () => {
+  it("tools/list returns all 21 tools", async () => {
     const { app, tokens } = await setup();
     const body = await rpc(app, tokens.seller, "tools/list");
     const names = (body.result!.tools as { name: string }[]).map((t) => t.name).sort();
@@ -102,10 +102,23 @@ describe("tool registry", () => {
         "set_budgets",
         "upload_invoice_document",
         "upload_receivable",
+        "whoami",
       ].sort(),
     );
     const upload = (body.result!.tools as { name: string; inputSchema: { required?: string[] } }[]).find((t) => t.name === "upload_receivable")!;
     expect(upload.inputSchema.required).toContain("idempotencyKey");
+  });
+});
+
+describe("whoami", () => {
+  it("returns the caller's identity from its token without reading the chain", async () => {
+    const { app, tokens, o } = await setup();
+    const statsCalls: unknown[] = [];
+    o.stats.agentStats = (async (a: unknown) => (statsCalls.push(a), {})) as never;
+    const { result, json } = await callTool(app, tokens.seller, "whoami", {});
+    expect(result.isError).toBeFalsy();
+    expect(json).toMatchObject({ address: seller.address, role: "seller", level: expect.any(Number) });
+    expect(statsCalls).toHaveLength(0);
   });
 });
 

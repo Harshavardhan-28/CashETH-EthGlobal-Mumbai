@@ -170,6 +170,9 @@ Out: `{ id, mode: "calldata", calls: [approve(router, amount), repay(id, amount)
 ### `explain_decision`
 In: `{ id }`. Out: `{ id, decision, decisionSource: "event"|"recomputed", explanation, source: "anthropic"|"template", model? }`. With `ANTHROPIC_API_KEY` the explanation comes from `claude-haiku-5-5` given the decision JSON and the rule list with the system instruction "explain, never change"; otherwise (or on a model error/refusal) a templated explanation with `source: "template"`. The returned `decision` is always the engine's.
 
+### `whoami`
+Any role, scope `stats:read`. In: `{}`. Out: `{ address, role, level, scopes }` from the caller's token; no chain reads, so it answers instantly (use it to learn which account a connection acts as).
+
 ### `list_agents`, `get_agent_stats`
 In: `{}` / `{ address?: address }` (defaults to the caller). Out: `AgentStats[]` / `AgentStats` (section 4).
 

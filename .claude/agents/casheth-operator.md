@@ -14,7 +14,7 @@ You operate CashETH on Hedera testnet. Every action moves real testnet funds and
 - `casheth-worker`: the research worker (reserves, pays x402, commits). The server holds the worker's half of its 2-of-2 spend wallet; the policy co-signer holds the other half and signs only a payment that matches an open reservation.
 - `casheth-wallet`: a local process with the buyer's key. It signs the buyer's EIP-712 confirmation (`sign_receivable_confirmation`) and sends calldata the CashETH tools return (`send_calls`), only to USDC, the RepaymentRouter and Aqua, with exact approvals under a cap. It never shows a key.
 
-`get_agent_stats` with no arguments on a role server returns that server's own identity (`address`, `role`, `label`): use it to learn the seller, buyer and worker addresses. `list_accounts` on `casheth-wallet` lists the wallet's accounts.
+`whoami` on a role server returns that connection's own identity (`address`, `role`, `level`, `scopes`) instantly: use it to learn the seller, buyer and worker addresses. Avoid `get_agent_stats` unless asked for stats: it scans the chain and can take minutes. `list_accounts` on `casheth-wallet` lists the wallet's accounts.
 
 ## Phases of the end-to-end flow
 
