@@ -113,6 +113,13 @@ type BudgetsResult = { mode: "sent"; txHash: Hex } | { mode: "calldata"; calls: 
 
 const MIME_BY_EXTENSION: Record<string, string> = { ".pdf": "application/pdf", ".txt": "text/plain" };
 
+/** `get_receivable_status`; `document.verified` is true once the registry commitment equals the stored file's hash. */
+export interface ReceivableStatus {
+  id: Hex;
+  state: string;
+  document?: { keccak: Hex; verified: boolean };
+}
+
 /** `send` signs and sends the `set_budgets` calldata when the server does not hold the seller key. */
 export function createSellerAgent(client: ToolCaller, send?: CallSender) {
   /** Reads the file and stores it with `upload_invoice_document`, asking the server to check it against the invoice terms. */
@@ -149,6 +156,11 @@ export function createSellerAgent(client: ToolCaller, send?: CallSender) {
         idempotencyKey: idempotencyKey("upload", invoice.buyer, invoice.buyerRef, ...(submission ? [submission] : [])),
       });
       return document ? { ...upload, document } : upload;
+    },
+
+    /** `get_receivable_status`: on-chain state and the invoice document's verification. */
+    status(id: Hex): Promise<ReceivableStatus> {
+      return client.call<ReceivableStatus>("get_receivable_status", { id });
     },
 
     /** `get_quotes`: the lender strategies and the cheapest-first plan for a confirmed receivable; sends nothing. */

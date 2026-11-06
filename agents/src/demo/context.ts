@@ -1,8 +1,10 @@
 /** Wires the real agents, Hedera clients and read API into a `DemoContext` from the environment. */
+import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { promisify } from "node:util";
 import { evmClients, hieroClient, longZeroEvmAddress, mirror, transferUsdc } from "@casheth/hedera";
 import type { Env } from "@casheth/shared";
-import { erc20Abi, keccak256, toHex, type Address, type Hex } from "viem";
+import { erc20Abi, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createBuyerAgent } from "../buyer.js";
 import { agentKitFromEnv } from "../kit.js";
@@ -18,6 +20,7 @@ import { createReadApi } from "./readApi.js";
 import { mcpResourceUrl, merchantPort } from "./servers.js";
 import type { DemoContext, DemoWorker } from "./types.js";
 
+const run = promisify(execFile);
 const HEDERA_TX_ID = /^\d+\.\d+\.\d+@\d+\.\d+$/;
 
 interface SpendWalletRecord {
@@ -70,10 +73,10 @@ export async function buildContext(env: Env, root: string, log: Log = consoleLog
     invoice: {
       buyer: buyer.identity.address,
       amount: INVOICE.amount,
-      dueDate: BigInt(Math.floor(Date.now() / 1000)) + INVOICE.termDays * 86_400n,
+      dueDate: INVOICE.dueDate,
       buyerRef: INVOICE.buyerRef,
-      detailsCommitment: keccak256(toHex(`${INVOICE.buyerRef}-details`)),
     },
+    invoiceFile: INVOICE.file,
     seller: { address: seller.identity.address, accountId: seller.identity.accountId, agent: createSellerAgent(seller.client, sender(seller.identity)), kit: agentKitFromEnv(env, "SELLER") },
     buyer: { address: buyer.identity.address, accountId: buyer.identity.accountId, agent: createBuyerAgent({ client: buyer.client, account: privateKeyToAccount(buyer.identity.key), send: sender(buyer.identity) }) },
     research: worker(workerResearch, spendWallets.research, "WORKER_RESEARCH"),
@@ -91,6 +94,17 @@ export async function buildContext(env: Env, root: string, log: Log = consoleLog
     async resolveTx(ref) {
       if (HEDERA_TX_ID.test(ref)) return ref;
       return (await mirror.waitFor(() => mirror.txByHash(env, ref as Hex))).transactionId;
+    },
+    async verifyInvoiceDocument(id) {
+      try {
+        const { stdout } = await run("pnpm", ["tsx", "scripts/c9-invoice-verify.ts", id], { cwd: root, env: { ...process.env, MCP_BASE_URL: new URL(mcpUrl).origin } });
+        return stdout;
+      } catch (error) {
+        // A MISMATCH exits non-zero but prints its verdict: hand that to the step, which fails on it.
+        const { stdout } = error as { stdout?: string };
+        if (stdout) return stdout;
+        throw error;
+      }
     },
     poll: { attempts: 8, delayMs: 3000 },
     state: {},

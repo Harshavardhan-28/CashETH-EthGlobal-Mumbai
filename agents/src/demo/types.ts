@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
 import type { AgentKit } from "../kit.js";
 import type { BuyerAgent } from "../buyer.js";
 import type { LenderAgent } from "../lender.js";
@@ -52,6 +52,8 @@ export interface DemoWorker {
 export interface DemoContext {
   log: Log;
   invoice: Invoice;
+  /** The PDF the invoice terms come from; the seller uploads it with the receivable. */
+  invoiceFile: string;
   seller: { address: Address; accountId: string; agent: SellerAgent; kit: AgentKit };
   buyer: { address: Address; accountId: string; agent: BuyerAgent };
   research: DemoWorker;
@@ -67,6 +69,8 @@ export interface DemoContext {
   topUpFromOperator(accountId: string, units: bigint): Promise<string>;
   /** The Hedera transaction id for an EVM transaction hash (or an id, returned unchanged). */
   resolveTx(ref: string): Promise<string>;
+  /** Runs `scripts/c9-invoice-verify.ts` for the receivable against the running server; resolves with its output. */
+  verifyInvoiceDocument(id: Hex): Promise<string>;
   poll: PollOptions;
   /** What earlier steps produced for later ones. */
   state: { upload?: UploadResult };

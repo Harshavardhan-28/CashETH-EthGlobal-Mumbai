@@ -91,10 +91,15 @@ function shipStep(key: "A" | "B"): Step {
 const uploadStep: Step = {
   label: `2. seller uploads ${INVOICE.buyerRef}`,
   async run(ctx) {
-    const upload = await ctx.seller.agent.run({ invoice: ctx.invoice });
+    const upload = await ctx.seller.agent.run({ invoice: ctx.invoice, invoiceFile: ctx.invoiceFile });
     ctx.state.upload = upload;
+    const { document } = upload;
+    if (!document?.verification?.ok) throw new Error(`the invoice document does not match the submitted terms: ${JSON.stringify(document?.verification?.mismatches ?? "no verification")}`);
     const event = findEvent(await ctx.read.events(), { type: "ReceivableUploaded", id: upload.id });
-    return { ...proofOfEvent(event, "the upload"), note: `receivable ${upload.id} waits for the buyer's EIP-712 confirmation` };
+    return {
+      ...proofOfEvent(event, "the upload"),
+      note: `invoice PDF stored (keccak256 ${document.keccak256}) and matched against the terms; receivable ${upload.id} waits for the buyer's EIP-712 confirmation`,
+    };
   },
 };
 
@@ -115,6 +120,18 @@ const confirmStep: Step = {
     if (!confirmed.decision.approved) throw new Error(`the credit decision was declined: ${confirmed.decision.reasons.join(", ")}`);
     const { score, advanceBps, limit } = confirmed.decision;
     return { ...(await proofOfEvmTx(ctx, confirmed.txHash)), note: `registered; score ${score}, advance ${advanceBps} bps, limit ${formatUsdc(BigInt(limit))} USDC` };
+  },
+};
+
+const documentStep: Step = {
+  label: "2. invoice document: the registry commitment is the file's hash (get_receivable_status)",
+  async run(ctx) {
+    const id = receivableId(ctx);
+    const { document } = await ctx.seller.agent.status(id);
+    if (!document?.verified) throw new Error(`expected document.verified true, got ${JSON.stringify(document)}`);
+    const txId = ctx.state.upload?.document?.hashscan?.split("/transaction/")[1];
+    if (!txId) throw new Error("the invoice document hashes were not anchored on HCS");
+    return { ...proofOfTx(txId), note: `document.verified: true (keccak256 ${document.keccak}); the file's hashes are anchored on HCS` };
   },
 };
 
@@ -142,7 +159,7 @@ const duplicateStep: Step = {
   async run(ctx) {
     const id = receivableId(ctx);
     try {
-      await ctx.seller.agent.run({ invoice: ctx.invoice, submission: "duplicate" });
+      await ctx.seller.agent.run({ invoice: ctx.invoice, invoiceFile: ctx.invoiceFile, submission: "duplicate" });
     } catch (error) {
       if (!(error instanceof ToolCallError) || error.code !== "DUPLICATE_RECEIVABLE") throw error;
       const event = findEvent(await ctx.read.events(), { type: "ReceivableRejected", id, code: "DUPLICATE_RECEIVABLE" });
@@ -289,6 +306,16 @@ const yieldStep: Step = {
   },
 };
 
+const verifyDocumentStep: Step = {
+  label: "10. invoice document verified against the registry (scripts/c9-invoice-verify.ts)",
+  async run(ctx) {
+    const output = await ctx.verifyInvoiceDocument(receivableId(ctx));
+    const verdict = output.split("\n").find((line) => line.startsWith("VERIFIED"));
+    if (!verdict) throw new Error(`the served invoice did not verify:\n${output}`);
+    return { readOnly: true, note: verdict, detail: output.trimEnd() };
+  },
+};
+
 /** The steps of one demo run, in order. */
 export const STEPS: Step[] = [
   lenderTopUpStep("A"),
@@ -298,6 +325,7 @@ export const STEPS: Step[] = [
   uploadStep,
   sellerNoteStep,
   confirmStep,
+  documentStep,
   nftStep,
   confirmedOnHcsStep,
   duplicateStep,
@@ -311,4 +339,5 @@ export const STEPS: Step[] = [
   buyerTopUpStep,
   repayStep,
   yieldStep,
+  verifyDocumentStep,
 ];

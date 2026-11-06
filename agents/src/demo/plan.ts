@@ -5,6 +5,7 @@
  */
 import { LENDER_TIERS, type Tier } from "@casheth/aqua";
 import { parseUnits } from "viem";
+import { INVOICE_PO_1003, INVOICE_PO_1003_DUE_UNIX, INVOICE_PO_1003_PDF } from "../fixtures.js";
 
 /** USDC has 6 decimals. */
 export const usdc = (amount: string): bigint => parseUnits(amount, 6);
@@ -15,7 +16,13 @@ const BPS = 10_000n;
 /** The RepaymentRouter charges at least 30 days of fee, however fast the buyer repays (Ruling R29). */
 const MIN_FEE_SECONDS = 30n * DAY;
 
-export const INVOICE = { buyerRef: "PO-1003", amount: usdc("6"), termDays: 30n };
+/** The terms are the ones the invoice PDF prints: the server refuses an upload whose terms differ from the file. */
+export const INVOICE = {
+  buyerRef: INVOICE_PO_1003.buyerRef,
+  amount: INVOICE_PO_1003.amountUnits,
+  dueDate: INVOICE_PO_1003_DUE_UNIX,
+  file: INVOICE_PO_1003_PDF,
+};
 
 /** The credit decision the facility opens with: the facility borrows this share of the invoice. */
 export const ADVANCE_BPS = 7500;

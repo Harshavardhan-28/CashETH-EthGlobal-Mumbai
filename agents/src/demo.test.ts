@@ -412,6 +412,7 @@ function fakeContext() {
   const researchAddress: Address = "0x00000000000000000000000000000000000000e1";
   const computeAddress: Address = "0x00000000000000000000000000000000000000e2";
   const sellerAddress: Address = "0x00000000000000000000000000000000000000f1";
+  const document = { keccak256: hash("invoice-pdf"), verification: { ok: true, mismatches: [] }, hashscan: "https://hashscan.io/testnet/transaction/0.0.7@9.9" };
   const events: AuditEvent[] = [];
   const calls: string[] = [];
   // Lender A holds half of what it ships (so it is topped up); lender B holds exactly what it ships.
@@ -427,7 +428,8 @@ function fakeContext() {
 
   const ctx = {
     log: () => {},
-    invoice: { buyer: buyerAddress, amount: INVOICE.amount, dueDate: 1_800_000_000n, buyerRef: INVOICE.buyerRef, detailsCommitment: hash("details") },
+    invoice: { buyer: buyerAddress, amount: INVOICE.amount, dueDate: INVOICE.dueDate, buyerRef: INVOICE.buyerRef },
+    invoiceFile: INVOICE.file,
     seller: {
       address: sellerAddress,
       accountId: "0.0.11",
@@ -440,8 +442,9 @@ function fakeContext() {
             throw new ToolCallError("upload_receivable", { code: "DUPLICATE_RECEIVABLE" });
           }
           record({ type: "ReceivableUploaded", id, hcsTxId: "0.0.7@1.1" });
-          return { pendingId: hash("pending"), id, confirmationRequest: {} };
+          return { pendingId: hash("pending"), id, confirmationRequest: {}, document };
         },
+        status: async () => ({ id, state: "Confirmed", document: { keccak: document.keccak256, verified: true } }),
         quotes: async () => quotes(),
         openFacility: async () => (calls.push("open"), { txHash: "0xfund", total: BORROWING_BASE.toString() }),
         setBudgets: async () => (calls.push("budgets"), { txHash: "0xbudgets" }),
@@ -504,6 +507,7 @@ function fakeContext() {
       return "0.0.1@8.8";
     },
     resolveTx: async (ref: string) => `0.0.1@${ref}`,
+    verifyInvoiceDocument: async () => `receivable x\nVERIFIED: the file is exactly what the buyer signed\n`,
     poll: { attempts: 2, delayMs: 0, sleep: noSleep },
     state: {},
   } as unknown as DemoContext;
@@ -515,7 +519,7 @@ describe("the eight lifecycle steps against fake agents", () => {
     const { ctx, calls } = fakeContext();
     const results = await runSteps(STEPS, ctx);
 
-    expect(results.map((r) => r.label.split(".")[0])).toEqual(["1", "1", "1", "1", "2", "2", "2", "2", "2", "3", "4", "5", "6", "7", "7", "7", "7", "8", "8", "9"]);
+    expect(results.map((r) => r.label.split(".")[0])).toEqual(["1", "1", "1", "1", "2", "2", "2", "2", "2", "2", "3", "4", "5", "6", "7", "7", "7", "7", "8", "8", "9", "10"]);
     expect(results.filter((r) => r.error)).toEqual([]);
     expect(exitCode(results)).toBe(0);
     expect(calls.filter((c) => !c.startsWith("top-up") && c !== "note")).toEqual(["ship-A", "ship-B", "upload", "upload-duplicate", "open", "budgets", "buy-research", "repay"]);
@@ -563,10 +567,29 @@ describe("the eight lifecycle steps against fake agents", () => {
     expect(exitCode(results)).toBe(1);
   });
 
+  it("proves the invoice document with the HCS anchor and the verifier's VERIFIED line", async () => {
+    const { ctx } = fakeContext();
+    const results = await runSteps(STEPS, ctx);
+    expect(results.find((r) => r.label.startsWith("2. invoice document"))).toMatchObject({ txId: "0.0.7@9.9", note: expect.stringContaining("document.verified: true") });
+    expect(results.find((r) => r.label.startsWith("10."))).toMatchObject({ readOnly: true, note: "VERIFIED: the file is exactly what the buyer signed" });
+  });
+
+  it("stops when the document is not verified or the verifier reports a mismatch", async () => {
+    const unverified = fakeContext().ctx;
+    unverified.seller.agent.status = (async () => ({ state: "Confirmed", document: { keccak: hash("x"), verified: false } })) as never;
+    expect((await runSteps(STEPS, unverified)).at(-1)?.error).toMatch(/expected document.verified true/);
+
+    const mismatch = fakeContext().ctx;
+    mismatch.verifyInvoiceDocument = async () => "MISMATCH: the served file does not hash to the on-chain commitment\n";
+    const results = await runSteps(STEPS, mismatch);
+    expect(results.at(-1)?.label).toMatch(/^10\./);
+    expect(results.at(-1)?.error).toMatch(/did not verify/);
+  });
+
   it("fails the duplicate step when the second upload is accepted", async () => {
     const { ctx } = fakeContext();
     const real = ctx.seller.agent.run.bind(ctx.seller.agent);
-    ctx.seller.agent.run = (async (args: Parameters<typeof real>[0]) => real({ invoice: args.invoice })) as typeof real;
+    ctx.seller.agent.run = (async (args: Parameters<typeof real>[0]) => real({ invoice: args.invoice, invoiceFile: args.invoiceFile })) as typeof real;
     const results = await runSteps(STEPS, ctx);
     expect(results.find((r) => r.label.includes("duplicate"))?.error).toBe("the duplicate submission was accepted");
   });
