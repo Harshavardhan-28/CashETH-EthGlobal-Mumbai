@@ -31,7 +31,7 @@ export function Hero() {
           <div className={styles.kicker}>
             <span className={styles.kickerDot} />
             <span>
-              <b>Cash me if you can!</b> · Autonomous working capital
+              <b>Cash me if you can!</b>
             </span>
           </div>
           <h1 className={styles.title}>
