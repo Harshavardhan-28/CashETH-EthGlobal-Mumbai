@@ -737,3 +737,37 @@ docs/               EVIDENCE.md, superpowers/
 - Spec coverage: §1 prizes (C1 S3, C4, C5, README), §4 identity (2.1, 2.4), §5 MCP/KYA (6.1, 6.2), §6 EIP-712 (2.2, 2.3), §7 contracts (3.x), §8 Aqua/SwapVM (4.x), §9 x402 (1.3, 5.x), §10 waterfall (3.5), §11 services (packages/apps), §12 events/errors (2.4, 5.2, shared), §13 layout, §14 phases (checkpoints), §15 testing (each task), §16 demo (7.2, 8.2), §17 config (0.1), §18 tooling (used), §19 risks (1.x spikes, D-P9/D-P10). GST stretch (§6.6) is intentionally not scheduled.
 - Type consistency: `Fill`, `Position`, `Reservation`, `Limits`, `Budget`, `ReceivableCredit.Args`, `CashEthTraits.takerData`, `Decision`, `LenderStrategy`, `AuditEvent`, `AgentClient` are defined once and referenced by name afterwards.
 - Review Focus tests are attached to Tasks 2.3, 4.4/4.5, 3.4/5.3, 3.5, 6.2.
+
+---
+
+# Addendum A (2026-11-06, after 1inch judge feedback): lender base yield, boosted yield and risk tiers
+
+Source: the user's `Updated_BUILD.md` (sections 1, 2 D11–D13, 3.1, 5.3, 8.2–8.5, 12.2, 12.3). Nothing already built changes. The addendum amends the tasks named below; every other task stays as written.
+
+## Decisions
+
+- D-A1 No pool contract and no external yield protocol. A lender's USDC stays in the lender's wallet and backs two strategies on `CashEthSwapVMRouter`: a **base-yield** strategy (`Salt` → `Deadline` → `FeeFlatIn` → `XYCSwap`, the constant-product curve) on USDC / `tUSDT`, and the **credit** strategy (boost). Wording everywhere: "shared liquidity", never "pool".
+- D-A2 Risk tiers are presets of the credit opcode arguments, enforced on-chain at fill time:
+  | Tier | aprBps | minSellerOnTime | maxSellerDefaults | minBuyerOnTime | maxPerBuyer | sellerSet |
+  |---|---|---|---|---|---|---|
+  | low | 700 | 3 | 0 | 0 | 5_000_000 | optional explicit allowlist (demo: [seller]) |
+  | medium | 850 | 1 | 0 | 0 | 5_000_000 | optional (demo: [seller]) |
+  | high | 1300 | 0 | 2 | 0 | 5_000_000 | empty (any seller) |
+  A non-empty `sellerSet` replaces the score thresholds (explicit choice beats score). Demo lenders: A low [seller], B medium [seller], C high (eligible, most expensive, skipped), D low with `sellerSet = [workerResearch]` (skipped on-chain with `SELLER_NOT_FUNDED_BY_LENDER`).
+- D-A3 Base yield is variable (swap fees). It is shown as a measured APR from real on-chain swaps by a scripted trader agent, labelled "scripted volume". The credit APR is the fixed, boosted leg. A guaranteed fixed base rate is out of scope (it would need a subsidy pot).
+- D-A4 `tUSDT` is a plain 6-decimal ERC-20 (`contracts/src/core/TestStablecoin.sol`, mintable by owner) deployed by us; no HTS association needed.
+- D-A5 Agent and lender stats are computed by a small `packages/stats` indexer from registry/router/facility events (viem `getLogs`) and Aqua `Shipped/Pushed/Pulled/Docked` logs (aqua-sdk decoders); the 1inch Aqua analytics API does not cover Hedera.
+
+## Amended tasks
+
+- **Task 4.1 (credit opcode):** `Args` becomes `{ uint16 maxTenorDays; uint16 maxAdvanceBps; uint32 minBuyerOnTime; uint128 maxPerBuyer; uint16 aprBps; uint32 minSellerOnTime; uint8 maxSellerDefaults; uint128 minReserve; address[] sellerSet (0–3 addresses, packed) }` (fixed part 47 bytes + 20 per seller; ≤ 107 bytes). New checks after the Confirmed check: if `sellerSet.length > 0` then `r.seller ∈ sellerSet` else `kya.reputation(r.seller).onTime >= minSellerOnTime && defaults <= maxSellerDefaults`, else revert `SELLER_NOT_FUNDED_BY_LENDER()`; and `IERC20(usdc).balanceOf(maker) - amount >= minReserve` else `LENDER_RESERVE_TOO_LOW()`. Tests add `test_exec_revertsSellerNotInSet`, `test_exec_allowsSellerInSet_ignoringScore`, `test_exec_revertsSellerScoreTooLow`, `test_exec_revertsReserveTooLow`.
+- **Task 4.2 (router + order builder):** `buildLenderOrder(maker, rcn, usdc, Args, salt)` unchanged in shape; add `buildBaseYieldOrder(address maker, address usdc, address tUsdt, uint32 feeBps, uint64 salt) returns (Order, bytes strategy)` (program `Salt` → `FeeFlatIn(feeBps)` → `XYCSwap`) and `decodeBaseYieldOrder`. Router `_runOpcode` already inherits `FeeFlatIn`/`XYCSwap` from `AquaOpcodes`. Record the router size; if it exceeds 24,576 B apply the ledger watch item.
+- **Task 4.3 (deploy):** also deploy `TestStablecoin` (tUSDT) and mint 50 tUSDT to each lender and 20 to the trader (operator) account; record addresses.
+- **Task 4.4 (aqua package):** add `LENDER_TIERS` presets (D-A2), `buildBaseYieldOrder`, `shipBaseYield(lender, { usdc: amount, tUsdt: amount, feeBps: 30 })`; each demo lender ships BOTH strategies from one balance (base: 2 USDC + 2 tUSDT virtual for A, 1 + 1 for B and C); `listOpenStrategies` returns `kind: 'credit' | 'base'`. Add lender D (new account in `.env.accounts`, 1 USDC) shipping a low-tier credit strategy with `sellerSet = [workerResearch]`.
+- **Task 4.5 (solver + funding):** eligibility uses the tier rules through `router.quote`; the testnet run must show A and B filled, C skipped (price), D skipped (`SELLER_NOT_FUNDED_BY_LENDER`), and the facility funded from the same wallets that back the base strategies.
+- **Task 5.2 (engine):** add `ERROR_CODES` entries `SELLER_NOT_FUNDED_BY_LENDER`, `LENDER_RESERVE_TOO_LOW` in `packages/shared` (done in the shared package, not the engine).
+- **New Task 4.6 (trader agent + base-yield evidence):** `agents/src/trader.ts` swaps 0.2 USDC ⇄ tUSDT a few times against each base strategy through a `CashEthTaker` contract (generalised `SpikeTaker`, deployed in 4.3), so `Pushed/Pulled` events and fees exist on-chain; `packages/stats/src/yield.ts` computes per-lender `baseFees`, `creditFees`, `capital`, `blendedApr`. Evidence: swap tx links and the computed yield table.
+- **New Task 6.5 (stats + lender tools):** `packages/stats` (`agentStats(address)`: receivables funded/repaid/defaulted, on-time %, average days to repay, spend by worker and merchant, score/tier from the engine; `lenderYield(address)`: base, boost, blended; `listAgents()`), and MCP tools `list_agents`, `get_agent_stats` (scope `stats:read`, any role), `fund_agents` (lender, scope `lend:write`: takes a tier or explicit args + sellerSet + amounts, returns the two `ship` calldatas for the lender to sign, or ships when the lender key is held by the agent process), `get_lender_yield` (lender), `close_strategy` (lender, `dock`). Auth: add scopes `stats:read` (all roles) and `lend:write` (lender) to `ROLE_SCOPES`.
+- **Task 7.1 (agents):** lender agent takes a `tier` and `sellerSet`, ships both strategies via `fund_agents`; add the trader agent run to the demo (7.2) before step 6.
+- **Task 8.1 (dashboard):** add a **Fund Agents** page: agent cards with stats, tier selector showing APR and rules, lender yield panel (base, boost, blended) and a "scripted volume" label on base yield.
+- **Task 8.2 (README):** describe shared liquidity (two strategies, one balance), the tiers, and the measured yields with links.
