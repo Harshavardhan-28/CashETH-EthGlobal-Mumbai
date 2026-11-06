@@ -4,12 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AquaAddresses, LenderStrategy, Plan } from "@casheth/aqua";
 import { EventStore, IdempotencyLedger } from "@casheth/engine";
+import type { DecodedKey } from "@casheth/hedera";
 import { computeReceivableId, ReceivableRegistryAbi } from "@casheth/shared";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "jose";
 import { decodeFunctionData, getAddress, keccak256, toHex, type Address, type Hex } from "viem";
 import { createVerifier } from "../auth.js";
-import { ToolError } from "../orchestrator/errors.js";
+import { ToolError, type ToolErrorCode } from "../orchestrator/errors.js";
 import { PendingStore } from "../orchestrator/pending.js";
+import type { SpendWalletPort } from "../orchestrator/spendWallets.js";
 import type {
   AgentStats,
   AquaPort,
@@ -73,10 +75,11 @@ export class FakeChain implements ChainPort {
   reservations = new Map<string, ReservationView>();
   balances = new Map<string, bigint>();
   available_ = 0n;
+  lenderDue_ = 0n;
   held = new Set<string>();
   sent: { from: Signer; call: Calldata }[] = [];
   /** Throws this error code from the next `send` (a contract revert). */
-  revertNext: string | undefined;
+  revertNext: ToolErrorCode | undefined;
   #tx = 0;
 
   addresses(): ChainAddresses {
@@ -161,7 +164,7 @@ export class FakeChain implements ChainPort {
     return false;
   }
   async lenderDue() {
-    return 0n;
+    return this.lenderDue_;
   }
   async dueOf() {
     return { principal: 0n, fee: 0n };
@@ -225,8 +228,8 @@ export class FakeAqua implements AquaPort {
   async fund(_lender: Address, _plan: FundPlan, _inProcess: boolean): Promise<FundResult> {
     return { mode: "calldata", calls: [], credit: { strategyHash: ZERO32 } };
   }
-  async dock() {
-    return { mode: "calldata" as const, calls: [] };
+  async dock(_lender: Address, _p: { strategyHash: Hex; tokens: Address[] }, _inProcess: boolean): ReturnType<AquaPort["dock"]> {
+    return { mode: "calldata", calls: [] };
   }
 }
 
@@ -238,6 +241,8 @@ export class FakeX402 implements X402Port {
   accounts = new Map<string, string>();
   requirements: PaymentRequirements = { scheme: "exact", network: "hedera:testnet", asset: "0.0.429274", payTo: "0.0.9001", amount: "250000" };
   cosigned: string[] = [];
+  /** URLs `pay` was asked to fetch. */
+  payments: string[] = [];
   async accountIdOf(evm: Address) {
     const id = this.accounts.get(evm.toLowerCase());
     if (!id) throw new Error(`unknown account ${evm}`);
@@ -252,7 +257,8 @@ export class FakeX402 implements X402Port {
     this.cosigned.push(txBase64);
     return txBase64;
   }
-  async pay(p: { spendWalletId: string; cosign: (tx: string, r: PaymentRequirements) => Promise<string> }) {
+  async pay(p: { spendWalletId: string; url: string; cosign: (tx: string, r: PaymentRequirements) => Promise<string> }) {
+    this.payments.push(p.url);
     const amount = BigInt(this.requirements.amount);
     const summary = {
       tokenTransfers: [
@@ -263,6 +269,38 @@ export class FakeX402 implements X402Port {
     };
     await p.cosign(Buffer.from(JSON.stringify(summary)).toString("base64"), this.requirements);
     return { status: 200, body: { ok: true }, transactionId: "0.0.5005@1800000000.000000001" };
+  }
+}
+
+export const COSIGNER_PUBLIC_KEY = `03${"c".repeat(64)}`;
+
+/** A deterministic fake compressed public key for an agent address. */
+export const fakePublicKey = (account: Address): string => `02${keccak256(account).slice(2)}`;
+
+/** Registered spend wallets (keyed by wallet) and agent public keys, as the mirror node would report them. */
+export class FakeSpendWallets implements SpendWalletPort {
+  readonly cosignerPublicKey = COSIGNER_PUBLIC_KEY;
+  wallets = new Map<string, DecodedKey>();
+  publicKeys = new Map<string, string>();
+  async registeredKey(spendWallet: Address) {
+    return this.wallets.get(spendWallet.toLowerCase());
+  }
+  async publicKeyOf(account: Address) {
+    return this.publicKeys.get(account.toLowerCase());
+  }
+  /** Registers `wallet` with the key `KeyList([worker, co-signer], 2)` (or the given key). */
+  register(wallet: Address, worker: Address, key?: DecodedKey) {
+    this.publicKeys.set(worker.toLowerCase(), fakePublicKey(worker));
+    this.wallets.set(
+      wallet.toLowerCase(),
+      key ?? {
+        threshold: 2,
+        keys: [
+          { type: "ECDSA_SECP256K1", publicKey: fakePublicKey(worker) },
+          { type: "ECDSA_SECP256K1", publicKey: COSIGNER_PUBLIC_KEY },
+        ],
+      },
+    );
   }
 }
 
@@ -292,6 +330,7 @@ export type TestOrchestrator = Orchestrator & {
   aqua: FakeAqua;
   x402: FakeX402;
   stats: FakeStats;
+  spendWallets: FakeSpendWallets;
   hcsPublished: Record<string, unknown>[];
   hcsFail: { on: boolean };
   minted: { id: Hex; hcsSeq: number }[];
@@ -307,6 +346,7 @@ export function fakeOrchestrator(): TestOrchestrator {
     aqua: new FakeAqua(),
     x402: new FakeX402(),
     stats: new FakeStats(),
+    spendWallets: new FakeSpendWallets(),
     hcs: {
       topicId: "0.0.7777",
       async publish(message) {
@@ -327,7 +367,12 @@ export function fakeOrchestrator(): TestOrchestrator {
     events: new EventStore(join(dir, "events.jsonl")),
     idempotency: new IdempotencyLedger(join(dir, "idempotency.json")),
     pending: new PendingStore(),
-    config: { x402Network: "hedera:testnet", usdcTokenId: "0.0.429274", explorer: "testnet" },
+    config: {
+      x402Network: "hedera:testnet",
+      usdcTokenId: "0.0.429274",
+      explorer: "testnet",
+      merchantOrigins: { "0.0.9001": ["https://merchant.example"] },
+    },
     now: () => NOW,
     log: () => undefined,
     hcsPublished,

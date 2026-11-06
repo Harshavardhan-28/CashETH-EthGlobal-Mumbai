@@ -1,11 +1,32 @@
 /**
- * Tool errors carry a machine-readable `code`: the shared error names (BUILD.md section 12.2, the same names the
- * contracts revert with) plus a few MCP-side codes (`NOT_FOUND`, `NOT_DEPLOYED`, `BAD_INPUT`, `COSIGNER_REFUSED`,
- * `KEY_NOT_HELD`, `IDEMPOTENCY_KEY_REUSED`, `CHAIN_ERROR`, `INTERNAL`).
+ * Tool errors carry a machine-readable `code`: either a shared error name (`ErrorCode`, BUILD.md section 12.2,
+ * the names the contracts revert with) or one of the MCP-side orchestration codes below.
  */
+import type { ErrorCode } from "@casheth/shared";
+
+export const MCP_ERROR_CODES = [
+  "NOT_FOUND",
+  "NOT_DEPLOYED",
+  "BAD_INPUT",
+  "IDEMPOTENCY_KEY_REUSED",
+  "CREDIT_DECLINED",
+  "NO_ELIGIBLE_LIQUIDITY",
+  "SPEND_WALLET_NOT_REGISTERED",
+  "MERCHANT_URL_NOT_ALLOWED",
+  "COSIGNER_REFUSED",
+  "PAYMENT_FAILED",
+  "KEY_NOT_HELD",
+  "CONTRACT_REVERTED",
+  "CHAIN_ERROR",
+  "INTERNAL",
+] as const;
+
+export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
+export type ToolErrorCode = ErrorCode | McpErrorCode;
+
 export class ToolError extends Error {
   constructor(
-    readonly code: string,
+    readonly code: ToolErrorCode,
     message: string = code,
     readonly details: Record<string, unknown> = {},
   ) {
@@ -18,6 +39,6 @@ export class ToolError extends Error {
   }
 }
 
-export function fail(code: string, message?: string, details?: Record<string, unknown>): never {
+export function fail(code: ToolErrorCode, message?: string, details?: Record<string, unknown>): never {
   throw new ToolError(code, message, details);
 }

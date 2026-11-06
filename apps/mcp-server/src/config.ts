@@ -24,6 +24,8 @@ export type McpConfig = {
   /** CAIP-2 x402 network (`hedera:testnet`). */
   x402Network: string;
   usdcTokenId: string;
+  /** Merchant account id -> URL origins `pay_x402` may fetch (`MERCHANT_ORIGINS`). */
+  merchantOrigins: Record<string, string[]>;
   aquaFromBlock?: bigint;
 };
 
@@ -54,6 +56,21 @@ export function caip2Network(value: string): string {
   return value.includes(":") ? value : value.replace(/^hedera-/, "hedera:");
 }
 
+/**
+ * `MERCHANT_ORIGINS` = comma-separated `accountId=origin` pairs (e.g. `0.0.123=http://localhost:3003`); default:
+ * the demo merchant (`MERCHANT_ACCOUNT_ID`) at `http://localhost:${MERCHANT_PORT ?? 3003}`.
+ */
+export function merchantOrigins(env: Env): Record<string, string[]> {
+  const spec = opt(env, "MERCHANT_ORIGINS") ?? `${env.MERCHANT_ACCOUNT_ID}=http://localhost:${opt(env, "MERCHANT_PORT") ?? 3003}`;
+  const out: Record<string, string[]> = {};
+  for (const pair of spec.split(",").map((p) => p.trim()).filter(Boolean)) {
+    const [accountId, origin] = pair.split("=");
+    if (!accountId || !origin) throw new Error(`MERCHANT_ORIGINS entry "${pair}" must be accountId=origin`);
+    (out[accountId.trim()] ??= []).push(new URL(origin.trim()).origin);
+  }
+  return out;
+}
+
 export function loadConfig(env: Env, fallbacks: { hcsTopicId?: string; nftTokenId?: string } = {}): McpConfig {
   const port = Number(opt(env, "MCP_PORT") ?? 4030);
   const fromBlock = opt(env, "AQUA_FROM_BLOCK");
@@ -77,6 +94,7 @@ export function loadConfig(env: Env, fallbacks: { hcsTopicId?: string; nftTokenI
     agentKeysInProcess: flag(env, "AGENT_KEYS_IN_PROCESS"),
     x402Network: caip2Network(env.X402_NETWORK),
     usdcTokenId: env.USDC_TOKEN_ID,
+    merchantOrigins: merchantOrigins(env),
     ...(fromBlock ? { aquaFromBlock: BigInt(fromBlock) } : {}),
   };
 }

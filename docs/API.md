@@ -127,13 +127,14 @@ Out: `{ id, mode: "calldata", calls }` or `{ id, mode: "sent", txHash, hashscan 
 
 ### `reserve_spend`
 In: `{ id, worker, spendWallet: address (long-zero form of the wallet account), merchant: address, amount: units, ttlSeconds?: 30..3600 (default 600) }`. A worker reserves for itself; a seller for any worker of its facility.
-The engine runs `checkSpend` against the on-chain budget, limits, merchant allowlist and facility capacity first (`PAUSED`, `FACILITY_NOT_ACTIVE`, `AGENT_BUDGET_EXCEEDED`, `TX_LIMIT_EXCEEDED`, `DAILY_LIMIT_EXCEEDED`, `MERCHANT_NOT_ALLOWED`, `GLOBAL_CREDIT_LIMIT_EXCEEDED`), then refuses a second open reservation on the same wallet (`WALLET_BUSY`), then sends `reserve` with the coordinator (a revert maps to the same code names). Rejections are recorded as `SpendRejected` with `stage: "engine" | "contract"` and returned as `{ code, stage }`.
+The spend wallet must be registered in `deployments/testnet/spend-wallets.json` and its live key (mirror node, cached per wallet for the process lifetime) must be a threshold-2 key over exactly two keys: the worker's own key and the configured co-signer's (`COSIGNER_KEY`); otherwise `SPEND_WALLET_NOT_REGISTERED` with `reason: "not_registered" | "not_2_of_2" | "cosigner_not_a_signer" | "worker_key_unknown" | "worker_not_a_signer"`. This is what makes every payment out of the reserved USDC need the co-signer. Then the engine runs `checkSpend` against the on-chain budget, limits, merchant allowlist and facility capacity first (`PAUSED`, `FACILITY_NOT_ACTIVE`, `AGENT_BUDGET_EXCEEDED`, `TX_LIMIT_EXCEEDED`, `DAILY_LIMIT_EXCEEDED`, `MERCHANT_NOT_ALLOWED`, `GLOBAL_CREDIT_LIMIT_EXCEEDED`), then refuses a second open reservation on the same wallet (`WALLET_BUSY`), then sends `reserve` with the coordinator (a revert maps to the same code names). Rejections are recorded as `SpendRejected` with `stage: "engine" | "contract"` and returned as `{ code, stage }`.
 Out: `{ id, spendId, amount, expiry, txHash, hashscan }`; `spendId = keccak256(id ‖ worker ‖ nonce)` with the nonce derived from the caller and idempotency key.
 
 Demo (Ruling R24): the compute worker's 5.5 USDC against a 3.0 budget is `AGENT_BUDGET_EXCEEDED`; the research worker's 0.6 against `maxPerTx` 0.5 is `TX_LIMIT_EXCEEDED`.
 
 ### `pay_x402`
 In: `{ spendId, url }` (caller = the reservation's worker; reservation open and unexpired).
+The URL's origin must be one of the origins configured for the reservation's merchant (`MERCHANT_ORIGINS`; that merchant is on the worker's on-chain allowlist that `checkSpend` enforced); otherwise `MERCHANT_URL_NOT_ALLOWED` and nothing is fetched.
 The worker key signs the facilitator-paid Hedera transfer; the co-signer signs only when the engine's `approvePayment` accepts the `PaymentRequirements` against the open reservation (scheme `exact`, network, USDC asset, `payTo` = the reservation merchant's account, amount ≤ reserved, before expiry, payer = spend wallet) **and** the transaction bytes move exactly that USDC amount from the spend wallet to `payTo` and nothing else.
 Out: `{ spendId, transactionId, hashscan, status, body }`. Refusal: `{ code: "COSIGNER_REFUSED", reason: "wrong_payee" | "amount_exceeds_reservation" | "reservation_expired" | "wrong_asset" | "wrong_network" | "wrong_payer" | "amount_mismatch" | … }`, recorded as `SpendRejected` (`stage: "cosigner"`).
 
@@ -268,9 +269,9 @@ type ReceivableDetails = {
 
 Tool errors are `{ code, message, ...details }`. The codes are the shared names (BUILD.md §12.2; the contracts revert with the same names):
 
-`DUPLICATE_RECEIVABLE`, `BAD_BUYER_SIG`, `WRONG_PAYEE`, `BAD_NONCE`, `TERM_INELIGIBLE`, `KYA_FAIL`, `SELF_DEALING`, `NOT_CONFIRMED`, `BORROWING_BASE_EXCEEDED`, `NOT_CHEAPEST_FIRST`, `AGENT_BUDGET_EXCEEDED`, `TX_LIMIT_EXCEEDED`, `DAILY_LIMIT_EXCEEDED`, `MERCHANT_NOT_ALLOWED`, `GLOBAL_CREDIT_LIMIT_EXCEEDED`, `RESERVATION_EXPIRED`, `FACILITY_NOT_ACTIVE`, `PAUSED`, `INSUFFICIENT_SCOPE`, `KYA_LEVEL_TOO_LOW`, `NOT_PARTY`, `WALLET_BUSY`, `RESERVATION_NOT_OPEN`, `BUDGETS_EXCEED_FUNDED`, `NOT_FINANCED`, `ZERO_AMOUNT`, `SELLER_NOT_FUNDED_BY_LENDER`, `LENDER_RESERVE_TOO_LOW`, plus any other custom error a contract reverts with (decoded by name).
+`DUPLICATE_RECEIVABLE`, `BAD_BUYER_SIG`, `WRONG_PAYEE`, `BAD_NONCE`, `TERM_INELIGIBLE`, `KYA_FAIL`, `SELF_DEALING`, `NOT_CONFIRMED`, `BORROWING_BASE_EXCEEDED`, `NOT_CHEAPEST_FIRST`, `AGENT_BUDGET_EXCEEDED`, `TX_LIMIT_EXCEEDED`, `DAILY_LIMIT_EXCEEDED`, `MERCHANT_NOT_ALLOWED`, `GLOBAL_CREDIT_LIMIT_EXCEEDED`, `RESERVATION_EXPIRED`, `FACILITY_NOT_ACTIVE`, `PAUSED`, `INSUFFICIENT_SCOPE`, `KYA_LEVEL_TOO_LOW`, `NOT_PARTY`, `WALLET_BUSY`, `RESERVATION_NOT_OPEN`, `BUDGETS_EXCEED_FUNDED`, `NOT_FINANCED`, `ZERO_AMOUNT`, `SELLER_NOT_FUNDED_BY_LENDER`, `LENDER_RESERVE_TOO_LOW`, A contract revert with a custom error outside this list is `CONTRACT_REVERTED` with `error: <name>` (and `args`).
 
-MCP-side codes:
+MCP-side codes (`McpErrorCode` in `apps/mcp-server/src/orchestrator/errors.ts`; a tool error's `code` is typed `ErrorCode | McpErrorCode`, plus `INSUFFICIENT_SCOPE` from the scope check):
 
 | Code | Meaning |
 |---|---|
@@ -282,9 +283,12 @@ MCP-side codes:
 | `IDEMPOTENCY_KEY_REUSED` | same key, different arguments |
 | `CREDIT_DECLINED` | the credit decision is not approved (`reasons`) |
 | `NO_ELIGIBLE_LIQUIDITY` | no lender strategy can fund the receivable (`skipped`) |
+| `SPEND_WALLET_NOT_REGISTERED` | `reserve_spend` wallet is not a registered 2-of-2 of the worker and the co-signer (`reason`) |
+| `MERCHANT_URL_NOT_ALLOWED` | `pay_x402` URL origin is not configured for the reservation's merchant (`origin`) |
 | `COSIGNER_REFUSED` | the policy co-signer refused the x402 payment (`reason`) |
 | `PAYMENT_FAILED` | the merchant answered without a settlement (`status`, `body`) |
 | `KEY_NOT_HELD` | the server would need an agent key it does not hold (demo flags off) |
+| `CONTRACT_REVERTED` | a contract reverted with a custom error that is not a shared code (`error`, `args`) |
 | `CHAIN_ERROR` | an RPC failure or an undecodable revert |
 | `INTERNAL` | anything else |
 
@@ -308,5 +312,6 @@ HTTP-level errors on `/mcp` come from the SDK bearer middleware: `401 { error: "
 | `AGENT_KEYS_IN_PROCESS` | `false` | demo: sign as seller/buyer/workers |
 | `LENDER_KEYS_IN_PROCESS` | `false` | demo: sign as lenders |
 | `AQUA_FROM_BLOCK` | swap router creation block | first block for Aqua log discovery |
+| `MERCHANT_ORIGINS` | `MERCHANT_ACCOUNT_ID=http://localhost:${MERCHANT_PORT:-3003}` | `accountId=origin` pairs, comma-separated: the only origins `pay_x402` fetches |
 
 Contract addresses are read from `deployments/testnet/addresses.json` on every call, never hard-coded.

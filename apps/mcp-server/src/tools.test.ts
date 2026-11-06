@@ -1,9 +1,9 @@
-import { receivableConfirmationTypedData, type ReceivableConfirmation } from "@casheth/shared";
+import { CreditFacilityAbi, KYARegistryAbi, receivableConfirmationTypedData, RepaymentRouterAbi, type ReceivableConfirmation } from "@casheth/shared";
 import request from "supertest";
-import { getAddress, keccak256, toHex, type Address, type Hex } from "viem";
+import { decodeFunctionData, erc20Abi, getAddress, keccak256, maxUint256, toHex, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
-import { ADDRS, budget, fakeOrchestrator, kyaAgent, NOW, testApp, type TestOrchestrator } from "./test/fakes.js";
+import { ADDRS, AQUA_ADDRS, budget, COSIGNER_PUBLIC_KEY, fakeOrchestrator, kyaAgent, NOW, testApp, type TestOrchestrator } from "./test/fakes.js";
 import { callTool, rpc } from "./test/rpc.js";
 
 const DAY = 86_400n;
@@ -40,6 +40,21 @@ const uploadArgs = (key = "upload-key-1") => ({
   detailsCommitment: keccak256(toHex("invoice-doc")),
   idempotencyKey: key,
 });
+
+/** Every ERC-20 `approve` in `calls`, decoded; asserts none is unlimited (HTS rejects approve(max)). */
+function approvals(calls: { to: string; data: string }[]) {
+  return calls.flatMap((c) => {
+    try {
+      const { functionName, args } = decodeFunctionData({ abi: erc20Abi, data: c.data as Hex });
+      if (functionName !== "approve") return [];
+      const [spender, amount] = args as [Address, bigint];
+      expect(amount).not.toBe(maxUint256);
+      return [{ token: getAddress(c.to), spender, amount }];
+    } catch {
+      return [];
+    }
+  });
+}
 
 /** Signs the typed data `upload_receivable` returned (uint fields come back as decimal strings). */
 async function signConfirmation(typed: { domain: Record<string, unknown>; message: Record<string, string> }): Promise<Hex> {
@@ -217,6 +232,7 @@ describe("spending", () => {
     });
     o.chain.available_ = 6_000_000_000n;
     o.chain.merchantLists.set(`${id}:${worker}`.toLowerCase(), [merchant]);
+    o.spendWallets.register(spendWallet, worker);
   }
 
   it("reserve_spend maps AGENT_BUDGET_EXCEEDED from the engine", async () => {
@@ -256,6 +272,33 @@ describe("spending", () => {
     expect(o.events.list().at(-1)).toMatchObject({ type: "SpendReserved", amount: "250000", asset: "0.0.429274" });
   });
 
+  it("reserve_spend refuses a spend wallet that is not a registered 2-of-2 of the worker and the co-signer", async () => {
+    const { app, tokens, o } = await setup();
+    fundedFacility(o);
+    o.chain.budgets.set(`${id}:${worker}`.toLowerCase(), budget({ alloc: 1_000_000n, maxPerTx: 500_000n, maxDaily: 2_000_000n }));
+    const reserve = (wallet: Address, key: string) =>
+      callTool(app, tokens.worker, "reserve_spend", { id, worker, spendWallet: wallet, merchant, amount: "250000", idempotencyKey: key });
+    const ecdsa = (publicKey: string) => ({ type: "ECDSA_SECP256K1" as const, publicKey });
+
+    const attackerEoa = getAddress("0x00000000000000000000000000000000000000ee");
+    expect((await reserve(attackerEoa, "wallet-key-1")).json).toMatchObject({ code: "SPEND_WALLET_NOT_REGISTERED", reason: "not_registered" });
+
+    const singleKey = getAddress("0x0000000000000000000000000000000000ad0001");
+    o.spendWallets.register(singleKey, worker, { threshold: 1, keys: [ecdsa(COSIGNER_PUBLIC_KEY)] });
+    expect((await reserve(singleKey, "wallet-key-2")).json).toMatchObject({ code: "SPEND_WALLET_NOT_REGISTERED", reason: "not_2_of_2" });
+
+    const otherWorkers = getAddress("0x0000000000000000000000000000000000ad0002");
+    o.spendWallets.register(otherWorkers, worker, { threshold: 2, keys: [ecdsa(`02${"d".repeat(64)}`), ecdsa(COSIGNER_PUBLIC_KEY)] });
+    expect((await reserve(otherWorkers, "wallet-key-3")).json).toMatchObject({ code: "SPEND_WALLET_NOT_REGISTERED", reason: "worker_not_a_signer" });
+
+    const noCosigner = getAddress("0x0000000000000000000000000000000000ad0003");
+    o.spendWallets.register(noCosigner, worker, { threshold: 2, keys: [ecdsa(`02${"d".repeat(64)}`), ecdsa(`02${"e".repeat(64)}`)] });
+    expect((await reserve(noCosigner, "wallet-key-4")).json).toMatchObject({ code: "SPEND_WALLET_NOT_REGISTERED", reason: "cosigner_not_a_signer" });
+
+    expect(o.chain.sent).toHaveLength(0);
+    expect(o.events.list().at(-1)).toMatchObject({ type: "SpendRejected", code: "SPEND_WALLET_NOT_REGISTERED", reason: "cosigner_not_a_signer" });
+  });
+
   function openReservation(o: TestOrchestrator) {
     const spendId = keccak256(toHex("spend-1"));
     o.chain.reservations.set(spendId.toLowerCase(), {
@@ -282,6 +325,17 @@ describe("spending", () => {
     expect(json).toMatchObject({ code: "COSIGNER_REFUSED", reason: "wrong_payee" });
     expect(o.x402.cosigned).toHaveLength(0);
     expect(o.events.list().at(-1)).toMatchObject({ type: "SpendRejected", code: "COSIGNER_REFUSED", reason: "wrong_payee" });
+  });
+
+  it("pay_x402 refuses a URL outside the reservation merchant's configured origins without fetching it", async () => {
+    const { app, tokens, o } = await setup();
+    const spendId = openReservation(o);
+    const urls = ["http://169.254.169.254/latest/meta-data/", "http://localhost:4020/token", "https://merchant.example.evil.com/research"];
+    for (const [i, url] of urls.entries()) {
+      const { json } = await callTool(app, tokens.worker, "pay_x402", { spendId, url, idempotencyKey: `ssrf-key-${i}` });
+      expect(json).toMatchObject({ code: "MERCHANT_URL_NOT_ALLOWED" });
+    }
+    expect(o.x402.payments).toEqual([]);
   });
 
   it("pay_x402 co-signs a payment matching the reservation and returns the transaction id", async () => {
@@ -373,6 +427,193 @@ describe("funding and lender tools", () => {
     const { app, tokens } = await setup();
     const { json } = await callTool(app, tokens.seller, "fund_agents", { tier: "low", creditUsdc: "1", idempotencyKey: "fund-key-03" });
     expect(json).toMatchObject({ code: "INSUFFICIENT_SCOPE", required: "lend:write" });
+  });
+});
+
+describe("repayment, budgets, registration, quotes and docking", () => {
+  const id = keccak256(toHex("financed-2"));
+  const lender = getAddress("0x00000000000000000000000000000000000000a9");
+  const lenderScopes = "receivable:read credit:read stats:read lend:write";
+
+  function receivableIn(o: TestOrchestrator, state: number) {
+    o.chain.receivables.set(id.toLowerCase(), {
+      seller: seller.address,
+      buyer: buyer.address,
+      currency: ADDRS.usdc,
+      amount: 10_000_000n,
+      dueDate: NOW + 30n * DAY,
+      detailsCommitment: keccak256(toHex("doc")),
+      state,
+      registeredAt: NOW,
+    });
+  }
+
+  function activeFacility(o: TestOrchestrator) {
+    o.chain.facilities.set(id.toLowerCase(), {
+      seller: seller.address,
+      buyer: buyer.address,
+      receivableAmount: 10_000_000n,
+      dueDate: NOW + 30n * DAY,
+      funded: 6_000_000n,
+      committed: 0n,
+      reserved: 0n,
+      status: 1,
+    });
+  }
+
+  it("repay_receivable returns an exact USDC approval and the repay call without the buyer key", async () => {
+    const { app, tokens, o } = await setup();
+    receivableIn(o, 2);
+    const { json } = await callTool(app, tokens.buyer, "repay_receivable", { id, amount: "10000000", idempotencyKey: "repay-key-1" });
+    const calls = json.calls as { to: string; data: Hex }[];
+    expect(json.mode).toBe("calldata");
+    expect(approvals(calls)).toEqual([{ token: ADDRS.usdc, spender: ADDRS.repaymentRouter, amount: 10_000_000n }]);
+    expect(calls[1]!.to).toBe(ADDRS.repaymentRouter);
+    expect(decodeFunctionData({ abi: RepaymentRouterAbi, data: calls[1]!.data })).toMatchObject({ functionName: "repay", args: [id, 10_000_000n] });
+    expect(o.chain.sent).toHaveLength(0);
+    expect(o.events.list()).toHaveLength(0);
+  });
+
+  it("repay_receivable sends approve then repay with the buyer key and records the waterfall split", async () => {
+    const { app, tokens, o } = await setup();
+    receivableIn(o, 2);
+    o.chain.held.add(buyer.address.toLowerCase());
+    o.chain.lenderDue_ = 6_036_986n;
+    const { json } = await callTool(app, tokens.buyer, "repay_receivable", { id, amount: "10000000", idempotencyKey: "repay-key-2" });
+    expect(json).toMatchObject({ mode: "sent", toLenders: "6036986", toSeller: "3963014" });
+    expect(o.chain.sent.map((s) => [s.from, s.call.to])).toEqual([
+      [{ agent: buyer.address }, ADDRS.usdc],
+      [{ agent: buyer.address }, ADDRS.repaymentRouter],
+    ]);
+    expect(approvals(o.chain.sent.map((s) => s.call))).toEqual([{ token: ADDRS.usdc, spender: ADDRS.repaymentRouter, amount: 10_000_000n }]);
+    expect(o.events.list().at(-1)).toMatchObject({ type: "Repaid", id, amount: "10000000", toLenders: "6036986", toSeller: "3963014" });
+  });
+
+  it("repay_receivable is the buyer's only and needs a financed receivable", async () => {
+    const { app, tokens, o, issuer } = await setup();
+    receivableIn(o, 1);
+    expect((await callTool(app, tokens.buyer, "repay_receivable", { id, amount: "1", idempotencyKey: "repay-key-3" })).json).toMatchObject({ code: "NOT_FINANCED" });
+    receivableIn(o, 2);
+    const otherBuyer = await issuer.mint({ agent: getAddress("0x00000000000000000000000000000000000000b9"), role: 2, scope: BUYER_SCOPES });
+    expect((await callTool(app, otherBuyer, "repay_receivable", { id, amount: "1", idempotencyKey: "repay-key-4" })).json).toMatchObject({ code: "NOT_PARTY" });
+  });
+
+  const budgets = [{ worker, alloc: "1000000", maxPerTx: "500000", maxDaily: "2000000", merchants: [merchant] }];
+
+  it("set_budgets returns the seller's setBudgets calldata, or sends it with the seller key and records BudgetsSet", async () => {
+    const { app, tokens, o } = await setup();
+    activeFacility(o);
+    const calldata = await callTool(app, tokens.seller, "set_budgets", { id, budgets, idempotencyKey: "budget-key-1" });
+    const [call] = calldata.json.calls as { to: string; data: Hex }[];
+    expect(call!.to).toBe(ADDRS.creditFacility);
+    expect(decodeFunctionData({ abi: CreditFacilityAbi, data: call!.data })).toMatchObject({
+      functionName: "setBudgets",
+      args: [id, [worker], [1_000_000n], [{ maxPerTx: 500_000n, maxDaily: 2_000_000n, merchants: [merchant] }]],
+    });
+    expect(o.chain.sent).toHaveLength(0);
+
+    o.chain.held.add(seller.address.toLowerCase());
+    const sent = await callTool(app, tokens.seller, "set_budgets", { id, budgets, idempotencyKey: "budget-key-2" });
+    expect(sent.json).toMatchObject({ mode: "sent", txHash: expect.stringMatching(/^0x/) });
+    expect(o.chain.sent.map((s) => s.from)).toEqual([{ agent: seller.address }]);
+    expect(o.events.list().at(-1)).toMatchObject({ type: "BudgetsSet", workers: [worker], alloc: ["1000000"] });
+  });
+
+  it("set_budgets is refused to anyone but the facility's seller", async () => {
+    const { app, o, issuer } = await setup();
+    activeFacility(o);
+    const other = await issuer.mint({ agent: getAddress("0x00000000000000000000000000000000000000c9"), role: 1, scope: SELLER_SCOPES });
+    expect((await callTool(app, other, "set_budgets", { id, budgets, idempotencyKey: "budget-key-3" })).json).toMatchObject({ code: "NOT_PARTY" });
+  });
+
+  it("register_agent registers with the issuer key (role number, UAID hash, owner group) and records AgentRegistered", async () => {
+    const { app, o, issuer } = await setup();
+    const account = getAddress("0x00000000000000000000000000000000000000aa");
+    const args = { account, accountId: "0.0.4242", name: "workerData", role: "worker", level: 2, ownerGroup: "seller-co" };
+    const admin = await issuer.mint({ agent: seller.address, role: 1, scope: `${SELLER_SCOPES} agent:admin` });
+    const { json } = await callTool(app, admin, "register_agent", { ...args, idempotencyKey: "register-key-1" });
+
+    const uaid = "uaid:aid:test;uid=0.0.4242";
+    expect(json).toMatchObject({ uaid, account, role: "worker", level: 2, hcsSeq: 1 });
+    expect(o.chain.sent.map((s) => [s.from, s.call.to])).toEqual([["issuer", ADDRS.kyaRegistry]]);
+    expect(decodeFunctionData({ abi: KYARegistryAbi, data: o.chain.sent[0]!.call.data })).toMatchObject({
+      functionName: "register",
+      args: [account, { uaidHash: keccak256(toHex(uaid)), ownerGroup: keccak256(toHex("seller-co")), role: 3, level: 2, expiresAt: 0n, revoked: false }],
+    });
+    expect(o.events.list().at(-1)).toMatchObject({ type: "AgentRegistered", agentUaid: uaid, evmAddress: account, role: "worker", accountId: "0.0.4242" });
+
+    const notAdmin = await callTool(app, await issuer.mint({ agent: seller.address, role: 1, scope: SELLER_SCOPES }), "register_agent", {
+      ...args,
+      idempotencyKey: "register-key-2",
+    });
+    expect(notAdmin.json).toMatchObject({ code: "INSUFFICIENT_SCOPE", required: "agent:admin" });
+  });
+
+  it("get_quotes previews the solver plan for a Confirmed receivable and refuses any other state", async () => {
+    const { app, tokens, o } = await setup();
+    receivableIn(o, 2);
+    expect((await callTool(app, tokens.seller, "get_quotes", { id })).json).toMatchObject({ code: "NOT_CONFIRMED", state: "Financed" });
+
+    receivableIn(o, 1);
+    const order = { maker: lender, traits: 1n, data: "0x01" as Hex };
+    const strategyHash = keccak256(toHex("credit-a"));
+    o.aqua.strategies = [
+      {
+        kind: "credit",
+        maker: lender,
+        strategyHash,
+        order,
+        args: { maxTenorDays: 60, maxAdvanceBps: 8000, minBuyerOnTime: 0, maxPerBuyer: 5_000_000n, aprBps: 700, minSellerOnTime: 3, maxSellerDefaults: 0, minReserve: 0n, sellerSet: [] },
+        salt: 1n,
+        tokens: [ADDRS.usdc, AQUA_ADDRS.rcn],
+        virtual: { [ADDRS.usdc]: 4_000_000n },
+        realUsdc: 4_000_000n,
+        allowance: 4_000_000n,
+      },
+    ];
+    o.aqua.plan = { fills: [{ order, amount: 4_000_000n, aprBps: 700 }], total: 4_000_000n, skipped: [] };
+    const { result, json } = await callTool(app, tokens.seller, "get_quotes", { id });
+    expect(result.isError).toBeUndefined();
+    expect(json).toMatchObject({
+      borrowingBase: "7500000",
+      strategies: [{ maker: lender, strategyHash, kind: "credit", aprBps: 700, tier: "low", virtualUsdc: "4000000" }],
+      plan: { fills: [{ maker: lender, strategyHash, amount: "4000000", aprBps: 700 }], total: "4000000" },
+    });
+    expect(o.chain.sent).toHaveLength(0);
+  });
+
+  it("close_strategy docks the caller's strategy with its tokens and records StrategyDocked", async () => {
+    const { app, o, issuer } = await setup();
+    const token = await issuer.mint({ agent: lender, role: 4, scope: lenderScopes });
+    const strategyHash = keccak256(toHex("base-a"));
+    const tUsdt = getAddress("0x00000000000000000000000000000000000000f6");
+    o.aqua.strategies = [
+      {
+        kind: "base",
+        maker: lender,
+        strategyHash,
+        order: { maker: lender, traits: 0n, data: "0x02" },
+        feeBps: 30,
+        salt: 1n,
+        tokens: [ADDRS.usdc, tUsdt],
+        virtual: {},
+        realUsdc: 0n,
+        allowance: 0n,
+      },
+    ];
+    o.chain.held.add(lender.toLowerCase());
+    const docked: unknown[] = [];
+    o.aqua.dock = async (maker, p, inProcess) => {
+      docked.push({ maker, ...p, inProcess });
+      return { mode: "sent", txHash: keccak256(toHex("dock-tx")) };
+    };
+    const { json } = await callTool(app, token, "close_strategy", { strategyHash, idempotencyKey: "close-key-1" });
+    expect(json).toMatchObject({ mode: "sent", strategyHash, txHash: keccak256(toHex("dock-tx")) });
+    expect(docked).toEqual([{ maker: lender, strategyHash, tokens: [ADDRS.usdc, tUsdt], inProcess: true }]);
+    expect(o.events.list().at(-1)).toMatchObject({ type: "StrategyDocked", kind: "base", maker: lender, strategyHash });
+
+    const unknown = await callTool(app, token, "close_strategy", { strategyHash: keccak256(toHex("nope")), idempotencyKey: "close-key-2" });
+    expect(unknown.json).toMatchObject({ code: "NOT_FOUND" });
   });
 });
 

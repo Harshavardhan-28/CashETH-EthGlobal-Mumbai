@@ -1,9 +1,11 @@
 /**
  * Audit trail: every state change (and every rejection) is appended to the local `EventStore` and the same JSON is
  * published to the HCS audit topic (derived links trimmed first if it would not fit one 1024-byte message). HCS is
- * best-effort: a failed publish is recorded on the local event as `hcsError` and never fails the tool. Appends are serialised so `seq` / `prevSeq` on HCS match the local store.
+ * best-effort: a failed publish is recorded on the local event as `hcsError` and never fails the tool. Appends are
+ * serialised so `seq` / `prevSeq` on HCS match the local store.
  */
 import type { AuditEvent, AuditEventInput, EventStore } from "@casheth/engine";
+import { enqueue } from "./queue.js";
 import type { Orchestrator } from "./types.js";
 
 /** Bigints become decimal strings, undefined fields are dropped (HCS messages are JSON, amounts as strings). */
@@ -54,14 +56,5 @@ async function append(o: Orchestrator, input: AuditEventInput): Promise<AuditEve
 
 /** Appends one audit event (locally and to HCS); resolves with the stored event, never rejects on HCS errors. */
 export function record(o: Orchestrator, input: AuditEventInput): Promise<AuditEvent> {
-  const previous = queues.get(o.events) ?? Promise.resolve();
-  const next = previous.then(
-    () => append(o, input),
-    () => append(o, input),
-  );
-  queues.set(
-    o.events,
-    next.catch(() => undefined),
-  );
-  return next;
+  return enqueue(queues, o.events, () => append(o, input));
 }

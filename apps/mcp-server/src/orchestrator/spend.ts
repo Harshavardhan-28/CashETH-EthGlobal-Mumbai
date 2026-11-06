@@ -17,12 +17,12 @@ import {
   requireParty,
   RESERVATION_OPEN,
   ROLE_NUMBERS,
-  sameAddress,
   txLink,
   units,
   ZERO_HASH,
 } from "./common.js";
-import { fail, ToolError } from "./errors.js";
+import { fail, ToolError, type ToolErrorCode } from "./errors.js";
+import { spendWalletProblem } from "./spendWallets.js";
 import type { Caller, Orchestrator, PaymentRequirements, TransferSummary } from "./types.js";
 
 export const DEFAULT_TTL_SECONDS = 600;
@@ -44,7 +44,10 @@ export function spendIdOf(id: Hex, worker: Address, caller: Address, idempotency
   return keccak256(encodePacked(["bytes32", "address", "uint256"], [id, worker, nonce]));
 }
 
-/** `reserve_spend`: engine pre-flight (`checkSpend`), one open reservation per wallet, then `facility.reserve`. */
+/**
+ * `reserve_spend`: the spend wallet must be a registered 2-of-2 wallet of the worker and the co-signer, then the
+ * engine pre-flight (`checkSpend`), one open reservation per wallet, then `facility.reserve`.
+ */
 export async function reserveSpend(o: Orchestrator, caller: Caller, input: ReserveInput) {
   const id = bytes32(input.id, "id");
   const worker = addr(input.worker, "worker");
@@ -58,10 +61,17 @@ export async function reserveSpend(o: Orchestrator, caller: Caller, input: Reser
   if (caller.role === ROLE_NUMBERS.worker) requireParty(caller, worker, "worker");
   else requireParty(caller, info.seller, "seller of this facility");
 
-  const rejected = async (code: string, stage: "engine" | "contract", message: string): Promise<never> => {
-    await record(o, { type: "SpendRejected", id, worker, merchant, amount: amount.toString(), code, stage, ...actor(caller) });
-    throw new ToolError(code, message, { stage });
+  const rejected = async (code: ToolErrorCode, stage: "engine" | "contract", message: string, details: Record<string, unknown> = {}): Promise<never> => {
+    await record(o, { type: "SpendRejected", id, worker, merchant, amount: amount.toString(), code, stage, ...details, ...actor(caller) });
+    throw new ToolError(code, message, { stage, ...details });
   };
+
+  const walletProblem = await spendWalletProblem(o.spendWallets, spendWallet, worker);
+  if (walletProblem) {
+    return rejected("SPEND_WALLET_NOT_REGISTERED", "engine", `spend wallet ${spendWallet} is not a registered 2-of-2 wallet of the worker and the co-signer`, {
+      reason: walletProblem,
+    });
+  }
 
   const [budget, available, merchants, paused, now, busy] = await Promise.all([
     o.chain.budget(id, worker),
@@ -139,9 +149,10 @@ export function checkTransfer(
 }
 
 /**
- * `pay_x402`: pays `url` from the reservation's spend wallet. The worker key signs (held in process for the
- * demo); `cosign` runs the engine's `approvePayment` against the open reservation and the byte-level
- * `checkTransfer`, and signs with the co-signer key only when both pass.
+ * `pay_x402`: pays `url` from the reservation's spend wallet. The URL's origin must be configured for the
+ * reservation's merchant (no fetches anywhere else). The worker key signs (held in process for the demo);
+ * `cosign` runs the engine's `approvePayment` against the open reservation and the byte-level `checkTransfer`,
+ * and signs with the co-signer key only when both pass.
  */
 export async function payX402(o: Orchestrator, caller: Caller, input: { spendId: string; url: string }) {
   const spendId = bytes32(input.spendId, "spendId");
@@ -157,6 +168,9 @@ export async function payX402(o: Orchestrator, caller: Caller, input: { spendId:
   if (o.now() >= r.expiry) fail("RESERVATION_EXPIRED", "the reservation expired; reserve again");
 
   const [spendWalletId, merchantAccountId] = await Promise.all([o.x402.accountIdOf(r.spendWallet), o.x402.accountIdOf(r.merchant)]);
+  if (!(o.config.merchantOrigins[merchantAccountId] ?? []).includes(url.origin)) {
+    fail("MERCHANT_URL_NOT_ALLOWED", `${url.origin} is not a configured origin of the reservation's merchant ${merchantAccountId}`, { origin: url.origin });
+  }
   let refusal: string | undefined;
   const cosign = async (txBase64: string, requirements: PaymentRequirements): Promise<string> => {
     const transfer = o.x402.decodeTransfer(txBase64);

@@ -15,7 +15,7 @@ import {
 import { encodeAbiParameters, encodeFunctionData, isHex, keccak256, recoverTypedDataAddress, type Address, type Hex } from "viem";
 import { jsonSafe, record } from "./audit.js";
 import { actor, addr, bytes32, bytes32OrHash, sameAddress, STATE, STATE_NAMES, txLink, units, requireParty } from "./common.js";
-import { fail, ToolError } from "./errors.js";
+import { fail, ToolError, type ToolErrorCode } from "./errors.js";
 import type { PendingReceivable } from "./pending.js";
 import type { Caller, Orchestrator } from "./types.js";
 
@@ -112,7 +112,7 @@ export async function uploadReceivable(o: Orchestrator, caller: Caller, input: U
   return { pendingId, id, confirmationRequest: { typedData: jsonSafe(typedDataOf(pending)) } };
 }
 
-async function reject(o: Orchestrator, caller: Caller, id: Hex, code: string, message: string): Promise<never> {
+async function reject(o: Orchestrator, caller: Caller, id: Hex, code: ToolErrorCode, message: string): Promise<never> {
   await record(o, { type: "ReceivableRejected", id, code, stage: "confirm", ...actor(caller) });
   throw new ToolError(code, message, { id });
 }

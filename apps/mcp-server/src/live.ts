@@ -4,7 +4,9 @@
  * `@casheth/aqua` (discovery, solver, ship/dock) and `@casheth/hedera` (co-signed x402). Contract addresses are
  * read from `deployments/testnet/addresses.json` on every use, so contracts deployed after boot are picked up.
  */
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AquaProtocolContract, Address as SdkAddress, HexString } from "@1inch/aqua-sdk";
 import {
   buildBaseYieldOrder,
@@ -26,17 +28,20 @@ import {
   evmClients,
   hieroClient,
   mintReceivableNft,
+  decodeMirrorKey,
   mirror,
   payX402,
   PrivateKey,
   publishAudit,
   type AuditEvent as HcsAuditEvent,
+  type DecodedKey,
 } from "@casheth/hedera";
 import {
   AquaRouterAbi,
   CashEthSwapVMRouterAbi,
   CreditFacilityAbi,
   DEMO_ACCOUNTS,
+  isErrorCode,
   KYARegistryAbi,
   loadAddresses,
   ReceivableRegistryAbi,
@@ -62,6 +67,8 @@ import { hexKey, type McpConfig } from "./config.js";
 import { ToolError } from "./orchestrator/errors.js";
 import { createAnthropicExplainer } from "./orchestrator/explain.js";
 import { PendingStore } from "./orchestrator/pending.js";
+import { enqueue } from "./orchestrator/queue.js";
+import type { SpendWalletPort } from "./orchestrator/spendWallets.js";
 import { BasicStatsProvider } from "./orchestrator/stats.js";
 import type {
   AgentDirectoryEntry,
@@ -98,13 +105,19 @@ function revertData(err: unknown): Hex | undefined {
   return data && data.length >= 10 ? (data as Hex) : undefined;
 }
 
-/** A contract revert as a ToolError named after the custom error (the shared error codes). */
-function toToolError(err: unknown, call: Calldata): ToolError {
+/**
+ * A failed simulation as a ToolError: a custom error with a shared name keeps that name as the code (the
+ * contracts revert with the shared error codes), any other decodable custom error becomes `CONTRACT_REVERTED`
+ * with `error: <name>`, and anything else `CHAIN_ERROR`.
+ */
+export function toToolError(err: unknown, call: Calldata): ToolError {
   const data = revertData(err);
   if (data) {
     try {
       const { errorName, args } = decodeErrorResult({ abi: ERRORS_ABI, data });
-      return new ToolError(errorName, `${call.description} reverted ${errorName}`, args?.length ? { args: args.map(String) } : {});
+      const details = args?.length ? { args: args.map(String) } : {};
+      const message = `${call.description} reverted ${errorName}`;
+      return isErrorCode(errorName) ? new ToolError(errorName, message, details) : new ToolError("CONTRACT_REVERTED", message, { error: errorName, ...details });
     } catch {
       // unknown selector: fall through
     }
@@ -175,6 +188,8 @@ export function mirrorLogSource(env: Env): LogSource {
 
 export function createLiveChain(env: Env, cfg: McpConfig, keys: AgentKey[]): ChainPort {
   const { public: pub, chain } = evmClients(env);
+  /** One transaction in flight per signing key, so concurrent tool calls never race for a nonce. */
+  const sendQueues = new Map<Hex, Promise<unknown>>();
   const wallets = new Map<string, WalletClient>();
   const walletFor = (key: Hex): WalletClient => {
     let w = wallets.get(key);
@@ -323,21 +338,40 @@ export function createLiveChain(env: Env, cfg: McpConfig, keys: AgentKey[]): Cha
       const k = keys.find((x) => x.address.toLowerCase() === agent.toLowerCase());
       return !!k && inProcessAllowed(k.prefix, cfg);
     },
-    async send(from, call) {
-      const wallet = walletFor(keyOf(from));
-      const account = wallet.account!;
-      let gas: bigint;
-      try {
-        await pub.call({ account, to: call.to, data: call.data });
-        gas = ((await pub.estimateGas({ account, to: call.to, data: call.data })) * 13n) / 10n;
-      } catch (err) {
-        throw toToolError(err, call);
-      }
-      const hash = await wallet.sendTransaction({ account, chain, to: call.to, data: call.data, gas });
-      const receipt = await pub.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new ToolError("CHAIN_ERROR", `${call.description} reverted on-chain (${hash})`, { txHash: hash });
-      return { txHash: hash };
+    send(from, call) {
+      const key = keyOf(from);
+      return enqueue(sendQueues, key, async () => {
+        const wallet = walletFor(key);
+        const account = wallet.account!;
+        let gas: bigint;
+        try {
+          await pub.call({ account, to: call.to, data: call.data });
+          gas = ((await pub.estimateGas({ account, to: call.to, data: call.data })) * 13n) / 10n;
+        } catch (err) {
+          throw toToolError(err, call);
+        }
+        const hash = await wallet.sendTransaction({ account, chain, to: call.to, data: call.data, gas });
+        const receipt = await pub.waitForTransactionReceipt({ hash });
+        if (receipt.status !== "success") throw new ToolError("CHAIN_ERROR", `${call.description} reverted on-chain (${hash})`, { txHash: hash });
+        return { txHash: hash };
+      });
     },
+  };
+}
+
+/**
+ * `token.approve(spender, current allowance + add)`: an exact amount, never "max" (HTS rejects unlimited
+ * approvals), raised by what the new strategy needs on top of the open ones.
+ */
+export async function exactApprovalCall(
+  reader: Pick<PublicClient, "readContract">,
+  p: { token: Address; owner: Address; spender: Address; add: bigint; label: string },
+): Promise<Calldata> {
+  const current = await reader.readContract({ address: p.token, abi: erc20Abi, functionName: "allowance", args: [p.owner, p.spender] });
+  return {
+    to: p.token,
+    data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [p.spender, current + p.add] }),
+    description: `${p.label}.approve(Aqua, current allowance + ${p.add}) (exact: HTS rejects unlimited approvals)`,
   };
 }
 
@@ -374,14 +408,6 @@ export function createLiveAqua(env: Env, cfg: McpConfig, keys: AgentKey[]): Aqua
     });
     return { to: getAddress(String(tx.to)), data: String(tx.data) as Hex, description };
   };
-  const approveCall = async (token: Address, owner: Address, spender: Address, add: bigint, label: string): Promise<Calldata> => {
-    const current = (await pub.readContract({ address: token, abi: erc20Abi, functionName: "allowance", args: [owner, spender] })) as bigint;
-    return {
-      to: token,
-      data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [spender, current + add] }),
-      description: `${label}.approve(Aqua, current allowance + ${add}) (exact: HTS rejects unlimited approvals)`,
-    };
-  };
 
   return {
     addresses,
@@ -409,11 +435,11 @@ export function createLiveAqua(env: Env, cfg: McpConfig, keys: AgentKey[]): Aqua
         };
       }
       const credit = await buildLenderOrder(pub, addrs.orderBuilder, { maker: lender, rcn: addrs.rcn, usdc: addrs.usdc, args: plan.args, salt: plan.salt });
-      const calls: Calldata[] = [await approveCall(addrs.usdc, lender, addrs.aqua, plan.creditUsdc + (plan.base?.usdc ?? 0n), "USDC")];
+      const calls: Calldata[] = [await exactApprovalCall(pub, { token: addrs.usdc, owner: lender, spender: addrs.aqua, add: plan.creditUsdc + (plan.base?.usdc ?? 0n), label: "USDC" })];
       let base: { strategy: Hex } | undefined;
       if (plan.base && addrs.tUsdt) {
         base = await buildBaseYieldOrder(pub, addrs.orderBuilder, { maker: lender, usdc: addrs.usdc, tUsdt: addrs.tUsdt, feeBps: plan.base.feeBps, salt: plan.salt });
-        calls.push(await approveCall(addrs.tUsdt, lender, addrs.aqua, plan.base.tUsdt, "tUSDT"));
+        calls.push(await exactApprovalCall(pub, { token: addrs.tUsdt, owner: lender, spender: addrs.aqua, add: plan.base.tUsdt, label: "tUSDT" }));
       }
       calls.push(
         shipCall(addrs, credit.strategy, [
@@ -504,6 +530,51 @@ export function createLiveX402(env: Env, cfg: McpConfig, keys: AgentKey[]): X402
   };
 }
 
+const SPEND_WALLETS_PATH = fileURLToPath(new URL("../../../deployments/testnet/spend-wallets.json", import.meta.url));
+
+/** Account ids of the registered spend wallets (`scripts/c5-spend-wallets.ts`), read on every call. */
+function registeredSpendWalletIds(): Set<string> {
+  if (!existsSync(SPEND_WALLETS_PATH)) return new Set();
+  const file = JSON.parse(readFileSync(SPEND_WALLETS_PATH, "utf8")) as { wallets?: Record<string, { accountId?: string }> };
+  return new Set(Object.values(file.wallets ?? {}).flatMap((w) => (w.accountId ? [w.accountId] : [])));
+}
+
+/** Memoises `load(key)` for the process lifetime; a failed lookup is forgotten so the next call retries. */
+function memo<T>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> {
+  let hit = cache.get(key);
+  if (!hit) {
+    hit = load().catch((err: unknown) => {
+      cache.delete(key);
+      throw err;
+    });
+    cache.set(key, hit);
+  }
+  return hit;
+}
+
+/** Registered spend wallets with their mirror-node keys, and agent public keys, both cached per account. */
+export function createLiveSpendWallets(env: Env, cfg: McpConfig): SpendWalletPort {
+  const walletKeys = new Map<string, Promise<DecodedKey | undefined>>();
+  const agentPublicKeys = new Map<string, Promise<string | undefined>>();
+  return {
+    cosignerPublicKey: PrivateKey.fromStringECDSA(cfg.cosignerKey).publicKey.toStringRaw(),
+    async registeredKey(spendWallet) {
+      const accountId = longZeroAccountId(spendWallet);
+      if (!accountId || !registeredSpendWalletIds().has(accountId)) return undefined;
+      return memo(walletKeys, accountId, async () => {
+        const { key } = await mirror.account(env, accountId);
+        return key ? decodeMirrorKey(key) : undefined;
+      });
+    },
+    publicKeyOf(account) {
+      return memo(agentPublicKeys, account.toLowerCase(), async () => {
+        const { key } = await mirror.account(env, account);
+        return key?._type === "ECDSA_SECP256K1" ? key.key : undefined;
+      });
+    },
+  };
+}
+
 const ROLE_BY_PREFIX: Record<string, AgentRoleName> = {
   SELLER: "seller",
   BUYER: "buyer",
@@ -555,6 +626,7 @@ export async function createLiveOrchestrator(env: Env, cfg: McpConfig): Promise<
     chain,
     aqua,
     x402: createLiveX402(env, cfg, keys),
+    spendWallets: createLiveSpendWallets(env, cfg),
     hcs: {
       topicId: cfg.hcsTopicId,
       async publish(message) {
@@ -582,7 +654,7 @@ export async function createLiveOrchestrator(env: Env, cfg: McpConfig): Promise<
     events,
     idempotency: new IdempotencyLedger(join(cfg.dataDir, "idempotency.json")),
     pending: new PendingStore(join(cfg.dataDir, "pending.json")),
-    config: { x402Network: cfg.x402Network, usdcTokenId: cfg.usdcTokenId, explorer: "testnet" },
+    config: { x402Network: cfg.x402Network, usdcTokenId: cfg.usdcTokenId, explorer: "testnet", merchantOrigins: cfg.merchantOrigins },
     now: () => BigInt(Math.floor(Date.now() / 1000)),
     log,
   };

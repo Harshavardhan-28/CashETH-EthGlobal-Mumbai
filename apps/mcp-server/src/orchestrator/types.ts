@@ -8,6 +8,7 @@ import type { EventStore, IdempotencyLedger } from "@casheth/engine";
 import type { X402Result } from "@casheth/hedera";
 import type { Address, Hex } from "viem";
 import type { PendingStore } from "./pending.js";
+import type { SpendWalletPort } from "./spendWallets.js";
 
 /** One transaction the server cannot sign itself, returned for the agent to sign and send in order. */
 export type Calldata = { to: Address; data: Hex; description: string };
@@ -264,6 +265,8 @@ export type OrchestratorConfig = {
   usdcTokenId: string;
   /** Hashscan base for links (testnet). */
   explorer: "testnet";
+  /** Merchant account id -> URL origins `pay_x402` may fetch for a reservation to that merchant. */
+  merchantOrigins: Record<string, string[]>;
 };
 
 export interface Orchestrator {
@@ -275,6 +278,7 @@ export interface Orchestrator {
   explainer: ExplainerPort;
   stats: StatsProvider;
   identity: IdentityPort;
+  spendWallets: SpendWalletPort;
   events: EventStore;
   idempotency: IdempotencyLedger;
   pending: PendingStore;
