@@ -1,0 +1,191 @@
+import { type AccessTokenClaims, ROLE_SCOPES, signAgentAssertion } from "@casheth/shared";
+import type { Application } from "express";
+import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT, type JSONWebKeySet } from "jose";
+import request from "supertest";
+import { describe, expect, it } from "vitest";
+import { JtiReplayCache, JWT_BEARER_GRANT, handleJwtBearerGrant } from "./jwtBearer.js";
+import { InMemoryKyaReader } from "./kya.js";
+import { ISSUER, MANDATE, newAgent, RESOURCE, type TestAgent, tempKeys, testApp } from "./test/fixtures.js";
+
+async function assertionFor(agent: TestAgent, extra: { mandateHash?: `0x${string}`; kyaEvidence?: string } = {}) {
+  return signAgentAssertion({
+    privateKey: agent.privateKey,
+    uaid: agent.uaid,
+    audience: ISSUER.href,
+    mandateHash: extra.mandateHash ?? MANDATE,
+    kyaEvidence: extra.kyaEvidence,
+  });
+}
+
+function tokenRequest(app: Application, form: Record<string, string>) {
+  return request(app).post("/token").type("form").send({ grant_type: JWT_BEARER_GRANT, resource: RESOURCE.href, ...form });
+}
+
+async function verifyWithJwks(app: Application, token: string) {
+  const jwks = (await request(app).get("/.well-known/jwks.json").expect(200)).body as JSONWebKeySet;
+  const { payload, protectedHeader } = await jwtVerify<AccessTokenClaims>(token, createLocalJWKSet(jwks), {
+    issuer: ISSUER.href,
+    audience: RESOURCE.href,
+    algorithms: ["ES256"],
+  });
+  return { claims: payload, header: protectedHeader };
+}
+
+describe("POST /token (jwt-bearer)", () => {
+  it("jwt-bearer issues a token with seller scopes for a level-2 seller", async () => {
+    const { app, kya } = await testApp();
+    const seller = newAgent(1, 2, {}, kya);
+
+    const res = await tokenRequest(app, { assertion: await assertionFor(seller) }).expect(200);
+
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(res.body).toMatchObject({ token_type: "Bearer", expires_in: 600, scope: ROLE_SCOPES[1]!.join(" ") });
+    const { claims, header } = await verifyWithJwks(app, res.body.access_token);
+    expect(header.alg).toBe("ES256");
+    expect(claims).toMatchObject({
+      iss: ISSUER.href,
+      sub: seller.uaid,
+      agent: seller.address,
+      role: 1,
+      kya_level: 2,
+      owner_group: seller.record.ownerGroup,
+      scope: "receivable:write receivable:read credit:read facility:open budget:write spend:reserve",
+    });
+  });
+
+  it("level-1 agent gets read scopes only", async () => {
+    const { app, kya } = await testApp();
+    const worker = newAgent(3, 1, {}, kya);
+
+    const res = await tokenRequest(app, { assertion: await assertionFor(worker) }).expect(200);
+
+    expect(res.body.scope).toBe("receivable:read credit:read");
+    const { claims } = await verifyWithJwks(app, res.body.access_token);
+    expect(claims.kya_level).toBe(1);
+    expect(claims.scope).toBe("receivable:read credit:read");
+  });
+
+  it("revoked agent is rejected with KYA_FAIL", async () => {
+    const { app, kya } = await testApp();
+    const seller = newAgent(1, 2, { revoked: true }, kya);
+
+    const res = await tokenRequest(app, { assertion: await assertionFor(seller) }).expect(400);
+
+    expect(res.body).toMatchObject({ error: "invalid_grant", code: "KYA_FAIL" });
+    expect(res.body).not.toHaveProperty("access_token");
+  });
+
+  it("expired KYA registration is rejected with KYA_FAIL", async () => {
+    const { app, kya } = await testApp();
+    const seller = newAgent(1, 2, { expiresAt: BigInt(Math.floor(Date.now() / 1000) - 1) }, kya);
+
+    const res = await tokenRequest(app, { assertion: await assertionFor(seller) }).expect(400);
+    expect(res.body.code).toBe("KYA_FAIL");
+  });
+
+  it("unregistered agent is rejected with KYA_FAIL", async () => {
+    const { app } = await testApp();
+    const stranger = newAgent(1, 2);
+
+    const res = await tokenRequest(app, { assertion: await assertionFor(stranger) }).expect(400);
+    expect(res.body.code).toBe("KYA_FAIL");
+  });
+
+  it("mandate hash mismatch is rejected with KYA_FAIL", async () => {
+    const { app, kya } = await testApp();
+    const seller = newAgent(1, 2, {}, kya);
+
+    const res = await tokenRequest(app, { assertion: await assertionFor(seller, { mandateHash: `0x${"00".repeat(32)}` }) }).expect(400);
+    expect(res.body.code).toBe("KYA_FAIL");
+  });
+
+  it("level-0 agent is rejected with KYA_LEVEL_TOO_LOW", async () => {
+    const { app, kya } = await testApp();
+    const buyer = newAgent(2, 0, {}, kya);
+
+    const res = await tokenRequest(app, { assertion: await assertionFor(buyer) }).expect(400);
+    expect(res.body).toMatchObject({ error: "invalid_grant", code: "KYA_LEVEL_TOO_LOW" });
+  });
+
+  it("resource mismatch is rejected", async () => {
+    const { app, kya } = await testApp();
+    const seller = newAgent(1, 2, {}, kya);
+
+    const res = await tokenRequest(app, { assertion: await assertionFor(seller), resource: "http://localhost:9999/other" }).expect(400);
+
+    expect(res.body.error).toBe("invalid_target");
+    expect(res.body).not.toHaveProperty("access_token");
+  });
+
+  it("jti replay is rejected", async () => {
+    const { app, kya } = await testApp();
+    const seller = newAgent(1, 2, {}, kya);
+    const assertion = await assertionFor(seller);
+
+    await tokenRequest(app, { assertion }).expect(200);
+    const replay = await tokenRequest(app, { assertion }).expect(400);
+
+    expect(replay.body.error).toBe("invalid_grant");
+    expect(replay.body.error_description).toMatch(/jti/);
+  });
+
+  it("access token audience equals MCP_RESOURCE_URL and expires in 600s", async () => {
+    const { app, kya } = await testApp();
+    const lender = newAgent(4, 2, {}, kya);
+
+    const res = await tokenRequest(app, { assertion: await assertionFor(lender) }).expect(200);
+
+    const { claims, header } = await verifyWithJwks(app, res.body.access_token);
+    expect(header.typ).toBe("at+jwt");
+    expect(claims.aud).toBe(RESOURCE.href);
+    expect(claims.exp - claims.iat).toBe(600);
+    expect(claims.jti).toEqual(expect.any(String));
+    expect(claims.scope).toBe("receivable:read credit:read");
+  });
+
+  it("kya_evidence from the configured issuer raises the level to 3", async () => {
+    const skyfire = await generateKeyPair("ES256");
+    const skyfireIssuer = "https://skyfire.example";
+    const kya = new InMemoryKyaReader();
+    const worker = newAgent(3, 1, {}, kya);
+    const deps = {
+      kya,
+      keys: await tempKeys(),
+      issuer: ISSUER,
+      resource: RESOURCE,
+      jti: new JtiReplayCache(),
+      kyaEvidence: {
+        issuer: skyfireIssuer,
+        keys: createLocalJWKSet({ keys: [{ ...(await exportJWK(skyfire.publicKey)), alg: "ES256" }] }),
+      },
+    };
+    const evidence = await new SignJWT({ sub: worker.address })
+      .setProtectedHeader({ alg: "ES256", typ: "kya+jwt" })
+      .setIssuer(skyfireIssuer)
+      .setAudience(ISSUER.href)
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(skyfire.privateKey);
+
+    const raised = await handleJwtBearerGrant(deps, {
+      grant_type: JWT_BEARER_GRANT,
+      assertion: await assertionFor(worker, { kyaEvidence: evidence }),
+      resource: RESOURCE.href,
+    });
+    expect(raised.scope).toBe(ROLE_SCOPES[3]!.join(" "));
+
+    const forged = await new SignJWT({ sub: worker.address })
+      .setProtectedHeader({ alg: "ES256", typ: "kya+jwt" })
+      .setIssuer(skyfireIssuer)
+      .setAudience(ISSUER.href)
+      .setExpirationTime("5m")
+      .sign((await generateKeyPair("ES256")).privateKey);
+    await expect(
+      handleJwtBearerGrant(deps, {
+        grant_type: JWT_BEARER_GRANT,
+        assertion: await assertionFor(worker, { kyaEvidence: forged }),
+        resource: RESOURCE.href,
+      }),
+    ).rejects.toMatchObject({ code: "KYA_FAIL" });
+  });
+});

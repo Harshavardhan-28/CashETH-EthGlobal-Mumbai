@@ -17,3 +17,14 @@ export {
   signReceivableConfirmation,
 } from "./eip712.js";
 export type { ReceivableConfirmation, ReceivableDomain } from "./eip712.js";
+export {
+  AGENT_ADMIN_SCOPE,
+  ALL_SCOPES,
+  evmAddressFromJwk,
+  READ_SCOPES,
+  ROLE_SCOPES,
+  ROLES,
+  scopesForRole,
+  signAgentAssertion,
+} from "./auth.js";
+export type { AccessTokenClaims, AgentAssertionClaims, SignAgentAssertionInput } from "./auth.js";
