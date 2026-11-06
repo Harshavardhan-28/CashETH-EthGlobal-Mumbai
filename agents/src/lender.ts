@@ -66,3 +66,5 @@ export function createLenderAgent({ client, send }: LenderOptions) {
     },
   };
 }
+
+export type LenderAgent = ReturnType<typeof createLenderAgent>;

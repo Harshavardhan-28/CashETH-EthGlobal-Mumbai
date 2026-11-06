@@ -1,14 +1,14 @@
 export { AgentClient, ToolCallError, freshKey, idempotencyKey } from "./mcpClient.js";
 export type { AgentClientOptions, AgentRole, ToolCaller } from "./mcpClient.js";
 export { createSellerAgent } from "./seller.js";
-export type { Invoice, StoredDocument, UploadResult, WireTypedData } from "./seller.js";
+export type { FacilityOpened, Invoice, PlannedFill, Quotes, SellerAgent, StoredDocument, UploadResult, WireTypedData, WorkerBudget } from "./seller.js";
 export { INVOICE_PO_1003, INVOICE_PO_1003_DUE_UNIX, INVOICE_PO_1003_PDF } from "./fixtures.js";
 export { confirmationMessage, createBuyerAgent, signConfirmation } from "./buyer.js";
-export type { BuyerOptions } from "./buyer.js";
+export type { BuyerAgent, BuyerOptions, ConfirmResult } from "./buyer.js";
 export { createWorkerAgent, pickOffer, PurchaseError } from "./worker.js";
-export type { PurchaseOutcome, PurchaseRequest, WorkerOptions } from "./worker.js";
+export type { PurchaseOutcome, PurchaseRequest, WorkerAgent, WorkerOptions } from "./worker.js";
 export { createLenderAgent } from "./lender.js";
-export type { LenderOptions, ShipOutcome, ShipParams } from "./lender.js";
+export type { LenderAgent, LenderOptions, ShipOutcome, ShipParams } from "./lender.js";
 export { agentKitFromEnv, createAgentKit, kitTools } from "./kit.js";
 export type { AgentKit, AgentKitOptions } from "./kit.js";
 export { walletCallSender } from "./sendCalls.js";

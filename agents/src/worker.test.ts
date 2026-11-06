@@ -87,6 +87,15 @@ describe("workerAgent.buy", () => {
     expect(outcome).toMatchObject({ status: "committed", spendId: SPEND_ID, transactionId: TX_ID, price: 250_000n });
   });
 
+  it("reserves an explicit amount instead of the offer's price and stops when the reservation is refused", async () => {
+    const { agent, calls } = setup({ reserve_spend: new ToolCallError("reserve_spend", { code: "TX_LIMIT_EXCEEDED", stage: "engine" }) });
+    const outcome = await agent.buy({ id: facilityId, service: "research", budgetHint: 500_000n, purchaseId: "p-big", amount: 600_000n });
+
+    expect(calls.map((c) => c.tool)).toEqual(["reserve_spend"]);
+    expect(calls[0]!.args).toMatchObject({ amount: "600000" });
+    expect(outcome).toEqual({ status: "rejected", stage: "reserve", code: "TX_LIMIT_EXCEEDED" });
+  });
+
   it("derives one distinct key per step from the receivable, service and purchaseId", async () => {
     const happy = { reserve_spend: reserved, pay_x402: { spendId: SPEND_ID, transactionId: TX_ID }, commit_spend: {} };
     const keysOf = async (purchaseId: string, service = "research") => {

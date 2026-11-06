@@ -70,6 +70,16 @@ export async function createAuditTopic(
   return { topicId: receipt.topicId.toString(), txId };
 }
 
+/** Creates the agents' notes topic. It has no submit key, so any agent account may post to it (the audit topic stays operator-only). */
+export async function createNotesTopic(
+  client: Client,
+  memo = "CashETH agent notes v1",
+): Promise<{ topicId: string; txId: string }> {
+  const { receipt, txId } = await executeForReceipt(client, new TopicCreateTransaction().setTopicMemo(memo));
+  if (!receipt.topicId) throw new Error("Topic creation returned no topic id");
+  return { topicId: receipt.topicId.toString(), txId };
+}
+
 /** Submits one audit event; the client's operator must hold the topic's submit key. */
 export async function publishAudit(
   client: Client,

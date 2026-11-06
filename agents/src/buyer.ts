@@ -26,6 +26,16 @@ export async function signConfirmation(account: LocalAccount, typedData: WireTyp
   return signReceivableConfirmation(account, domain, message);
 }
 
+/** `confirm_receivable`'s answer (docs/API.md section 3); the NFT and HCS fields are null when those steps failed. */
+export interface ConfirmResult {
+  id: Hex;
+  txHash: Hex;
+  hashscan: string;
+  nftSerial: number | null;
+  hcsSeq: number | null;
+  decision: { approved: boolean; score: number; advanceBps: number; limit: string; reasons: string[] };
+}
+
 type Sent = { id: Hex; mode: "sent"; [field: string]: unknown };
 type RepayResult = Sent | { id: Hex; mode: "calldata"; calls: Calldata[] };
 
@@ -39,9 +49,9 @@ export interface BuyerOptions {
 export function createBuyerAgent({ client, account, send }: BuyerOptions) {
   return {
     /** Signs the typed data of an upload and sends it to `confirm_receivable`; resolves with the credit decision. */
-    async confirm({ pendingId, confirmationRequest }: UploadResult) {
+    async confirm({ pendingId, confirmationRequest }: UploadResult): Promise<ConfirmResult> {
       const signature = await signConfirmation(account, confirmationRequest.typedData);
-      return client.call("confirm_receivable", { pendingId, signature, idempotencyKey: idempotencyKey("confirm", pendingId) });
+      return client.call<ConfirmResult>("confirm_receivable", { pendingId, signature, idempotencyKey: idempotencyKey("confirm", pendingId) });
     },
 
     /**
@@ -57,3 +67,5 @@ export function createBuyerAgent({ client, account, send }: BuyerOptions) {
     },
   };
 }
+
+export type BuyerAgent = ReturnType<typeof createBuyerAgent>;

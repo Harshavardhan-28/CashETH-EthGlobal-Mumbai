@@ -34,11 +34,16 @@ export interface PurchaseRequest {
   purchaseId: string;
   /** Appended to the service URL (the research topic). */
   query?: string;
+<<<<<<< HEAD
   /**
    * Pay this URL instead of the service's. The reservation is still made for `service`'s merchant and price, so a URL
    * whose 402 names another payee is refused by the co-signer (the rogue-payee demo).
    */
   payUrl?: string;
+=======
+  /** USDC base units to reserve instead of the offer's price: a bulk order, or the demo's over-limit probes. */
+  amount?: bigint;
+>>>>>>> 729474e (feat(agents): one-command demo runner for the eight lifecycle steps)
 }
 
 export type PurchaseOutcome =
@@ -87,11 +92,17 @@ export function createWorkerAgent({ client, worker, spendWallet, catalogUrls, fe
   }
 
   return {
+<<<<<<< HEAD
     async buy({ id, service, budgetHint, purchaseId, query = "", payUrl }: PurchaseRequest): Promise<PurchaseOutcome> {
       const offer = await pickOffer(catalogUrls, service, fetchImpl);
       // `pay_x402` fetches with GET only: refuse before reserving anything.
       if (offer.method !== "GET") throw new Error(`"${service}" is a ${offer.method} service; the worker can only buy GET services`);
       const price = offer.priceUnits;
+=======
+    async buy({ id, service, budgetHint, purchaseId, query = "", amount }: PurchaseRequest): Promise<PurchaseOutcome> {
+      const offer = await pickOffer(catalogUrls, service, fetchImpl);
+      const price = amount ?? priceUnits(offer);
+>>>>>>> 729474e (feat(agents): one-command demo runner for the eight lifecycle steps)
       log("cheapest offer", { service, price: offer.price, payTo: offer.payTo, catalog: offer.catalog });
       if (price > budgetHint) log("price is above the budget hint; the control plane decides", { price, budgetHint });
 
@@ -131,3 +142,5 @@ export function createWorkerAgent({ client, worker, spendWallet, catalogUrls, fe
     },
   };
 }
+
+export type WorkerAgent = ReturnType<typeof createWorkerAgent>;

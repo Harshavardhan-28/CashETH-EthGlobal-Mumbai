@@ -13,7 +13,8 @@
     "setup:accounts": "pnpm -r build && tsx scripts/setup-accounts.ts",
     "abi:sync": "tsx scripts/abi-sync.ts",
     "verify:evidence": "tsx scripts/verify-evidence.ts",
-    "test:scripts": "vitest run scripts"
+    "test:scripts": "vitest run scripts",
+    "demo": "pnpm -F @casheth/agents demo"
   },
   "devDependencies": {
     "@casheth/aqua": "workspace:*",

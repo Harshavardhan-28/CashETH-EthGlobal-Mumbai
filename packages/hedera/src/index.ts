@@ -21,6 +21,7 @@ export type { MirrorAccount, MirrorTokenRelationship, MirrorTopicMessage, WaitFo
 export { executeForReceipt } from "./execute.js";
 export {
   createAuditTopic,
+  createNotesTopic,
   encodeAuditMessage,
   MAX_AUDIT_MESSAGE_BYTES,
   publishAudit,
