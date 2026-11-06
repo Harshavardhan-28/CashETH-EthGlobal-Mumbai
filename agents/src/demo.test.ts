@@ -5,6 +5,7 @@ import type { Env } from "@casheth/shared";
 import { describe, expect, it } from "vitest";
 import { LENDER_TIERS, type LenderStrategy } from "@casheth/aqua";
 import { keccak256, toHex, type Address } from "viem";
+import { computeReceivableId } from "@casheth/shared";
 import { checkQuotePlan, expiredReservation, findShippedStrategy, formatTable, formatUsdc, topUpShortfall } from "./demo/checks.js";
 import { appendEvidence, formatEvidenceSection, formatStepLine } from "./demo/evidence.js";
 import { loadIdentity } from "./demo/identity.js";
@@ -471,8 +472,9 @@ describe("loadIdentity", () => {
 
 /** Fake agents that keep the books the way the control plane would, to run all the steps without a network. */
 function fakeContext() {
-  const id = hash("PO-1003");
   const buyerAddress: Address = "0x00000000000000000000000000000000000000b0";
+  // The same id the runner derives on a rerun (buyer + keccak(buyerRef)), so event lookups match on both paths.
+  const id = computeReceivableId(buyerAddress, keccak256(toHex(INVOICE.buyerRef)));
   const researchAddress: Address = "0x00000000000000000000000000000000000000e1";
   const computeAddress: Address = "0x00000000000000000000000000000000000000e2";
   const sellerAddress: Address = "0x00000000000000000000000000000000000000f1";
@@ -677,8 +679,12 @@ describe("the eight lifecycle steps against fake agents", () => {
   });
 
   it("on a rerun past step 4 replays the facility instead of asking for quotes", async () => {
-    const { ctx, calls } = fakeContext();
+    const { ctx, calls, events } = fakeContext();
     calls.push("open");
+    // The registry already holds the receivable, so the registration steps are skipped; the duplicate step still
+    // asks the server, which records a fresh rejection on HCS (seeded here as the fake server would).
+    const rerunId = computeReceivableId(ctx.invoice.buyer, keccak256(toHex(ctx.invoice.buyerRef)));
+    events.push({ type: "ReceivableRejected", id: rerunId, code: "DUPLICATE_RECEIVABLE", seq: 77, hcsTxId: "0.0.1@dup" });
     ctx.seller.agent.quotes = (async () => {
       throw new ToolCallError("get_quotes", { code: "NOT_CONFIRMED" });
     }) as never;

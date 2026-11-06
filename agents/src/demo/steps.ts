@@ -29,10 +29,9 @@ function proofOfEvent(event: AuditEvent | undefined, what: string): Proof {
   return proofOfTx(event.hcsTxId);
 }
 
+/** The receivable's id: from this run's upload, or derived from the invoice on a rerun whose upload was done earlier. */
 function receivableId(ctx: DemoContext): Hex {
-  const upload = ctx.state.upload;
-  if (!upload) throw new Error("no receivable was uploaded yet");
-  return upload.id;
+  return ctx.state.upload?.id ?? computeReceivableId(ctx.invoice.buyer, keccak256(toHex(ctx.invoice.buyerRef)));
 }
 
 const describeOutcome = (outcome: PurchaseOutcome): string => {
@@ -64,6 +63,29 @@ async function facilityFunded(ctx: DemoContext): Promise<boolean> {
 }
 
 const FUNDED_ALREADY: StepOutcome = { skipped: true, note: "the facility is already funded: an earlier run did this step" };
+
+/**
+ * Whether the receivable is already registered on chain: a rerun against a fresh server, whose own records do not
+ * hold the earlier upload, so the registry (not the server's replay store) says what was done.
+ */
+async function registeredAlready(ctx: DemoContext): Promise<boolean> {
+  const id = computeReceivableId(ctx.invoice.buyer, keccak256(toHex(ctx.invoice.buyerRef)));
+  const details = await ctx.read.receivable(id);
+  return details !== undefined && details.state !== "Pending" && details.state !== "None";
+}
+
+const REGISTERED_ALREADY: StepOutcome = { skipped: true, note: "the receivable is already registered on chain: an earlier run did this step" };
+
+/** Runs `step` unless the receivable is already registered, in which case the step is reported as done earlier. */
+function unlessRegistered(step: Step): Step {
+  return {
+    label: step.label,
+    async run(ctx) {
+      if (await registeredAlready(ctx)) return REGISTERED_ALREADY;
+      return step.run(ctx);
+    },
+  };
+}
 
 /** Tops an account up from the operator by exactly what it is short of `required`, or skips when it holds enough. */
 function topUpStep(label: string, account: (ctx: DemoContext) => { address: Address; accountId: string }, required: bigint, purpose: string): Step {
@@ -371,12 +393,12 @@ export const STEPS: Step[] = [
   shipStep("A"),
   lenderTopUpStep("B"),
   shipStep("B"),
-  uploadStep,
-  sellerNoteStep,
-  confirmStep,
-  documentStep,
-  nftStep,
-  confirmedOnHcsStep,
+  unlessRegistered(uploadStep),
+  unlessRegistered(sellerNoteStep),
+  unlessRegistered(confirmStep),
+  unlessRegistered(documentStep),
+  unlessRegistered(nftStep),
+  unlessRegistered(confirmedOnHcsStep),
   duplicateStep,
   openFacilityStep,
   budgetsStep,
