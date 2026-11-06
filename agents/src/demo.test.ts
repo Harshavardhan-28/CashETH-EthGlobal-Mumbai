@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { LENDER_TIERS, type LenderStrategy } from "@casheth/aqua";
 import { keccak256, toHex, type Address } from "viem";
 import { computeReceivableId } from "@casheth/shared";
-import { checkQuotePlan, expiredReservation, findShippedStrategy, formatTable, formatUsdc, topUpShortfall } from "./demo/checks.js";
+import { checkQuotePlan, expiredReservation, findShippedStrategy, formatTable, formatUsdc, purchaseAttempt, topUpShortfall } from "./demo/checks.js";
 import { appendEvidence, formatEvidenceSection, formatStepLine } from "./demo/evidence.js";
 import { loadIdentity } from "./demo/identity.js";
 import { appendEnvVar, ensureNotesTopic } from "./demo/notesTopic.js";
@@ -731,5 +731,24 @@ describe("the eight lifecycle steps against fake agents", () => {
     ctx.seller.agent.run = (async (args: Parameters<typeof real>[0]) => real({ invoice: args.invoice, invoiceFile: args.invoiceFile })) as typeof real;
     const results = await runSteps(STEPS, ctx);
     expect(results.find((r) => r.label.includes("duplicate"))?.error).toBe("the duplicate submission was accepted");
+  });
+});
+
+describe("purchaseAttempt", () => {
+  const worker = "0xBeAD36C554746b00eb2a3B87cE38aDc926Ddf62F";
+  const released = (who: string) => ({ type: "SpendReleased", spendId: "0xs", worker: who }) as never;
+
+  it("is the base when the worker has had nothing released", () => {
+    expect(purchaseAttempt([], worker, 2)).toBe("2");
+  });
+
+  it("advances by one for each reservation released for this worker, ignoring other workers and event types", () => {
+    const events = [released(worker), released(worker.toLowerCase()), released("0xother"), { type: "SpendCommitted", worker } as never];
+    expect(purchaseAttempt(events, worker, 2)).toBe("4");
+  });
+
+  it("is stable across reruns that release nothing, so a committed purchase is replayed rather than repeated", () => {
+    const events = [released(worker)];
+    expect(purchaseAttempt(events, worker, 2)).toBe(purchaseAttempt(events, worker, 2));
   });
 });

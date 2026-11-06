@@ -93,6 +93,16 @@ export function expiredReservation(events: AuditEvent[], worker: string, nowSeco
   return !closed && Number(reserved.expiry) <= nowSeconds ? reserved : undefined;
 }
 
+/**
+ * Names the worker's next purchase attempt: the base plus the reservations this worker has had released. Releasing
+ * burns the attempt (the server would otherwise replay the released reservation), and nothing else changes it, so
+ * a rerun after a committed purchase gets the same name and replays that purchase.
+ */
+export function purchaseAttempt(events: AuditEvent[], worker: string, base: number): string {
+  const released = events.filter((e) => e.type === "SpendReleased" && e.worker?.toLowerCase() === worker.toLowerCase()).length;
+  return String(base + released);
+}
+
 /** A plain-text table with left-aligned columns. */
 export function formatTable(headers: string[], rows: string[][]): string {
   const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));

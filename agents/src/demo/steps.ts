@@ -8,8 +8,8 @@ import { keccak256, toHex, type Address, type Hex } from "viem";
 import { idempotencyKey as stableKey, ToolCallError } from "../mcpClient.js";
 import type { ShipOutcome } from "../lender.js";
 import type { PurchaseOutcome } from "../worker.js";
-import { checkQuotePlan, expiredReservation, findShippedStrategy, formatAgentTable, formatLenderTable, formatUsdc, topUpShortfall } from "./checks.js";
-import { ADVANCE_BPS, BUDGETS, EXPECTED_PAYOUTS, EXPECTED_SELLER_PAYOUT, FRESH_LENDERS, INVOICE, PURCHASE_ATTEMPT, SPEND } from "./plan.js";
+import { checkQuotePlan, expiredReservation, purchaseAttempt, findShippedStrategy, formatAgentTable, formatLenderTable, formatUsdc, topUpShortfall } from "./checks.js";
+import { ADVANCE_BPS, BUDGETS, EXPECTED_PAYOUTS, EXPECTED_SELLER_PAYOUT, FRESH_LENDERS, INVOICE, PURCHASE_ATTEMPT_BASE, SPEND } from "./plan.js";
 import { poll } from "./poll.js";
 import { findEvent, type AuditEvent } from "./readApi.js";
 import type { DemoContext, DemoWorker, Step, StepOutcome } from "./types.js";
@@ -283,11 +283,12 @@ const releaseStaleReservationStep: Step = {
 const researchPurchaseStep: Step = {
   label: `7. research worker buys /research for ${formatUsdc(SPEND.researchPrice)} USDC (reserve, x402, commit)`,
   async run(ctx) {
+    const attempt = purchaseAttempt(await ctx.read.events(), ctx.research.address, PURCHASE_ATTEMPT_BASE);
     const outcome = await ctx.research.agent.buy({
       id: receivableId(ctx),
       service: "research",
       budgetHint: SPEND.researchPrice,
-      purchaseId: `${INVOICE.buyerRef}-research-${PURCHASE_ATTEMPT}`,
+      purchaseId: `${INVOICE.buyerRef}-research-${attempt}`,
       query: "agent working capital on Hedera",
     });
     if (outcome.status !== "committed") throw new Error(describeOutcome(outcome));

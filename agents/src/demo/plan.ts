@@ -88,10 +88,11 @@ export const BUDGETS = {
 };
 
 /**
- * Names the research purchase. A rerun with the same attempt replays its reservation, payment and commit; bump it
- * when the reservation has expired unpaid (it lives ten minutes), so the worker reserves again.
+ * The first attempt number that is certainly unused for the research purchase (earlier launches used 1 and 2). The
+ * runner adds the number of reservations this worker has had released, so a reservation freed after it expired
+ * unpaid is never replayed and a rerun after a committed purchase still replays it.
  */
-export const PURCHASE_ATTEMPT = "2";
+export const PURCHASE_ATTEMPT_BASE = 2;
 
 /** The research worker's purchase and the two over-limit asks that must be refused (Ruling R24). */
 export const SPEND = {
