@@ -284,3 +284,66 @@ describe("narrateAll", () => {
     expect(narrateAll([], [], TOPIC)).toEqual([]);
   });
 });
+
+describe("narrateAll: PO labels from invoice documents", () => {
+  const ID = `0x${"12".repeat(31)}cd`;
+  const KECCAK = `0x${"ab".repeat(32)}`;
+  const upload = (extra: Record<string, unknown> = {}) => ev("ReceivableUploaded", { agent: SELLER, id: ID, amount: "800000000", documentKeccak: KECCAK, ...extra });
+  const stored = (extra: Record<string, unknown> = {}) => ev("InvoiceDocumentStored", { agent: SELLER, receivableRef: "PO-1003", keccak256: KECCAK, ...extra });
+
+  it("joins an Uploaded + DocumentStored pair via the document hash", () => {
+    const out = narrateAll([stored(), upload(), ev("FacilityFunded", { agent: LENDER, id: ID, amount: "640000000" })], AGENTS, TOPIC);
+    const up = out.find((n) => n.type === "ReceivableUploaded")!;
+    const doc = out.find((n) => n.type === "InvoiceDocumentStored")!;
+    const funded = out.find((n) => n.type === "FacilityFunded")!;
+    expect(up.sentence).toBe("uploaded invoice PO-1003 for $800.00");
+    expect(funded.sentence).toBe("lent $640.00 against invoice PO-1003");
+    expect(up.ref).toBe("PO-1003");
+    expect(doc.ref).toBe("PO-1003");
+    expect(funded.ref).toBe("PO-1003");
+    expect(doc.id).toBe(ID);
+    expect(up.id).toBe(ID);
+    expect(doc.sentence).toBe("stored an invoice document");
+  });
+
+  it("matches the document hash case-insensitively and regardless of event order", () => {
+    const out = narrateAll([upload({ documentKeccak: KECCAK.toUpperCase().replace("0X", "0x") }), stored()], AGENTS, TOPIC);
+    expect(out.every((n) => n.ref === "PO-1003" && n.id === ID)).toBe(true);
+  });
+
+  it("falls back to the short hash without a document", () => {
+    const out = narrateAll([upload({ documentKeccak: undefined })], AGENTS, TOPIC);
+    expect(out[0].sentence).toBe("uploaded invoice 0x1212…12cd for $800.00");
+    expect(out[0].ref).toBeUndefined();
+  });
+
+  it("an unlinked document keeps its own PO ref but gets no id", () => {
+    const [doc] = narrateAll([stored({ keccak256: `0x${"ee".repeat(32)}` })], AGENTS, TOPIC);
+    expect(doc.ref).toBe("PO-1003");
+    expect(doc.id).toBeUndefined();
+  });
+
+  it("never uses a hash receivableRef as a label, but uses it as the link when it is a known receivable id", () => {
+    const out = narrateAll([upload({ documentKeccak: undefined }), stored({ receivableRef: ID.toUpperCase().replace("0X", "0x"), keccak256: undefined })], AGENTS, TOPIC);
+    const doc = out.find((n) => n.type === "InvoiceDocumentStored")!;
+    const up = out.find((n) => n.type === "ReceivableUploaded")!;
+    expect(doc.id).toBe(ID);
+    expect(doc.ref).toBeUndefined();
+    expect(up.ref).toBeUndefined();
+    expect(up.sentence).toBe("uploaded invoice 0x1212…12cd for $800.00");
+  });
+
+  it("ignores a hash receivableRef that is not a known id", () => {
+    const [doc] = narrateAll([stored({ receivableRef: `0x${"cc".repeat(32)}`, keccak256: undefined })], AGENTS, TOPIC);
+    expect(doc.ref).toBeUndefined();
+    expect(doc.id).toBeUndefined();
+  });
+
+  it("narrate() takes an optional refs map (lowercase id -> ref) and keeps working without it", () => {
+    const e = ev("Repaid", { agent: BUYER, id: ID, amount: "1000000" });
+    expect(narrate(e, AGENTS, TOPIC).sentence).toBe("repaid $1.00 on invoice 0x1212…12cd");
+    const n = narrate(e, AGENTS, TOPIC, new Map([[ID.toLowerCase(), "PO-7"]]));
+    expect(n.sentence).toBe("repaid $1.00 on invoice PO-7");
+    expect(n.ref).toBe("PO-7");
+  });
+});
