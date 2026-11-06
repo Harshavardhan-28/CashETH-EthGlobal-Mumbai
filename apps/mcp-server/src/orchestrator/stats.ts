@@ -23,6 +23,7 @@ import { scoreReceivable, type EventStore } from "@casheth/engine";
 import { decodeEventLog, getAddress, type Abi, type Address, type Hex } from "viem";
 import { ROLE_NAMES, sameAddress, STATE } from "./common.js";
 import { tierOfApr } from "./facility.js";
+import { staleWhileRevalidate, type SwrCache } from "./swr.js";
 import type {
   AgentDirectoryEntry,
   AgentRoleName,
@@ -94,12 +95,20 @@ export type BasicStatsOptions = {
   cacheMs?: number;
 };
 
+const DEFAULT_CACHE_MS = 10_000;
+
 export class BasicStatsProvider implements StatsProvider {
   #latest: Snapshot | undefined;
   #refreshing: Promise<Snapshot> | undefined;
   #snapshotAt = 0;
+  // The finished `/agents` and `/lenders` rows: building them makes per-agent KYA, reputation and balance relay reads.
+  readonly #agentRows: SwrCache<AgentStats[]>;
+  readonly #lenderRows: SwrCache<LenderYield[]>;
 
-  constructor(private readonly opts: BasicStatsOptions) {}
+  constructor(private readonly opts: BasicStatsOptions) {
+    this.#agentRows = staleWhileRevalidate(opts.cacheMs ?? DEFAULT_CACHE_MS);
+    this.#lenderRows = staleWhileRevalidate(opts.cacheMs ?? DEFAULT_CACHE_MS);
+  }
 
   /** Directory entries plus agents registered through `register_agent`, deduplicated by address. */
   agents(): AgentDirectoryEntry[] {
@@ -124,7 +133,7 @@ export class BasicStatsProvider implements StatsProvider {
    * replaces it, so read-API callers never wait on the chain scan except the very first time.
    */
   async #load(): Promise<Snapshot> {
-    const cacheMs = this.opts.cacheMs ?? 10_000;
+    const cacheMs = this.opts.cacheMs ?? DEFAULT_CACHE_MS;
     const stale = Date.now() - this.#snapshotAt >= cacheMs;
     if (!this.#latest) return (this.#refreshing ??= this.#refresh());
     if (stale) this.#refreshing ??= this.#refresh();
@@ -163,7 +172,7 @@ export class BasicStatsProvider implements StatsProvider {
   }
 
   async listAgents(): Promise<AgentStats[]> {
-    return Promise.all(this.agents().map((a) => this.agentStats(a.address)));
+    return this.#agentRows.get("all", () => Promise.all(this.agents().map((a) => this.agentStats(a.address))));
   }
 
   async agentStats(address: Address): Promise<AgentStats> {
@@ -257,6 +266,10 @@ export class BasicStatsProvider implements StatsProvider {
   }
 
   async listLenders(): Promise<LenderYield[]> {
+    return this.#lenderRows.get("all", () => this.#computeLenders());
+  }
+
+  async #computeLenders(): Promise<LenderYield[]> {
     const s = await this.#load();
     const makers = new Map<string, Address>();
     for (const a of this.agents()) if (a.role === "lender") makers.set(a.address.toLowerCase(), a.address);
