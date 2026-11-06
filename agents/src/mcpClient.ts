@@ -104,8 +104,13 @@ export class AgentClient implements ToolCaller {
   }
 
   async listTools(): Promise<string[]> {
+    return (await this.listToolDefinitions()).map((tool) => tool.name);
+  }
+
+  /** `tools/list` with descriptions and input schemas (what an LLM agent is shown). */
+  async listToolDefinitions(): Promise<{ name: string; description?: string; inputSchema: Record<string, unknown> }[]> {
     const { tools } = await (await this.#connection()).listTools();
-    return tools.map((tool) => tool.name);
+    return tools.map(({ name, description, inputSchema }) => ({ name, ...(description ? { description } : {}), inputSchema }));
   }
 
   /** Calls a tool and returns its JSON result; an `isError` result throws a `ToolCallError`. */

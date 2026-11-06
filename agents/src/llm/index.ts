@@ -1,0 +1,15 @@
+export { LlmAgent } from "./agent.js";
+export type { LlmAgentOptions, LlmRunResult, LlmToolClient, RunStatus, ToolCallRecord } from "./agent.js";
+export { eventStoreSink } from "./audit.js";
+export type { AuditContext, AuditEntry, AuditSink, ToolOutcome } from "./audit.js";
+export { anthropicModel, DEFAULT_ANTHROPIC_MODEL } from "./anthropic.js";
+export { DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL, listOllamaModels, ollamaModel } from "./ollama.js";
+export { createModel, NoProviderError, selectProvider } from "./provider.js";
+export type { ProviderChoice, ProviderName } from "./provider.js";
+export { buildSystemPrompt, DEFAULT_ALLOW_TOOLS, LLM_ROLES } from "./prompts.js";
+export type { LlmRole } from "./prompts.js";
+export { callReply, scriptedModel, textReply } from "./scripted.js";
+export { catalogTool } from "./catalogTool.js";
+export { READ_ONLY_TOOLS, toolDefFor } from "./tools.js";
+export type { LocalTool, McpToolDefinition } from "./tools.js";
+export type { ChatMessage, ChatModel, ChatReply, ToolCall, ToolDef } from "./types.js";

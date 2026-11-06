@@ -13,10 +13,13 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "llm": "tsx src/llm/bin.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
     "@casheth/aqua": "workspace:*",
+    "@casheth/engine": "workspace:*",
     "@casheth/hedera": "workspace:*",
     "@casheth/shared": "workspace:*",
     "@hashgraph/sdk": "2.80.0",

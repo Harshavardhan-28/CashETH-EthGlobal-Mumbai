@@ -258,6 +258,8 @@ Hedera's `exact` scheme has the client sign a `TransferTransaction` that debits 
 | Lender rules in the opcode | `SELLER_NOT_FUNDED_BY_LENDER`, `LENDER_RESERVE_TOO_LOW` |
 | Receivable | `DUPLICATE_RECEIVABLE`, `BAD_BUYER_SIG`, `WRONG_PAYEE`, `BAD_NONCE`, `TERM_INELIGIBLE`, `KYA_FAIL`, `SELF_DEALING`, `NOT_CONFIRMED` |
 
+The workers can also be run as LLM agents (a local Ollama model by default, Claude optionally) that choose and buy the service themselves under a client-side spend cap: see [docs/LLM_AGENTS.md](docs/LLM_AGENTS.md).
+
 Spike S3 proved the mechanism before the agents were integrated: [payment A](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214) (single key) and [payment B](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) (2-of-2 key, worker plus co-signer), each 0.25 USDC to the merchant. The same wallet paying with the worker signature alone was refused by the facilitator with HTTP 402 `invalid_exact_hedera_payload_signature_invalid`, and its USDC did not move.
 
 ### 4.4 Repayment waterfall

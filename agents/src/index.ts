@@ -14,3 +14,4 @@ export { walletCallSender } from "./sendCalls.js";
 export type { AgentWallet, CallSender, Calldata } from "./sendCalls.js";
 export { consoleLog } from "./log.js";
 export type { Log } from "./log.js";
+export * from "./llm/index.js";
