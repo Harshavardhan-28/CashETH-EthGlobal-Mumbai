@@ -2,6 +2,7 @@ packages:
   - packages/*
   - apps/*
   - agents
+  - seller-agent
 allowBuilds:
   '@reown/appkit': false
   bufferutil: false
