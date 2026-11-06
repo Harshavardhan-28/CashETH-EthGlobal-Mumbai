@@ -1,0 +1,108 @@
+.card {
+  background: var(--surface);
+  border: 1px solid rgb(var(--ink-rgb) / 0.12);
+  border-radius: 14px;
+  box-shadow: 0 50px 100px -40px var(--shadow);
+  overflow: hidden;
+  font-family: var(--font-mono);
+}
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgb(var(--ink-rgb) / 0.08);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.liveLabel {
+  color: var(--ink);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: tr-pulse 1.6s ease-in-out infinite;
+}
+.segs {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+  padding: 16px 18px 6px;
+}
+.seg {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 10.5px;
+}
+.seg span {
+  transition: color 0.4s;
+}
+.bar {
+  height: 3px;
+  border-radius: 2px;
+  transition: background 0.4s;
+}
+.events {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0 10px;
+}
+.event {
+  display: grid;
+  grid-template-columns: 30px 66px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 18px;
+  align-items: baseline;
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+.seq {
+  font-size: 11px;
+  color: var(--faint-2);
+}
+.role {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+}
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.type {
+  font-size: 12.5px;
+  font-weight: 500;
+  word-break: break-word;
+}
+.detail {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  border-top: 1px solid rgb(var(--ink-rgb) / 0.08);
+}
+.stat {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-right: 1px solid rgb(var(--ink-rgb) / 0.08);
+}
+.statLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+}
