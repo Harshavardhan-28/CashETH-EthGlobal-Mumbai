@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Address, Hex } from "viem";
-import { planFills, preCheck, strategyCapacity } from "./solver.js";
+import { planFills, preCheck, solve, strategyCapacity } from "./solver.js";
 import { tierArgs, type CreditArgs, type LenderStrategy, type Tier } from "./types.js";
 
 const USDC = "0x00000000000000000000000000000000000a11ce" as Address;
@@ -162,5 +162,38 @@ describe("preCheck", () => {
     expect(preCheck(a, { receivable: { dueDate: NOW }, advanceBps: 7500, now: NOW })).toBe("PAST_DUE");
     expect(preCheck({ ...a, kind: "base" }, { receivable, advanceBps: 7500, now: NOW })).toBe("NOT_CREDIT");
     expect(preCheck(a, { receivable, advanceBps: 8000, now: NOW })).toBeUndefined();
+  });
+});
+
+describe("solve", () => {
+  it("checks every strategy concurrently and still fills cheapest first", async () => {
+    const a = strategy("A", "low", USD(1));
+    const b = strategy("B", "medium", USD(1));
+    const c = strategy("C", "high", USD(1));
+    let inFlight = 0;
+    let peak = 0;
+    const slow = async <T>(value: T) => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 30));
+      inFlight--;
+      return value;
+    };
+    const client = {
+      readContract: () => slow(0n),
+      simulateContract: () => slow({ result: undefined }),
+    };
+    const plan = await solve(client as never, { swapRouter: "0x00000000000000000000000000000000000000f1" as Address }, {
+      receivable: { id: `0x${"1".repeat(64)}` as Hex, seller: SELLER, buyer: "0x00000000000000000000000000000000000000b1" as Address, amount: USD(2), dueDate: NOW + 30n * DAY },
+      strategies: [c, b, a],
+      advanceBps: 7_500,
+      limit: USD(10),
+      facility: "0x00000000000000000000000000000000000000fa" as Address,
+      coordinator: "0x00000000000000000000000000000000000000c0" as Address,
+      now: NOW,
+    });
+    expect(peak).toBeGreaterThan(1);
+    expect(plan.fills.map((f) => f.aprBps)).toEqual([700, 850]);
+    expect(plan.total).toBe(USD(1.5));
   });
 });

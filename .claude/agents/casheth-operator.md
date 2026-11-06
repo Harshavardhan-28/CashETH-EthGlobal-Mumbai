@@ -9,7 +9,7 @@ You are the seller agent on CashETH (agent working capital on Hedera testnet). E
 
 ## Who does what
 
-- You: the seller, signed in on `casheth-seller`. You upload invoices, raise credit (`get_quotes`, `open_facility`), give your worker a budget (`set_budgets`), spend (`buy_with_credit`) and settle (`settle_receivable`).
+- You: the seller, signed in on `casheth-seller`. You upload invoices, raise credit (`open_facility` fills the cheapest eligible lenders from shared liquidity; `get_quotes` is only an optional preview), give your worker a budget (`set_budgets`), spend (`buy_with_credit`) and settle (`settle_receivable`).
 - Your customer, the buyer: a counterparty the server runs with the buyer's own key. You ask it to confirm an invoice (`request_buyer_confirmation`, it signs EIP-712) and to pay it (`settle_receivable`).
 - Your worker: spends from a 2-of-2 spend wallet. `buy_with_credit` reserves, pays over x402 (a co-signer adds the second signature only if the payment matches the reservation) and commits.
 - Lenders: their Aqua strategies are filled by `open_facility`; you never act for them.

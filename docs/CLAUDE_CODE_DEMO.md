@@ -53,7 +53,7 @@ The consent page pre-selects the seller; click **Act as seller**. The token carr
 
 or `/casheth-demo PO-MYREF 1.20`, or ask: "use the casheth-operator agent to raise credit against a new invoice and buy the HBAR price feed". A new buyer reference is needed each run (a reused one is rejected as a duplicate invoice). Keep the invoice near 1.20 USDC: the advance is 75% and the lenders' remaining credit is about 1 USDC.
 
-The run: `whoami` → the paid API's 402 → a fresh invoice PDF → `upload_invoice_document` → `upload_receivable` → `request_buyer_confirmation` → `get_quotes` → `open_facility` → `set_budgets` → `buy_with_credit` (reserve, x402 pay, commit) → `settle_receivable` → `get_receivable_status` = `Repaid`, then a table of HashScan links.
+The run: `whoami` → the paid API's 402 → a fresh invoice PDF → `upload_invoice_document` → `upload_receivable` → `request_buyer_confirmation` → `open_facility` (no negotiation: shared liquidity, cheapest lenders first) → `set_budgets` → `buy_with_credit` (reserve, x402 pay, commit) → `settle_receivable` → `get_receivable_status` = `Repaid`, then a table of HashScan links.
 
 ## 4. Evidence
 

@@ -179,49 +179,52 @@ export async function solve(
   addrs: Pick<AquaAddresses, "swapRouter">,
   input: SolveInput,
 ): Promise<Plan> {
-  const { receivable, advanceBps, facility, now } = input;
-  const advance = (receivable.amount * BigInt(advanceBps)) / 10_000n;
+  const advance = (input.receivable.amount * BigInt(input.advanceBps)) / 10_000n;
   const base = min(advance, input.limit);
 
-  const skipped: Skipped[] = [];
-  const eligible: LenderStrategy[] = [];
-  const headrooms: Record<Hex, bigint> = {};
-
-  for (const s of byPrice(input.strategies)) {
-    const pre = preCheck(s, { receivable, advanceBps, now });
-    if (pre) {
-      skipped.push({ strategyHash: s.strategyHash, reason: pre });
-      continue;
-    }
-    const exposure = await client.readContract({
-      address: addrs.swapRouter,
-      abi: CashEthSwapVMRouterAbi,
-      functionName: "exposure",
-      args: [s.maker, receivable.buyer],
-    });
-    const headroom = clamp0(s.args!.maxPerBuyer - exposure);
-    headrooms[s.strategyHash] = headroom;
-
-    // Balance problems are reported by planFills; only dry-run strategies that could give something.
-    if (!balanceCheck(s, headroom)) {
-      const amount = min(strategyCapacity(s, headroom), base);
-      const fill = { order: s.order, amount, aprBps: s.args!.aprBps };
-      try {
-        await client.simulateContract({
-          address: facility,
-          abi: SIMULATION_ABI,
-          functionName: "openAndFund",
-          args: [receivable.id, [fill], advanceBps, input.limit],
-          account: input.coordinator,
-        });
-      } catch (err) {
-        skipped.push({ strategyHash: s.strategyHash, reason: revertReason(err) });
-        continue;
-      }
-    }
-    eligible.push(s);
-  }
+  // Each strategy's check (its buyer exposure, then a dry-run of its own fill) is independent of the others, so
+  // they run concurrently; the results keep price order for the greedy, cheapest-first planner.
+  const checks = await Promise.all(byPrice(input.strategies).map((s) => checkStrategy(client, addrs, input, base, s)));
+  const skipped: Skipped[] = checks.flatMap((c) => ("skip" in c ? [c.skip] : []));
+  const eligible = checks.flatMap((c) => ("headroom" in c ? [c.strategy] : []));
+  const headrooms: Record<Hex, bigint> = Object.fromEntries(checks.flatMap((c) => ("headroom" in c ? [[c.strategy.strategyHash, c.headroom]] : [])));
 
   const plan = planFills(eligible, headrooms, base);
   return { fills: plan.fills, total: plan.total, skipped: [...skipped, ...plan.skipped] };
+}
+
+/** One strategy's eligibility: the tier pre-check, its headroom under `maxPerBuyer`, and a dry-run of its fill. */
+async function checkStrategy(
+  client: Pick<PublicClient, "readContract" | "simulateContract">,
+  addrs: Pick<AquaAddresses, "swapRouter">,
+  input: SolveInput,
+  base: bigint,
+  s: LenderStrategy,
+): Promise<{ skip: Skipped } | { strategy: LenderStrategy; headroom: bigint }> {
+  const { receivable, advanceBps, facility, now } = input;
+  const pre = preCheck(s, { receivable, advanceBps, now });
+  if (pre) return { skip: { strategyHash: s.strategyHash, reason: pre } };
+  const exposure = await client.readContract({
+    address: addrs.swapRouter,
+    abi: CashEthSwapVMRouterAbi,
+    functionName: "exposure",
+    args: [s.maker, receivable.buyer],
+  });
+  const headroom = clamp0(s.args!.maxPerBuyer - exposure);
+  // Balance problems are reported by planFills; only dry-run strategies that could give something.
+  if (!balanceCheck(s, headroom)) {
+    const fill = { order: s.order, amount: min(strategyCapacity(s, headroom), base), aprBps: s.args!.aprBps };
+    try {
+      await client.simulateContract({
+        address: facility,
+        abi: SIMULATION_ABI,
+        functionName: "openAndFund",
+        args: [receivable.id, [fill], advanceBps, input.limit],
+        account: input.coordinator,
+      });
+    } catch (err) {
+      return { skip: { strategyHash: s.strategyHash, reason: revertReason(err) } };
+    }
+  }
+  return { strategy: s, headroom };
 }
