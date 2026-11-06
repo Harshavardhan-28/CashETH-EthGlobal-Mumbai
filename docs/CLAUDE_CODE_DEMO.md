@@ -35,7 +35,13 @@ Claude Code ──OAuth (one token per server name)──▶ casheth-seller ┐
 
 ## 1. Start the servers
 
-From the repo root, with `.env` and `.env.accounts` in place, one terminal each:
+From the repo root, with `.env` and `.env.accounts` in place, build first: workspace packages import each other's compiled `dist/`, so a stale build makes `casheth-wallet` exit at launch ("Connection closed" in `/mcp`).
+
+```bash
+pnpm -r build
+```
+
+Then one terminal each:
 
 ```bash
 AUTH_DEMO_GRANT=true pnpm -F @casheth/auth start                                     # :4020

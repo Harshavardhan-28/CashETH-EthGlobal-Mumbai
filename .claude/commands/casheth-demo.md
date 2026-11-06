@@ -6,6 +6,8 @@ allowed-tools: Bash(curl:*), Bash(date:*), Bash(jq:*), Bash(pnpm -s tsx scripts/
 
 Run the CashETH end-to-end flow on Hedera testnet. Act as the `casheth-operator` subagent describes (its phases and guardrails apply here too): one tool call per step, read each result before the next, never invent an id, address, amount, hash or signature, pass tool results through unchanged, and stop at the first refusal or error and report it verbatim.
 
+Before step 1: if any `casheth-*` server is not connected, stop and tell the user to run `pnpm -r build`, start the auth and MCP servers as in docs/CLAUDE_CODE_DEMO.md section 1, and reconnect with `/mcp`.
+
 Arguments: `$ARGUMENTS`. The first is the buyer reference (if missing, use the output of `date -u +PO-CC-%m%d%H%M`); the second is the invoice amount in USDC (default `1.20`, sized to the current lender liquidity). Call the reference REF below. Every mutating call's `idempotencyKey` is `cc-REF-<step>` with the step name shown in brackets.
 
 Fixed inputs of this demo (from `docs/API.md` section 6):
