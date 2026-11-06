@@ -304,7 +304,7 @@ export function registerTools(server: McpServer, o: Orchestrator): void {
   add({
     name: "release_spend",
     description:
-      "Worker of the reservation or seller of its facility: return an expired, unpaid reservation's USDC to the facility (CreditFacility.release, coordinator) and free the spend wallet. A paid or in-flight reservation must be committed instead.",
+      "Worker of the reservation or seller of its facility: return an expired, unpaid reservation's USDC to the facility (CreditFacility.release, coordinator) and free the spend wallet. A paid reservation must be committed instead; one with a co-signed payment whose settlement was never seen can be released 180 s after the co-signature.",
     roles: ["seller", "worker"],
     scope: "spend:reserve",
     mutating: true,
@@ -315,7 +315,7 @@ export function registerTools(server: McpServer, o: Orchestrator): void {
   add({
     name: "repay_receivable",
     description:
-      "Buyer: approve USDC to the RepaymentRouter and repay (lenders first, seller the rest). Sent only when the server holds the buyer key (demo); otherwise returns both calldatas.",
+      "Buyer: approve USDC to the RepaymentRouter and repay (lenders first, seller the rest). Sent only when the server holds the buyer key (demo); otherwise returns both calldatas. A Repaid receivable is refused with ALREADY_REPAID.",
     roles: ["buyer"],
     scope: "repay:write",
     mutating: true,

@@ -228,6 +228,18 @@ describe("upload_receivable with documentKeccak", () => {
     expect((await uploadReceivable(c, { ...terms, documentKeccak: doc.keccak256, detailsCommitment: keccak256(toHex("other")) })).json).toMatchObject({ code: "BAD_INPUT" });
   });
 
+  it("checks a stored document named as detailsCommitment exactly like documentKeccak", async () => {
+    const c = await setup();
+    const doc = (await uploadDoc(c, pdf)).json;
+    const stolen = await callTool(c.app, c.tokens.otherSeller, "upload_receivable", { ...terms, buyer: buyer.address, detailsCommitment: doc.keccak256, idempotencyKey: key() });
+    expect(stolen.json).toMatchObject({ code: "NOT_PARTY" });
+    const { json } = await uploadReceivable(c, { ...terms, amount: "9000000", detailsCommitment: doc.keccak256 });
+    expect(json).toMatchObject({ code: "INVOICE_MISMATCH", mismatches: [{ field: "amount", expected: "9000000", found: "6000000" }] });
+    const ok = await uploadReceivable(c, { ...terms, detailsCommitment: doc.keccak256 });
+    expect(ok.result.isError).toBeUndefined();
+    expect(c.o.events.list().find((e) => e.type === "ReceivableUploaded")).toMatchObject({ documentKeccak: doc.keccak256 });
+  });
+
   it("still accepts a bare detailsCommitment (no document)", async () => {
     const c = await setup();
     const { result } = await uploadReceivable(c, { ...terms, detailsCommitment: keccak256(toHex("invoice-doc")) });

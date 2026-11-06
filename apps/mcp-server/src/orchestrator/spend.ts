@@ -153,10 +153,14 @@ type Settlement = { spendId: Hex; transactionId: string; hashscan: string; statu
 /**
  * One x402 payment per reservation, kept in the idempotency ledger under `x402:<spendId>`. The marker is written
  * before anything is fetched: `inFlight` until the merchant answers with a settlement, then `paid` with it.
- * `cosigned` records that the co-signer signed, after which the payment may have settled even if nobody saw the
- * answer, so the marker is only dropped when no signature was ever given.
+ * `cosignedAt` records when the co-signer signed, after which the payment may have settled even if nobody saw the
+ * answer, so `pay_x402` drops the marker only when no signature was ever given; `release_spend` clears a co-signed
+ * one once the signed transfer can no longer land.
  */
-type PaymentRecord = { state: "inFlight"; cosigned: boolean } | { state: "paid"; settlement: Settlement };
+type PaymentRecord = { state: "inFlight"; cosignedAt?: bigint } | { state: "paid"; settlement: Settlement };
+
+/** Hedera's maximum transaction valid duration: a signed transfer older than this can no longer reach consensus. */
+export const MAX_TX_VALIDITY_SECONDS = 180n;
 
 const paymentKey = (spendId: Hex) => `x402:${spendId}`;
 
@@ -202,7 +206,7 @@ export async function payX402(o: Orchestrator, caller: Caller, input: { spendId:
   }
   // Checked again after the awaits above: a concurrent call may have started paying meanwhile.
   if (paymentRecord(o, spendId)) paymentInFlight(spendId);
-  o.idempotency.put<PaymentRecord>(paymentKey(spendId), { state: "inFlight", cosigned: false });
+  o.idempotency.put<PaymentRecord>(paymentKey(spendId), { state: "inFlight" });
 
   let refusal: string | undefined;
   let cosigned = false;
@@ -222,7 +226,7 @@ export async function payX402(o: Orchestrator, caller: Caller, input: { spendId:
       : verdict.reason;
     if (refusal) throw new ToolError("COSIGNER_REFUSED", `co-signer refused: ${refusal}`, { reason: refusal });
     cosigned = true;
-    o.idempotency.put<PaymentRecord>(paymentKey(spendId), { state: "inFlight", cosigned: true });
+    o.idempotency.put<PaymentRecord>(paymentKey(spendId), { state: "inFlight", cosignedAt: o.now() });
     return o.x402.cosignerSign(txBase64);
   };
 
@@ -290,8 +294,9 @@ export async function commitSpend(o: Orchestrator, caller: Caller, input: { spen
 
 /**
  * `release_spend`: returns an expired, unpaid reservation's USDC to the facility (`CreditFacility.release` with the
- * coordinator, which may release at any time) and frees the spend wallet. Refused while a payment for it is in
- * flight or once it was paid: that reservation must be committed instead.
+ * coordinator, which may release at any time) and frees the spend wallet. Refused once it was paid (commit it
+ * instead) and while a co-signed payment could still land. After that window a co-signed payment whose settlement
+ * was never seen is released too: if it did settle, the USDC has left the spend wallet and `release` reverts.
  */
 export async function releaseSpend(o: Orchestrator, caller: Caller, input: { spendId: string }) {
   const spendId = bytes32(input.spendId, "spendId");
@@ -303,13 +308,19 @@ export async function releaseSpend(o: Orchestrator, caller: Caller, input: { spe
   if (payment?.state === "paid") {
     fail("RESERVATION_PAID", "the reservation was paid: commit it with commit_spend", { spendId, transactionId: payment.settlement.transactionId });
   }
-  if (payment?.cosigned) fail("PAYMENT_IN_FLIGHT", "a co-signed payment for this reservation may have settled: commit it once its transaction id is known", { spendId });
+  if (payment?.cosignedAt !== undefined && o.now() <= payment.cosignedAt + MAX_TX_VALIDITY_SECONDS) {
+    fail("PAYMENT_IN_FLIGHT", "a co-signed payment for this reservation may still land: retry after its validity window", {
+      spendId,
+      retryAfter: Number(payment.cosignedAt + MAX_TX_VALIDITY_SECONDS + 1n),
+    });
+  }
 
   const { txHash } = await o.chain.send("coordinator", {
     to: o.chain.addresses().creditFacility,
     data: encodeFunctionData({ abi: CreditFacilityAbi, functionName: "release", args: [spendId] }),
     description: "CreditFacility.release(spendId)",
   });
+  if (payment) o.idempotency.delete(paymentKey(spendId));
   await record(o, {
     type: "SpendReleased",
     id: r.id,

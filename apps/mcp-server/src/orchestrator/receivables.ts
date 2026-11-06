@@ -41,10 +41,14 @@ export type UploadInput = {
   documentKeccak?: string;
 };
 
-/** The commitment is the document's hash when a document is named; otherwise the caller's own 32 bytes. */
-function commitmentOf(input: UploadInput): { detailsCommitment: Hex; documentKeccak?: Hex } {
-  const documentKeccak = input.documentKeccak ? bytes32(input.documentKeccak, "documentKeccak") : undefined;
+/**
+ * The commitment is the document's hash when a document is named; otherwise the caller's own 32 bytes. A
+ * `detailsCommitment` that is a stored document's hash names that document too, so its checks always run.
+ */
+function commitmentOf(o: Orchestrator, input: UploadInput): { detailsCommitment: Hex; documentKeccak?: Hex } {
   const given = input.detailsCommitment ? bytes32(input.detailsCommitment, "detailsCommitment") : undefined;
+  const named = input.documentKeccak ? bytes32(input.documentKeccak, "documentKeccak") : undefined;
+  const documentKeccak = named ?? (given && o.invoices.meta(given) ? given : undefined);
   if (documentKeccak && given && documentKeccak !== given) {
     fail("BAD_INPUT", "detailsCommitment must equal documentKeccak when both are given", { field: "detailsCommitment" });
   }
@@ -81,7 +85,7 @@ export async function uploadReceivable(o: Orchestrator, caller: Caller, input: U
   const amount = units(input.amount, "amount");
   const dueDate = BigInt(input.dueDate);
   const buyerRef = bytes32OrHash(input.buyerRef);
-  const { detailsCommitment, documentKeccak } = commitmentOf(input);
+  const { detailsCommitment, documentKeccak } = commitmentOf(o, input);
 
   const a = o.chain.addresses();
   const id = computeReceivableId(buyer, buyerRef);

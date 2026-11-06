@@ -495,6 +495,28 @@ describe("spending", () => {
       expect(o.chain.sent).toHaveLength(0);
     });
 
+    it("releases a co-signed payment that never settled once it can no longer land (180 s after the co-signature)", async () => {
+      const { app, tokens, o } = await setup();
+      const spendId = openReservation(o);
+      fundedFacility(o);
+      o.x402.settle = false;
+      let now = NOW;
+      o.now = () => now;
+      await callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-stale-1" });
+      o.chain.reservations.set(spendId.toLowerCase(), { ...o.chain.reservations.get(spendId.toLowerCase())!, expiry: NOW + 10n });
+
+      now = NOW + 180n;
+      expect((await callTool(app, tokens.worker, "release_spend", { spendId, idempotencyKey: "release-stale-1" })).json).toMatchObject({ code: "PAYMENT_IN_FLIGHT" });
+      expect(o.chain.sent).toHaveLength(0);
+
+      now = NOW + 181n;
+      const { result, json } = await callTool(app, tokens.worker, "release_spend", { spendId, idempotencyKey: "release-stale-2" });
+      expect(result.isError).toBeUndefined();
+      expect(json).toMatchObject({ spendId });
+      expect(o.chain.sent.map((s) => s.from)).toEqual(["coordinator"]);
+      expect(o.idempotency.has(`x402:${spendId}`)).toBe(false);
+    });
+
     it("refuses a reservation that is not open", async () => {
       const { app, tokens, o } = await setup();
       const spendId = expiredReservation(o);
@@ -652,6 +674,24 @@ describe("repayment, budgets, registration, quotes and docking", () => {
     receivableIn(o, 2);
     const otherBuyer = await issuer.mint({ agent: getAddress("0x00000000000000000000000000000000000000b9"), role: 2, scope: BUYER_SCOPES });
     expect((await callTool(app, otherBuyer, "repay_receivable", { id, amount: "1", idempotencyKey: "repay-key-4" })).json).toMatchObject({ code: "NOT_PARTY" });
+  });
+
+  it("repay_receivable refuses a Repaid receivable with ALREADY_REPAID and points at the recorded repayment", async () => {
+    const { app, tokens, o } = await setup();
+    receivableIn(o, 2);
+    o.chain.held.add(buyer.address.toLowerCase());
+    const first = await callTool(app, tokens.buyer, "repay_receivable", { id, amount: "10000000", idempotencyKey: "repay-once-1" });
+    receivableIn(o, 3);
+    const retry = await callTool(app, tokens.buyer, "repay_receivable", { id, amount: "10000000", idempotencyKey: "repay-once-2" });
+    expect(retry.json).toMatchObject({ code: "ALREADY_REPAID", id, txHash: first.json.txHash, hashscan: first.json.hashscan });
+    expect(o.chain.sent).toHaveLength(2);
+
+    // A repayment this server never saw (sent from the buyer's own wallet): refused all the same, without a tx.
+    const { o: fresh, app: freshApp, tokens: freshTokens } = await setup();
+    o.chain.receivables.forEach((v, k) => fresh.chain.receivables.set(k, v));
+    const unknown = await callTool(freshApp, freshTokens.buyer, "repay_receivable", { id, amount: "1", idempotencyKey: "repay-once-3" });
+    expect(unknown.json).toMatchObject({ code: "ALREADY_REPAID", id });
+    expect(unknown.json).not.toHaveProperty("txHash");
   });
 
   const budgets = [{ worker, alloc: "1000000", maxPerTx: "500000", maxDaily: "2000000", merchants: [merchant] }];

@@ -10,7 +10,11 @@ import { actor, bytes32, requireParty, STATE, STATE_NAMES, txLink, units } from 
 import { fail } from "./errors.js";
 import type { Calldata, Caller, Orchestrator } from "./types.js";
 
-const REPAYABLE: readonly number[] = [STATE.Financed, STATE.Overdue, STATE.Defaulted, STATE.Repaid];
+/**
+ * Not `Repaid`: the router would send a further payment entirely to the seller, and a retry after a repayment whose
+ * receipt was lost must not pay twice.
+ */
+const REPAYABLE: readonly number[] = [STATE.Financed, STATE.Overdue, STATE.Defaulted];
 
 export async function repayReceivable(o: Orchestrator, caller: Caller, input: { id: string; amount: string }) {
   const id = bytes32(input.id, "id");
@@ -18,6 +22,11 @@ export async function repayReceivable(o: Orchestrator, caller: Caller, input: { 
   const r = await o.chain.receivable(id);
   if (r.state === STATE.None) fail("NOT_FOUND", `receivable ${id} is not registered`);
   requireParty(caller, r.buyer, "buyer");
+  if (r.state === STATE.Repaid) {
+    const last = o.events.list().filter((e) => e.type === "Repaid" && e.id === id).at(-1);
+    const tx = typeof last?.txHash === "string" ? { txHash: last.txHash, hashscan: txLink(last.txHash) } : {};
+    fail("ALREADY_REPAID", `receivable ${id} is already repaid`, { id, ...tx });
+  }
   if (!REPAYABLE.includes(r.state)) fail("NOT_FINANCED", `receivable is ${STATE_NAMES[r.state]}`, { state: STATE_NAMES[r.state] });
 
   const a = o.chain.addresses();
