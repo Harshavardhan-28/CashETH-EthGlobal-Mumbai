@@ -19,7 +19,6 @@ export function setupRun(model: BaseChatModel, { answers = {}, fetch, maxSteps }
     runId: "run-test",
     ...(maxSteps ? { maxSteps } : {}),
     transcript,
-    log: () => {},
   };
   return { calls, transcript, buyerLog, options };
 }

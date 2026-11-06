@@ -1,5 +1,6 @@
 /** Runs one demonstration: builds the tool set and the graph, streams node transitions live, writes the transcript. */
-import type { BuyerAgent, LlmToolClient, Log } from "@casheth/agents";
+import type { LlmToolClient, UploadResult } from "@casheth/agents";
+import type { Hex } from "viem";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { Facts } from "./facts.js";
 import { buildSellerGraph } from "./graph.js";
@@ -13,6 +14,12 @@ export interface TranscriptSink {
   write(entry: Record<string, unknown>): void;
 }
 
+/** The buyer side: `createBuyerAgent` from `@casheth/agents` (it signs the confirmation and repays with its own key). */
+export interface CounterpartyBuyer {
+  confirm(upload: UploadResult): Promise<unknown>;
+  repay(id: Hex, amount: bigint): Promise<unknown>;
+}
+
 export interface SellerAgentOptions {
   model: BaseChatModel;
   /** MCP session authenticated as the seller account. */
@@ -20,7 +27,7 @@ export interface SellerAgentOptions {
   /** MCP session authenticated as the seller's research worker. */
   worker: LlmToolClient;
   /** The buyer is another party: the scripted buyer agent signs and repays with its own key. */
-  buyer: Pick<BuyerAgent, "confirm" | "repay">;
+  buyer: CounterpartyBuyer;
   account: { seller: PublicAccount; worker: PublicAccount & { spendWallet: string } };
   invoice: RunInvoice & { filename: string; mime: string; content: string };
   /** The paid resource the agent wants, e.g. `<paid API>/price-feed?symbols=HBAR`. */
@@ -33,7 +40,8 @@ export interface SellerAgentOptions {
   spendCap?: bigint;
   fetch?: typeof fetch;
   transcript?: TranscriptSink;
-  log?: Log;
+  /** Called with each node's update as it happens (the CLI prints it). */
+  onNode?(node: string, update: Record<string, unknown>): void;
 }
 
 export interface SellerAgentResult {
@@ -49,7 +57,7 @@ export const DEFAULT_MAX_STEPS = 30;
 export const DEFAULT_SPEND_CAP = 1_000_000n;
 
 export async function runSellerAgent(options: SellerAgentOptions): Promise<SellerAgentResult> {
-  const { account, invoice, paidApiUrl, transcript, log = () => {} } = options;
+  const { account, invoice, paidApiUrl, transcript, onNode } = options;
   const runId = options.runId ?? new Date().toISOString().replace(/[:.]/g, "-");
   const maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
   const spendCap = options.spendCap ?? DEFAULT_SPEND_CAP;
@@ -61,8 +69,8 @@ export async function runSellerAgent(options: SellerAgentOptions): Promise<Selle
     worker: options.worker,
     local: {
       httpGet: (args) => httpGet({ url: String(args.url) }),
-      confirm: (args) => options.buyer.confirm(args.upload as never),
-      repay: (args) => options.buyer.repay(args.id as `0x${string}`, BigInt(String(args.amount))),
+      confirm: (args) => options.buyer.confirm(args.upload as UploadResult),
+      repay: (args) => options.buyer.repay(args.id as Hex, BigInt(String(args.amount))),
     },
   });
   const { content, filename, mime, ...terms } = invoice;
@@ -91,8 +99,9 @@ export async function runSellerAgent(options: SellerAgentOptions): Promise<Selle
       continue;
     }
     for (const [node, update] of Object.entries(chunk)) {
-      log(`node ${node}`, summarise(update));
-      record({ type: "node", node, update: summarise(update) });
+      const summary = summarise(update);
+      onNode?.(node, summary);
+      record({ type: "node", node, update: summary });
     }
   }
   if (!final) throw new Error("the graph produced no state");

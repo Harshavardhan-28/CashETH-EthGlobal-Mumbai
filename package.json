@@ -14,7 +14,8 @@
     "abi:sync": "tsx scripts/abi-sync.ts",
     "verify:evidence": "tsx scripts/verify-evidence.ts",
     "test:scripts": "vitest run scripts",
-    "demo": "pnpm -F @casheth/agents demo"
+    "demo": "pnpm -F @casheth/agents demo",
+    "seller-agent": "pnpm -F @casheth/seller-agent start"
   },
   "devDependencies": {
     "@casheth/aqua": "workspace:*",

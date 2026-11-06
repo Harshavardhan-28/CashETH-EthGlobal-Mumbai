@@ -32,7 +32,7 @@ function positiveInt(value: string): number {
 
 export function configFrom(env: EnvLike, argv: string[]): SellerAgentConfig {
   const { values } = parseArgs({
-    args: argv,
+    args: argv.filter((arg) => arg !== "--"),
     options: {
       model: { type: "string" },
       "paid-url": { type: "string" },

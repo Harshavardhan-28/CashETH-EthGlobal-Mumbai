@@ -24,3 +24,8 @@ export type { Log } from "./log.js";
 export * from "./llm/index.js";
 export { renderInvoicePdf } from "./invoicePdf.js";
 export type { InvoiceFields } from "./invoicePdf.js";
+export { loadIdentity } from "./demo/identity.js";
+export type { AgentIdentity, AgentPrefix } from "./demo/identity.js";
+export { mcpResourceUrl, startServers } from "./demo/servers.js";
+export type { RunningServers } from "./demo/servers.js";
+export { spendWalletOf } from "./demoAccount.js";

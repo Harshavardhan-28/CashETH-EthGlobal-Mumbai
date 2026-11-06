@@ -27,6 +27,10 @@ describe("configFrom", () => {
     });
   });
 
+  it("accepts the -- separator pnpm passes before the flags", () => {
+    expect(configFrom({}, ["--", "--start-servers"]).startServers).toBe(true);
+  });
+
   it("refuses a max step count that is not a positive integer", () => {
     expect(() => configFrom({ SELLER_AGENT_MAX_STEPS: "0" }, [])).toThrow(/max steps/i);
     expect(() => configFrom({}, ["--max-steps", "ten"])).toThrow(/max steps/i);
