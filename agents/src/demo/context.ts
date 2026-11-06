@@ -2,8 +2,9 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
+import { listOpenStrategies } from "@casheth/aqua";
 import { evmClients, hieroClient, longZeroEvmAddress, mirror, transferUsdc } from "@casheth/hedera";
-import type { Env } from "@casheth/shared";
+import { loadAddresses, type Env } from "@casheth/shared";
 import { erc20Abi, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createBuyerAgent } from "../buyer.js";
@@ -86,6 +87,12 @@ export async function buildContext(env: Env, root: string, log: Log = consoleLog
     merchant: longZeroEvmAddress(env.MERCHANT_ACCOUNT_ID) as Address,
     read: createReadApi(new URL(mcpUrl).origin),
     usdcBalance,
+    async openStrategies() {
+      const { aqua, swapRouter, orderBuilder, usdc, rcn, tUsdt } = loadAddresses();
+      if (!aqua || !swapRouter || !orderBuilder || !usdc || !rcn) throw new Error("deployments/testnet/addresses.json lacks the Aqua contracts");
+      const fromBlock = await mirror.creationBlock(env, swapRouter);
+      return listOpenStrategies(evm.public, { aqua, swapRouter, orderBuilder, usdc, rcn, ...(tUsdt ? { tUsdt } : {}) }, { fromBlock });
+    },
     async topUpFromOperator(accountId, units) {
       const held = await mirror.tokenBalance(env, env.HEDERA_OPERATOR_ID, env.USDC_TOKEN_ID);
       if (held < units) throw new Error(`the operator holds ${held} USDC units, ${units} are needed; fund it from https://faucet.circle.com (Hedera Testnet)`);

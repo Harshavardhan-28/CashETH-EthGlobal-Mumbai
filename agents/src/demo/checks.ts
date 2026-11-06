@@ -1,4 +1,5 @@
 /** Pure checks and arithmetic behind the demo's assertions; they throw when the run does not match the script. */
+import type { LenderStrategy } from "@casheth/aqua";
 import { formatUnits, type Address } from "viem";
 import type { Quotes } from "../seller.js";
 import { EXPECTED_FILLS } from "./plan.js";
@@ -13,6 +14,28 @@ export function topUpShortfall(balance: bigint, required: bigint): bigint {
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+export interface PlannedShip {
+  maker: Address;
+  seller: Address;
+  creditUsdc: bigint;
+  aprBps: number;
+}
+
+/**
+ * An open credit strategy of `maker` that is what the demo would ship: the planned size, still unspent, at the
+ * planned APR and open to the seller. Finding one means a rerun must not ship again.
+ */
+export function findShippedStrategy(strategies: LenderStrategy[], planned: PlannedShip): LenderStrategy | undefined {
+  return strategies.find(
+    (s) =>
+      s.kind === "credit" &&
+      same(s.maker, planned.maker) &&
+      s.virtual[s.tokens[0]] === planned.creditUsdc &&
+      s.args?.aprBps === planned.aprBps &&
+      s.args.sellerSet.some((seller) => same(seller, planned.seller)),
+  );
+}
 
 /** The reasons the solver skipped a lender's credit strategies; throws when the lender shipped none. */
 function skipReasons(quotes: Quotes, maker: Address, lender: LenderKey): string[] {

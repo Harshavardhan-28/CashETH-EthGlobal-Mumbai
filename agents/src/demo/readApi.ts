@@ -7,6 +7,10 @@ export interface AuditEvent {
   id?: string;
   worker?: string;
   code?: string;
+  /** The Aqua strategy a `StrategyShipped` event is about. */
+  strategyHash?: string;
+  /** EVM hash of the main transaction of the event. */
+  txHash?: string;
   /** Hedera transaction id of the NFT mint (`NftMinted`). */
   txId?: string;
   /** Hedera transaction id of the HCS message that carries this event. */
@@ -79,6 +83,7 @@ export interface EventMatch {
   id?: string;
   code?: string;
   worker?: string;
+  strategyHash?: string;
 }
 
 /** The latest event that matches every given field (addresses compare case-insensitively). */
@@ -89,6 +94,7 @@ export function findEvent(events: AuditEvent[], match: EventMatch): AuditEvent |
       e.type === match.type &&
       (match.id === undefined || same(e.id, match.id)) &&
       (match.code === undefined || e.code === match.code) &&
-      (match.worker === undefined || same(e.worker, match.worker)),
+      (match.worker === undefined || same(e.worker, match.worker)) &&
+      (match.strategyHash === undefined || same(e.strategyHash, match.strategyHash)),
   );
 }

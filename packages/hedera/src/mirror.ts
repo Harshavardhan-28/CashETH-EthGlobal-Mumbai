@@ -91,6 +91,14 @@ export const mirror = {
     return toSdkTransactionId(tx.transaction_id);
   },
 
+  /** The block the contract was created in (0 when the mirror does not report its creation time): where log scans start. */
+  async creationBlock(env: Env, idOrEvm: string): Promise<bigint> {
+    const { created_timestamp } = await get<{ created_timestamp?: string }>(env, `/contracts/${idOrEvm}`);
+    if (!created_timestamp) return 0n;
+    const { blocks } = await get<{ blocks: { number: number }[] }>(env, `/blocks?timestamp=lte:${created_timestamp}&order=desc&limit=1`);
+    return BigInt(blocks[0]?.number ?? 0);
+  },
+
   /** Contract entity id (`0.0.x`) and EVM address for a contract id or EVM address. */
   contract(env: Env, idOrEvm: string): Promise<{ contract_id?: string; evm_address?: string }> {
     return get(env, `/contracts/${idOrEvm}`);

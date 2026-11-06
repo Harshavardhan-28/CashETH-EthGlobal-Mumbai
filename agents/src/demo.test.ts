@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env } from "@casheth/shared";
 import { describe, expect, it } from "vitest";
-import { LENDER_TIERS } from "@casheth/aqua";
+import { LENDER_TIERS, type LenderStrategy } from "@casheth/aqua";
 import { keccak256, toHex, type Address } from "viem";
-import { checkQuotePlan, formatTable, formatUsdc, topUpShortfall } from "./demo/checks.js";
+import { checkQuotePlan, findShippedStrategy, formatTable, formatUsdc, topUpShortfall } from "./demo/checks.js";
 import { appendEvidence, formatEvidenceSection, formatStepLine } from "./demo/evidence.js";
 import { loadIdentity } from "./demo/identity.js";
 import { appendEnvVar, ensureNotesTopic } from "./demo/notesTopic.js";
@@ -206,6 +206,44 @@ describe("checkQuotePlan", () => {
     const skipped = quotes().plan.skipped;
     expect(() => checkQuotePlan(quotes({ skipped: [skipped[1]!] }), makers)).toThrow(/lender C's strategy .* was not skipped/);
     expect(() => checkQuotePlan(quotes({ skipped: [skipped[0]!, { ...skipped[1]!, reason: "NO_CAPACITY" }] }), makers)).toThrow(/SELLER_NOT_FUNDED_BY_LENDER/);
+  });
+});
+
+/** An open credit strategy of lender `key` exactly as the demo plans to ship it for `seller`. */
+function openStrategy(key: "A" | "B", seller: Address, overrides: Partial<LenderStrategy> = {}): LenderStrategy {
+  const usdcToken: Address = "0x0000000000000000000000000000000000000c0a";
+  const { tier, creditUsdc } = FRESH_LENDERS[key];
+  return {
+    kind: "credit",
+    maker: makers[key],
+    strategyHash: hash(`open-${key}`),
+    args: { ...LENDER_TIERS[tier], maxPerBuyer: 0n, minReserve: 0n, sellerSet: [seller] },
+    tokens: [usdcToken, "0x0000000000000000000000000000000000000c0b"],
+    virtual: { [usdcToken]: creditUsdc },
+    realUsdc: creditUsdc,
+    allowance: creditUsdc,
+    salt: 1n,
+    order: { maker: makers[key], traits: 0n, data: "0x" },
+    ...overrides,
+  };
+}
+
+describe("findShippedStrategy", () => {
+  const seller: Address = "0x00000000000000000000000000000000000000f1";
+  const planned = { maker: makers.A, seller, creditUsdc: FRESH_LENDERS.A.creditUsdc, aprBps: LENDER_TIERS[FRESH_LENDERS.A.tier].aprBps };
+
+  it("finds the lender's unspent strategy of the planned size, APR and seller set", () => {
+    const strategy = openStrategy("A", seller);
+    expect(findShippedStrategy([openStrategy("B", seller), strategy], planned)).toBe(strategy);
+  });
+
+  it("ignores strategies that are spent, for another seller, another APR or another kind", () => {
+    const [usdcToken] = openStrategy("A", seller).tokens;
+    const other: Address = "0x00000000000000000000000000000000000000f2";
+    expect(findShippedStrategy([openStrategy("A", seller, { virtual: { [usdcToken]: 1n } })], planned)).toBeUndefined();
+    expect(findShippedStrategy([openStrategy("A", other)], planned)).toBeUndefined();
+    expect(findShippedStrategy([openStrategy("A", seller)], { ...planned, aprBps: planned.aprBps + 1 })).toBeUndefined();
+    expect(findShippedStrategy([openStrategy("A", seller, { kind: "base" })], planned)).toBeUndefined();
   });
 });
 
@@ -414,6 +452,8 @@ function fakeContext() {
   const sellerAddress: Address = "0x00000000000000000000000000000000000000f1";
   const document = { keccak256: hash("invoice-pdf"), verification: { ok: true, mismatches: [] }, hashscan: "https://hashscan.io/testnet/transaction/0.0.7@9.9" };
   const events: AuditEvent[] = [];
+  const shipKeys: string[] = [];
+  const open: LenderStrategy[] = [];
   const calls: string[] = [];
   // Lender A holds half of what it ships (so it is topped up); lender B holds exactly what it ships.
   const balances = new Map<Address, bigint>([[makers.A, FRESH_LENDERS.A.creditUsdc / 2n], [makers.B, FRESH_LENDERS.B.creditUsdc], [sellerAddress, 0n], [buyerAddress, INVOICE.amount]]);
@@ -488,7 +528,7 @@ function fakeContext() {
         [key]: {
           address: makers[key as "A" | "B"],
           accountId: `0.0.${key.charCodeAt(0)}`,
-          agent: { ship: async (params: { tier: string }) => (calls.push(`ship-${key}`), { mode: "shipped", tier: params.tier, aprBps: key === "A" ? 700 : 850, credit: { txHash: `0xship${key}` } }) },
+          agent: { ship: async (params: { tier: string; idempotencyKey?: string }) => (calls.push(`ship-${key}`), shipKeys.push(String(params.idempotencyKey)), { mode: "shipped", tier: params.tier, aprBps: key === "A" ? 700 : 850, credit: { txHash: `0xship${key}` } }) },
         },
       }),
       {},
@@ -502,6 +542,7 @@ function fakeContext() {
       receivable: async () => ({ id, state: "Repaid", amount: INVOICE.amount.toString(), funded: BORROWING_BASE.toString(), debt: "0", positions: [] }),
     },
     usdcBalance: async (address: Address) => balances.get(address) ?? 0n,
+    openStrategies: async () => open,
     topUpFromOperator: async (accountId: string, units: bigint) => {
       calls.push(`top-up ${accountId} ${units}`);
       return "0.0.1@8.8";
@@ -511,7 +552,7 @@ function fakeContext() {
     poll: { attempts: 2, delayMs: 0, sleep: noSleep },
     state: {},
   } as unknown as DemoContext;
-  return { ctx, calls, balances };
+  return { ctx, calls, balances, shipKeys, open, events, sellerAddress };
 }
 
 describe("the eight lifecycle steps against fake agents", () => {
@@ -565,6 +606,36 @@ describe("the eight lifecycle steps against fake agents", () => {
     expect(last.label).toContain("8. buyer repays");
     expect(last.error).toMatch(new RegExp(`payouts differ from lender A ${EXPECTED_PAYOUTS.A}`));
     expect(exitCode(results)).toBe(1);
+  });
+
+  it("ships with a key that is the same on every run, so a rerun replays a ship that landed", async () => {
+    const first = fakeContext();
+    await runSteps(STEPS, first.ctx);
+    const second = fakeContext();
+    await runSteps(STEPS, second.ctx);
+    expect(first.shipKeys).toHaveLength(2);
+    expect(new Set(first.shipKeys).size).toBe(2);
+    expect(second.shipKeys).toEqual(first.shipKeys);
+  });
+
+  it("does not ship again when the lender's strategy is already open, and shows the earlier ship's transaction", async () => {
+    const { ctx, calls, open, events, sellerAddress } = fakeContext();
+    open.push(openStrategy("A", sellerAddress));
+    events.push({ type: "StrategyShipped", seq: 99, strategyHash: hash("open-A"), txHash: "0xearlier" });
+    const results = await runSteps(STEPS, ctx);
+
+    expect(calls).not.toContain("ship-A");
+    expect(calls).toContain("ship-B");
+    expect(results.find((r) => r.label.startsWith("1. lender A ships"))).toMatchObject({ txId: "0.0.1@0xearlier", note: expect.stringContaining("already open") });
+    expect(exitCode(results)).toBe(0);
+  });
+
+  it("skips an already-open strategy whose ship the server did not record, without failing the run", async () => {
+    const { ctx, open, sellerAddress } = fakeContext();
+    open.push(openStrategy("A", sellerAddress));
+    const results = await runSteps(STEPS, ctx);
+    expect(results.find((r) => r.label.startsWith("1. lender A ships"))).toMatchObject({ skipped: true });
+    expect(exitCode(results)).toBe(0);
   });
 
   it("proves the invoice document with the HCS anchor and the verifier's VERIFIED line", async () => {

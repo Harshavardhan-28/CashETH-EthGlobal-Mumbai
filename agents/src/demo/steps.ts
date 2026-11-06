@@ -2,12 +2,13 @@
  * The demo's lifecycle (BUILD.md section 16), one small step per Hedera transaction. Every step drives an agent
  * (which talks to the MCP server) and returns the proof it produced; none of them sends a chain call itself.
  */
+import { LENDER_TIERS } from "@casheth/aqua";
 import { hashscan } from "@casheth/shared";
 import type { Address, Hex } from "viem";
-import { ToolCallError } from "../mcpClient.js";
+import { idempotencyKey as stableKey, ToolCallError } from "../mcpClient.js";
 import type { ShipOutcome } from "../lender.js";
 import type { PurchaseOutcome } from "../worker.js";
-import { checkQuotePlan, formatAgentTable, formatLenderTable, formatUsdc, topUpShortfall } from "./checks.js";
+import { checkQuotePlan, findShippedStrategy, formatAgentTable, formatLenderTable, formatUsdc, topUpShortfall } from "./checks.js";
 import { ADVANCE_BPS, BUDGETS, EXPECTED_PAYOUTS, EXPECTED_SELLER_PAYOUT, FRESH_LENDERS, INVOICE, SPEND } from "./plan.js";
 import { poll } from "./poll.js";
 import { findEvent, type AuditEvent } from "./readApi.js";
@@ -63,7 +64,10 @@ function topUpStep(label: string, account: (ctx: DemoContext) => { address: Addr
       const { address, accountId } = account(ctx);
       const balance = await ctx.usdcBalance(address);
       const shortfall = topUpShortfall(balance, required);
-      if (shortfall === 0n) return { skipped: true, note: `holds ${formatUsdc(balance)} USDC, enough for the ${formatUsdc(required)} ${purpose}` };
+      if (shortfall === 0n) {
+        ctx.log("already done: the balance covers it", { account: accountId, balance, required });
+        return { skipped: true, note: `holds ${formatUsdc(balance)} USDC, enough for the ${formatUsdc(required)} ${purpose}` };
+      }
       const txId = await ctx.topUpFromOperator(accountId, shortfall);
       return { ...proofOfTx(txId), note: `operator sent exactly ${formatUsdc(shortfall)} USDC (held ${formatUsdc(balance)}, ${purpose} ${formatUsdc(required)})` };
     },
@@ -75,12 +79,27 @@ const lenderTopUpStep = (key: "A" | "B"): Step =>
 
 const buyerTopUpStep: Step = topUpStep("8. buyer: top up USDC from the operator", (ctx) => ctx.buyer, INVOICE.amount, "it repays");
 
+/** The strategy is already open (an earlier run shipped it): show that run's ship transaction when the server recorded it. */
+async function shippedEarlier(ctx: DemoContext, strategyHash: Hex): Promise<StepOutcome> {
+  ctx.log("already done: the strategy is open, not shipping again", { strategyHash });
+  const event = findEvent(await ctx.read.events(), { type: "StrategyShipped", strategyHash });
+  if (!event?.txHash) return { skipped: true, note: `strategy ${strategyHash} is already open (shipped by an earlier run)` };
+  return { ...(await proofOfEvmTx(ctx, event.txHash)), note: `strategy ${strategyHash} is already open: the ship transaction of an earlier run` };
+}
+
 function shipStep(key: "A" | "B"): Step {
   const { tier, creditUsdc } = FRESH_LENDERS[key];
   return {
     label: `1. lender ${key} ships a ${formatUsdc(creditUsdc)} USDC ${tier}-tier credit strategy`,
     async run(ctx) {
-      const outcome = await ctx.lenders[key].agent.ship({ tier, sellerSet: [ctx.seller.address], creditUsdc });
+      const lender = ctx.lenders[key];
+      const planned = { maker: lender.address, seller: ctx.seller.address, creditUsdc, aprBps: LENDER_TIERS[tier].aprBps };
+      const open = findShippedStrategy(await ctx.openStrategies(), planned);
+      if (open) return shippedEarlier(ctx, open.strategyHash);
+
+      // A stable key per invoice and lender: a rerun whose strategy is not yet visible replays a ship that landed.
+      const idempotencyKey = stableKey("demo-ship", INVOICE.buyerRef, key);
+      const outcome = await ctx.lenders[key].agent.ship({ tier, sellerSet: [ctx.seller.address], creditUsdc, idempotencyKey });
       return { ...(await proofOfEvmTx(ctx, shipTxHash(outcome))), note: `${tier} tier at ${outcome.aprBps / 100}% APR, seller set [seller]` };
     },
   };

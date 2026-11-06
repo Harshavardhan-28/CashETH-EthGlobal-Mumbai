@@ -1,3 +1,4 @@
+import type { LenderStrategy } from "@casheth/aqua";
 import type { Address, Hex } from "viem";
 import type { AgentKit } from "../kit.js";
 import type { BuyerAgent } from "../buyer.js";
@@ -65,6 +66,8 @@ export interface DemoContext {
   merchant: Address;
   read: ReadApi;
   usdcBalance(address: Address): Promise<bigint>;
+  /** Every open Aqua strategy on the CashETH router: a rerun looks here before shipping again. */
+  openStrategies(): Promise<LenderStrategy[]>;
   /** Moves `units` USDC from the operator to `accountId`; resolves with the Hedera transaction id. */
   topUpFromOperator(accountId: string, units: bigint): Promise<string>;
   /** The Hedera transaction id for an EVM transaction hash (or an id, returned unchanged). */
