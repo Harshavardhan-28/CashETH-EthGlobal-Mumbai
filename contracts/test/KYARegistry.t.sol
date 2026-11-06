@@ -214,7 +214,28 @@ contract KYARegistryTest is Test {
         assertEq(bLate, 0);
         assertEq(bDefaults, 1, "buyer defaults");
         (uint32 sOnTime, uint32 sLate, uint32 sDefaults) = kya.reputation(seller);
-        assertEq(sOnTime + sLate + sDefaults, 0, "seller untouched");
+        assertEq(sOnTime + sLate, 0, "seller on-time and late untouched");
+        assertEq(sDefaults, 1, "seller defaults (Ruling R20)");
+    }
+
+    /// @dev Ruling R20: a default counts against both parties, so a lender's `maxSellerDefaults` can bite.
+    function test_recordDefault_countsBuyerAndSeller() public {
+        _wire();
+        address otherBuyer = makeAddr("otherBuyer");
+
+        vm.startPrank(facility);
+        kya.recordDefault(buyer, seller);
+        kya.recordDefault(otherBuyer, seller);
+        vm.stopPrank();
+
+        (uint32 bOnTime, uint32 bLate, uint32 bDefaults) = kya.reputation(buyer);
+        assertEq(bOnTime + bLate, 0);
+        assertEq(bDefaults, 1, "buyer defaults");
+        (,, uint32 obDefaults) = kya.reputation(otherBuyer);
+        assertEq(obDefaults, 1, "other buyer defaults");
+        (uint32 sOnTime, uint32 sLate, uint32 sDefaults) = kya.reputation(seller);
+        assertEq(sOnTime + sLate, 0);
+        assertEq(sDefaults, 2, "seller defaults count every default");
     }
 
     function test_wire_once() public {

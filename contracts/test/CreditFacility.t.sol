@@ -88,6 +88,8 @@ abstract contract CreditFacilityBase is Test {
             owner
         );
 
+        repaymentRouter = _deployRepaymentRouter();
+
         vm.startPrank(owner);
         registry.wire(address(facility), repaymentRouter);
         kya.wire(repaymentRouter, address(facility));
@@ -112,6 +114,12 @@ abstract contract CreditFacilityBase is Test {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /// @dev The repayment router wired everywhere in `setUp` (after the facility is deployed, before wiring).
+    ///      Defaults to a plain address the facility suites prank as; `RepaymentRouterTest` deploys the real one.
+    function _deployRepaymentRouter() internal virtual returns (address) {
+        return repaymentRouter;
+    }
 
     function _newFacility(address usdc_) internal returns (CreditFacility) {
         return new CreditFacility(
@@ -492,7 +500,7 @@ contract CreditFacilityTest is CreditFacilityBase {
         assertEq(onTime, 0);
         assertEq(late, 0);
         (,, uint32 sellerDefaults) = kya.reputation(seller);
-        assertEq(sellerDefaults, 0);
+        assertEq(sellerDefaults, 1, "Ruling R20: the seller's default count moves too");
     }
 
     /// @dev The brief's "dueDate 100 days out" cannot schedule even the overdue check (dueDate + 7 days is past

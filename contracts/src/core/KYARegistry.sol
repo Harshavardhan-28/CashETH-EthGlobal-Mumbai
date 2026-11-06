@@ -114,9 +114,11 @@ contract KYARegistry is IKYARegistry, Ownable {
         emit RepaymentRecorded(buyer, seller, onTime);
     }
 
-    /// @notice A default counts against the buyer only.
+    /// @notice A default counts against both the buyer and the seller (Ruling R20), so a lender's
+    ///         seller-default limit can take effect.
     function recordDefault(address buyer, address seller) external onlyFacility {
         _reputation[buyer].defaults += 1;
+        _reputation[seller].defaults += 1;
         emit DefaultRecorded(buyer, seller);
     }
 
