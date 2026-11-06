@@ -126,7 +126,7 @@ In: `{ id: hex32 }`. Out: the `GET /receivables/:id` object (with `document` whe
 
 ### `get_quotes`
 In: `{ id }` (caller = seller; state must be Confirmed, else `NOT_CONFIRMED`).
-Out: `{ id, decision, borrowingBase: units, strategies: [{ maker, strategyHash, kind: "credit"|"base", aprBps?, tier?, sellerSet?, feeBps?, virtualUsdc, realUsdc }], plan: { fills: [{ maker, strategyHash, amount, aprBps }], total, skipped: [{ strategyHash, reason }] } }`. No transaction; the solver quotes each strategy through `router.quote` from the facility, so on-chain lender rules (tier, seller set, per-buyer cap) decide eligibility.
+Out: `{ id, decision, borrowingBase: units, strategies: [{ maker, strategyHash, kind: "credit"|"base", aprBps?, tier?, sellerSet?, feeBps?, virtualUsdc, realUsdc }], plan: { fills: [{ maker, strategyHash, amount, aprBps }], total, skipped: [{ strategyHash, reason }] } }`. No transaction; the solver quotes each strategy through `router.quote` from the facility, so on-chain lender rules (tier, seller set, per-buyer cap) decide eligibility. Discovery never lists a strategy whose maker traits set a swap-vm transfer hook or Permit2 (skipped as `UNSUPPORTED_ORDER_FLAGS`): a hook could pass the dry run and revert the real `openAndFund`.
 
 ### `open_facility`
 In: `{ id }`. Re-solves and sends `openAndFund(id, fills, advanceBps, limit)` with the coordinator.

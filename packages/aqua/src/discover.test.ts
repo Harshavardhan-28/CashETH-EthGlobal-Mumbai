@@ -31,7 +31,9 @@ const addrs = { aqua: AQUA, swapRouter: ROUTER, orderBuilder: BUILDER, usdc: USD
 const ORDER_TUPLE = [
   { type: "tuple", components: [{ type: "address" }, { type: "uint256" }, { type: "bytes" }] },
 ] as const;
-const orderBytes = (maker: Address): Hex => encodeAbiParameters(ORDER_TUPLE, [[maker, 1n << 250n, "0x21"]]);
+/** `useAquaInsteadOfSignature` (bit 254 of the swap-vm MakerTraits), as `CashEthOrderBuilder` sets it. */
+const AQUA_TRAITS = 1n << 254n;
+const orderBytes = (maker: Address, traits = AQUA_TRAITS): Hex => encodeAbiParameters(ORDER_TUPLE, [[maker, traits, "0x21"]]);
 
 function shippedLog(maker: Address, strategy: Hex) {
   const data = encodeAbiParameters(
@@ -100,6 +102,26 @@ describe("discoverStrategies with untrusted Shipped data", () => {
       { maker: ATTACKER, strategyHash: keccak256(good), reason: "MAKER_MISMATCH" },
     ]);
     expect(await listOpenStrategies(stubChain(logs, balances), addrs)).toEqual(strategies);
+  });
+
+  it("skips orders whose maker traits set a hook or permit2 flag, before decoding them", async () => {
+    const hooked = [
+      ["pre-transfer-in hook", 1n << 252n],
+      ["post-transfer-in hook", 1n << 251n],
+      ["pre-transfer-out hook", 1n << 250n],
+      ["post-transfer-out hook", 1n << 249n],
+      ["pre-transfer-in hook target", 1n << 248n],
+      ["post-transfer-out hook target", 1n << 245n],
+      ["permit2", 1n << 244n],
+    ] as const;
+    const makers = hooked.map((_, i) => getAddress(`0x${(0xd00 + i).toString(16).padStart(40, "0")}`));
+    const hookedLogs = hooked.map(([, flag], i) => shippedLog(makers[i]!, orderBytes(makers[i]!, AQUA_TRAITS | flag)));
+    const { strategies, skipped } = await discoverStrategies(stubChain([...hookedLogs, shippedLog(LENDER, good)], () => [4_000_000n, 0n]), addrs);
+
+    expect(strategies.map((s) => s.maker)).toEqual([LENDER]);
+    expect(skipped).toEqual(
+      makers.map((maker, i) => ({ maker, strategyHash: keccak256(orderBytes(maker, AQUA_TRAITS | hooked[i]![1])), reason: "UNSUPPORTED_ORDER_FLAGS" })),
+    );
   });
 
   it("still throws on transport errors", async () => {

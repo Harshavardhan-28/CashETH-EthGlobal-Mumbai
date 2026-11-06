@@ -85,6 +85,18 @@ function openFromLogs(logs: Log[], app: Address): Shipped[] {
   return [...open.values()];
 }
 
+/**
+ * swap-vm `MakerTraitsLib` bits that hand control to code outside the order: the four transfer hooks, their
+ * explicit hook targets, and Permit2 transfers. CashETH lender orders never set them, and a hook can pass the
+ * solver's eth_call dry run yet revert every real `openAndFund` (or take a fee on the way).
+ */
+const HOOK_OR_PERMIT2_FLAGS = [252n, 251n, 250n, 249n, 248n, 247n, 246n, 245n, 244n].reduce((mask, bit) => mask | (1n << bit), 0n);
+
+/** Whether the order's maker traits set a hook or Permit2 flag. */
+export function hasUnsupportedFlags(traits: bigint): boolean {
+  return (traits & HOOK_OR_PERMIT2_FLAGS) !== 0n;
+}
+
 /** Whether a failed eth_call reverted (as opposed to a transport or RPC failure). */
 function isRevert(err: unknown): boolean {
   return err instanceof BaseError && err.walk((e) => e instanceof ContractFunctionRevertedError) !== null;
@@ -124,6 +136,8 @@ export const DISCOVERY_SKIP = {
   MALFORMED_STRATEGY: "MALFORMED_STRATEGY",
   /** The order's maker is not the account that shipped it (someone re-shipped another maker's order). */
   MAKER_MISMATCH: "MAKER_MISMATCH",
+  /** The maker traits set a transfer hook or Permit2 (see `hasUnsupportedFlags`). */
+  UNSUPPORTED_ORDER_FLAGS: "UNSUPPORTED_ORDER_FLAGS",
   /** Neither a CashETH credit order over (USDC, RCN) nor a base-yield order over (USDC, tUSDT). */
   NOT_CASHETH_ORDER: "NOT_CASHETH_ORDER",
   /** `aqua.safeBalances` reverted (e.g. shipped without both tokens); suffixed with `:<error name>`. */
@@ -133,7 +147,7 @@ export const DISCOVERY_SKIP = {
 /**
  * Like `listOpenStrategies`, but also returns the shipped strategies it left out. Aqua's `ship` is
  * permissionless and takes arbitrary bytes, so every `Shipped` event is untrusted: malformed strategy bytes,
- * orders whose maker is not the shipper, foreign programs and strategies whose balances cannot be read are
+ * orders whose maker is not the shipper, orders with transfer hooks or Permit2, foreign programs and strategies whose balances cannot be read are
  * skipped and reported per strategy. Transport and RPC failures still throw.
  */
 export async function discoverStrategies(
@@ -160,6 +174,10 @@ export async function discoverStrategies(
     // account, or a copy of a lender's order shipped by someone else would count as that lender's liquidity.
     if (order.maker !== s.maker) {
       skip(DISCOVERY_SKIP.MAKER_MISMATCH);
+      continue;
+    }
+    if (hasUnsupportedFlags(order.traits)) {
+      skip(DISCOVERY_SKIP.UNSUPPORTED_ORDER_FLAGS);
       continue;
     }
     const kind = await classify(client, addrs, order);
