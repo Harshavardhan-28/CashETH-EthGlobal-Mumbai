@@ -1,0 +1,12 @@
+[profile.default]
+src = "src"
+test = "test"
+libs = ["lib"]
+solc = "0.8.30"
+via_ir = true
+evm_version = "prague"
+optimizer = true
+optimizer_runs = 600
+
+[rpc_endpoints]
+testnet = "${HEDERA_JSON_RPC_URL}"

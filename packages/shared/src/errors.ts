@@ -1,0 +1,35 @@
+export const ERROR_CODES = [
+  "DUPLICATE_RECEIVABLE",
+  "BAD_BUYER_SIG",
+  "WRONG_PAYEE",
+  "BAD_NONCE",
+  "TERM_INELIGIBLE",
+  "KYA_FAIL",
+  "SELF_DEALING",
+  "NOT_CONFIRMED",
+  "BORROWING_BASE_EXCEEDED",
+  "NOT_CHEAPEST_FIRST",
+  "AGENT_BUDGET_EXCEEDED",
+  "TX_LIMIT_EXCEEDED",
+  "DAILY_LIMIT_EXCEEDED",
+  "MERCHANT_NOT_ALLOWED",
+  "GLOBAL_CREDIT_LIMIT_EXCEEDED",
+  "RESERVATION_EXPIRED",
+  "FACILITY_NOT_ACTIVE",
+  "PAUSED",
+  "INSUFFICIENT_SCOPE",
+  "KYA_LEVEL_TOO_LOW",
+  "BAD_CURRENCY",
+  "BAD_STATE",
+  "FILL_MISMATCH",
+  "SCHEDULE_FAILED",
+  "RCN_TRANSFER_RESTRICTED",
+] as const;
+
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+const codes: ReadonlySet<string> = new Set(ERROR_CODES);
+
+export function isErrorCode(s: string): s is ErrorCode {
+  return codes.has(s);
+}
