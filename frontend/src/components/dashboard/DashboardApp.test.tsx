@@ -5,7 +5,7 @@ import { SAMPLE_AGENTS, SAMPLE_LENDERS, sampleEvents } from "@/lib/admin/sample"
 import type { AdminData } from "@/lib/admin/useAdminData";
 import { DashboardApp, SAVED_AGENT_KEY, agentFromHash } from "./DashboardApp";
 
-const live = (): AdminData => ({ status: "live", sample: false, events: sampleEvents(Date.now()), agents: SAMPLE_AGENTS, lenders: SAMPLE_LENDERS, updatedAt: Date.now() });
+const live = (): AdminData => ({ status: "live", sample: false, events: sampleEvents(Date.now()), agents: SAMPLE_AGENTS, lenders: SAMPLE_LENDERS, statsReady: true, updatedAt: Date.now() });
 const offline = (): AdminData => ({ ...live(), status: "offline", sample: true, updatedAt: undefined });
 const addrOf = (label: string) => SAMPLE_AGENTS.find((a) => a.label === label)!.address.toLowerCase();
 
@@ -37,6 +37,12 @@ describe("agentFromHash", () => {
 });
 
 describe("agent picker", () => {
+  it("says the agents are loading while only the activity has arrived, not that none are registered", () => {
+    renderAt("", () => ({ ...live(), agents: [], lenders: [], statsReady: false }));
+    expect(screen.getByText("Loading agents…")).toBeInTheDocument();
+    expect(screen.queryByText("No agents registered yet")).not.toBeInTheDocument();
+  });
+
   it("lists registered agents by role without any sign-in and opens one", async () => {
     renderAt("");
     expect(screen.getByRole("heading", { name: "Follow your agent" })).toBeInTheDocument();

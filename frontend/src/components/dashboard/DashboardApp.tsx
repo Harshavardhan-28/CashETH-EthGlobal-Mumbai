@@ -154,6 +154,8 @@ export function DashboardApp({ useData = useAdminData, loadWallet = fetchWallet,
 
   const props: RoleViewProps | undefined = me ? { me, agents: data.agents, lenders: data.lenders, events: data.events, mine, wallet, nowMs } : undefined;
   const lastAction = log[0];
+  // The agent list arrives with the slower stats poll, after the activity; until then the picker is still loading.
+  const agentsKnown = data.statsReady || data.sample;
 
   return (
     <div className={a.app}>
@@ -168,7 +170,7 @@ export function DashboardApp({ useData = useAdminData, loadWallet = fetchWallet,
       )}
       <main className={d.main}>
         {!props ? (
-          <AgentPicker agents={data.agents} status={data.status} unknown={wanted && data.status !== "loading" ? wanted : undefined} onPick={pick} />
+          <AgentPicker agents={data.agents} status={agentsKnown ? data.status : "loading"} unknown={wanted && agentsKnown && data.status !== "loading" ? wanted : undefined} onPick={pick} />
         ) : (
           <>
             <Identity me={props.me} lenders={data.lenders} wallet={wallet} sample={data.sample} lastAction={lastAction ? relativeTime(lastAction.ts, nowMs) : undefined} onSwitch={() => pick(undefined)} />
