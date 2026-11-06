@@ -1,0 +1,1016 @@
+/* Admin console: a cloud-console layout in the CashETH theme (tokens from globals.css, dark + light). */
+
+.app {
+  --rail: color-mix(in oklab, var(--bg) 82%, var(--surface));
+  --card: var(--surface);
+  --card-2: color-mix(in oklab, var(--surface) 70%, var(--ink) 4%);
+  --accent-tint: color-mix(in oklab, var(--accent) 14%, transparent);
+  --err-tint: color-mix(in oklab, var(--err) 14%, transparent);
+  --warn-tint: color-mix(in oklab, var(--warn) 14%, transparent);
+  --mcp: var(--muted);
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+/* ---------- top bar ---------- */
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 20px;
+  background: color-mix(in oklab, var(--rail) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.brandTag {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  border-left: 1px solid var(--line-2);
+  padding-left: 10px;
+}
+.netPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 5px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.netPill b {
+  color: var(--ink);
+  font-weight: 500;
+}
+.search {
+  flex: 1;
+  max-width: 420px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  padding: 0 12px;
+  height: 36px;
+  color: var(--faint);
+  transition: border-color 0.15s;
+}
+.search:focus-within {
+  border-color: var(--accent);
+}
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.search input::placeholder {
+  color: var(--faint);
+}
+.barRight {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.conn i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.connLive {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+.connLive i {
+  box-shadow: 0 0 0 0 currentColor;
+  animation: pulse 2s infinite;
+}
+.connOffline {
+  color: var(--err);
+  background: var(--err-tint);
+}
+.connLoading {
+  color: var(--muted);
+  background: var(--card);
+}
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 60%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.me {
+  position: relative;
+}
+.meBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  background: var(--card-2);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.menu {
+  position: absolute;
+  right: 0;
+  top: 40px;
+  min-width: 180px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px var(--shadow);
+  padding: 6px;
+}
+.menu p {
+  padding: 8px 10px 6px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+.menu button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.menu button:hover {
+  background: var(--card-2);
+}
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 9px 20px;
+  background: var(--warn-tint);
+  color: var(--warn);
+  border-bottom: 1px solid color-mix(in oklab, var(--warn) 30%, transparent);
+  font-size: 12.5px;
+}
+.banner b {
+  font-weight: 600;
+}
+.banner code {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* ---------- layout ---------- */
+.body {
+  display: grid;
+  grid-template-columns: 212px minmax(0, 1fr);
+  min-height: calc(100vh - 56px);
+}
+.nav {
+  position: sticky;
+  top: 56px;
+  align-self: start;
+  height: calc(100vh - 56px);
+  background: var(--rail);
+  border-right: 1px solid var(--line);
+  padding: 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.navItem:hover {
+  background: var(--card);
+  color: var(--ink);
+}
+.navItem svg {
+  flex: 0 0 auto;
+}
+.navOn,
+.navOn:hover {
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-weight: 600;
+}
+.navCount {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+  font-weight: 500;
+}
+.navGroup {
+  margin: 18px 12px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.navFoot {
+  margin-top: auto;
+  padding: 12px;
+  font-size: 11.5px;
+  color: var(--faint);
+  border-top: 1px solid var(--line);
+}
+
+.main {
+  padding: 24px 28px 48px;
+  min-width: 0;
+  max-width: 1440px;
+}
+.pageHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.pageHead h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.pageHead p {
+  margin-top: 3px;
+  color: var(--faint);
+  font-size: 13px;
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 0;
+  cursor: pointer;
+}
+.back:hover {
+  color: var(--accent);
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--card);
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 13px;
+  cursor: pointer;
+}
+.seg button + button {
+  border-left: 1px solid var(--line);
+}
+.seg button[aria-pressed="true"] {
+  background: var(--card-2);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ---------- cards ---------- */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  min-width: 0;
+}
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 0;
+}
+.cardHead h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.cardHead span,
+.cardSub {
+  color: var(--faint);
+  font-size: 12px;
+}
+.link {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+}
+.link:hover {
+  text-decoration: underline;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.kpi {
+  padding: 16px 18px 12px;
+  position: relative;
+  overflow: hidden;
+}
+.kpiLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.kpiIcon {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.kpiValue {
+  margin-top: 10px;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+.kpiSub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--accent);
+}
+.kpiSubMuted {
+  color: var(--faint);
+}
+.spark {
+  display: block;
+  width: 100%;
+  height: 34px;
+  margin-top: 10px;
+}
+
+.row2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.chartBody {
+  padding: 14px 18px 16px;
+}
+.chart {
+  display: block;
+  width: 100%;
+  height: 190px;
+}
+.axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  color: var(--faint);
+  font-size: 11px;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+/* ---------- stepper ---------- */
+.stepper {
+  list-style: none;
+  margin: 0;
+  padding: 16px 18px 6px;
+}
+.step {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+.step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 26px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--line-2);
+  border-radius: 2px;
+}
+.stepDone:not(:last-child)::after {
+  background: var(--accent);
+}
+.dot {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--line-2);
+  background: var(--card);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+}
+.stepDone .dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.stepCurrent .dot {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-tint);
+}
+.stepLabel {
+  font-weight: 500;
+}
+.stepTodo .stepLabel {
+  color: var(--faint);
+}
+.stepMeta {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* horizontal stepper (run detail) */
+.hstepper {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 22px 18px 18px;
+  list-style: none;
+  margin: 0;
+}
+.hstep {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 0 6px;
+}
+.hstep:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 11px;
+  left: calc(50% + 16px);
+  right: calc(-50% + 16px);
+  height: 2px;
+  background: var(--line-2);
+}
+.hstep.stepDone:not(:last-child)::after {
+  background: var(--accent);
+}
+
+/* ---------- chips, avatars, bars ---------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.chip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.chipGood {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+.chipIdle {
+  color: var(--muted);
+  background: color-mix(in oklab, var(--ink) 6%, transparent);
+}
+.chipBad {
+  color: var(--err);
+  background: var(--err-tint);
+}
+.chipWarn {
+  color: var(--warn);
+  background: var(--warn-tint);
+}
+
+.avatar {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  font-weight: 700;
+  color: var(--on-accent);
+  letter-spacing: -0.02em;
+}
+
+.score {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.track {
+  width: 72px;
+  height: 6px;
+  border-radius: 9px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+.track b {
+  display: block;
+  height: 100%;
+  border-radius: 9px;
+  background: var(--accent);
+}
+
+/* ---------- table ---------- */
+.tableWrap {
+  overflow-x: auto;
+  padding-top: 8px;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--faint);
+  font-size: 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.table td {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.table tr:last-child td {
+  border-bottom: 0;
+}
+.rowClick {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.rowClick:hover {
+  background: var(--card-2);
+}
+.who {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 220px;
+}
+.whoName {
+  font-weight: 600;
+}
+.whoJob {
+  color: var(--faint);
+  font-size: 12px;
+}
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.when {
+  color: var(--faint);
+}
+
+/* ---------- feed ---------- */
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0 4px;
+}
+.feedRow {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.feedRow:last-child {
+  border-bottom: 0;
+}
+.fresh {
+  animation: fresh 2.4s ease-out;
+}
+@keyframes fresh {
+  0% {
+    background: color-mix(in oklab, var(--accent) 16%, transparent);
+    transform: translateY(-4px);
+    opacity: 0.4;
+  }
+  20% {
+    transform: none;
+    opacity: 1;
+  }
+  100% {
+    background: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fresh,
+  .connLive i {
+    animation: none;
+  }
+}
+.feedText {
+  flex: 1;
+  min-width: 0;
+}
+.feedText b {
+  font-weight: 600;
+}
+.actorBtn {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+.actorBtn:hover {
+  color: var(--accent);
+}
+.feedDetail {
+  color: var(--faint);
+  font-size: 12px;
+  margin-top: 1px;
+}
+.toneBlocked {
+  color: var(--err);
+}
+.toneWarn {
+  color: var(--warn);
+}
+.feedTime {
+  color: var(--faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.proof {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.proof:hover {
+  text-decoration: underline;
+  color: var(--accent);
+}
+.proofNone {
+  color: var(--faint-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.empty {
+  padding: 36px 18px;
+  text-align: center;
+  color: var(--faint);
+}
+.empty b {
+  display: block;
+  color: var(--ink-2);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* ---------- agents view ---------- */
+.roleHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.roleSection + .roleSection .roleHead {
+  margin-top: 28px;
+}
+.roleSection:first-child .roleHead {
+  margin-top: 0;
+}
+.roleHead i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.roleHead span {
+  color: var(--faint);
+  font-weight: 500;
+}
+.agentGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.agentCard {
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.agentCard:hover {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px var(--shadow);
+}
+.agentTop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.agentTop .chip {
+  margin-left: auto;
+}
+.agentStats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+.miniLabel {
+  color: var(--faint);
+  font-size: 11.5px;
+  margin-bottom: 4px;
+}
+.agentLast {
+  border-top: 1px solid var(--line);
+  padding-top: 11px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.tile {
+  padding: 14px 16px;
+}
+.tile .kpiValue {
+  font-size: 22px;
+  margin-top: 6px;
+}
+.detailHead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.merchants {
+  list-style: none;
+  margin: 0;
+  padding: 8px 18px 14px;
+}
+.merchants li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.merchants li:last-child {
+  border-bottom: 0;
+}
+
+/* ---------- activity / runs views ---------- */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.filterChip {
+  border: 1px solid var(--line-2);
+  background: var(--card);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.filterChip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-weight: 600;
+}
+.filterSep {
+  width: 1px;
+  height: 22px;
+  background: var(--line-2);
+}
+.count {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+.dots {
+  display: inline-flex;
+  gap: 4px;
+}
+.dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line-2);
+}
+.dots .dotOn {
+  background: var(--accent);
+}
+.totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 14px 0;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 1280px) {
+  .agentGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1100px) {
+  .kpis,
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .row2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 1024px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nav {
+    position: static;
+    height: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 8px 12px;
+  }
+  .navItem {
+    width: auto;
+    white-space: nowrap;
+  }
+  .navGroup,
+  .navFoot,
+  .navCount {
+    display: none;
+  }
+  .netPill,
+  .brandTag {
+    display: none;
+  }
+  .main {
+    padding: 18px 16px 40px;
+  }
+}
+@media (max-width: 720px) {
+  .bar {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    row-gap: 10px;
+  }
+  .search {
+    order: 3;
+    flex: 1 0 100%;
+    max-width: none;
+  }
+  .nav {
+    top: 0;
+  }
+  .kpis,
+  .tiles,
+  .totals,
+  .agentGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .conn span {
+    display: none;
+  }
+  .hstepper {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .hstep {
+    flex-direction: row;
+    text-align: left;
+  }
+  .hstep::after {
+    display: none;
+  }
+}

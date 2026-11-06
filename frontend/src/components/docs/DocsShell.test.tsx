@@ -15,7 +15,7 @@ const filter = () => screen.getByRole("textbox", { name: /filter sections/i });
 describe("DocsShell sidebar", () => {
   it("lists every section, grouped", () => {
     renderShell();
-    expect(screen.getAllByRole("link")).toHaveLength(12);
+    expect(screen.getAllByRole("link")).toHaveLength(14);
     expect(screen.getByRole("navigation", { name: "REFERENCE" })).toBeInTheDocument();
   });
 

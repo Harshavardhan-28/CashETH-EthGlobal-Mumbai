@@ -13,7 +13,9 @@ export function DocsHeader() {
         </div>
         <nav className={styles.nav} aria-label="Docs">
           <Link href="/">Home</Link>
+          <a href="#connect">Connect</a>
           <a href="#mcp">MCP tools</a>
+          <a href="#read-api">Read API</a>
           <a href="#errors">Error codes</a>
           <ThemeToggle />
           <span className="pill">Hedera testnet · 296</span>

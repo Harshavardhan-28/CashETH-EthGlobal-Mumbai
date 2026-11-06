@@ -76,6 +76,7 @@ export const DOC_NAV = {
   start: [
     ["overview", "Overview"],
     ["quickstart", "Quickstart"],
+    ["connect", "Connect an agent"],
     ["architecture", "Architecture"],
   ],
   concepts: [
@@ -88,6 +89,7 @@ export const DOC_NAV = {
   ],
   ref: [
     ["mcp", "MCP tools"],
+    ["read-api", "Read API"],
     ["errors", "Error codes"],
     ["config", "Configuration"],
   ],
@@ -140,19 +142,49 @@ export const X402_STEPS = [
   { label: "— RELEASE", body: "On timeout, unspent USDC is pulled back via allowance.", accent: false },
 ];
 
-export const MCP_TOOLS: { name: string; role: Role; scope: string; effect: string }[] = [
-  { name: "register_agent", role: "owner", scope: "agent:admin", effect: "KYARegistry.register, HCS-14 profile · step-up always" },
-  { name: "upload_receivable", role: "seller", scope: "receivable:write", effect: "None (pending)" },
-  { name: "confirm_receivable", role: "buyer", scope: "receivable:confirm", effect: "ReceivableRegistry.register, NFT mint, HCS" },
-  { name: "get_receivable_status", role: "any", scope: "receivable:read", effect: "—" },
-  { name: "get_quotes", role: "seller", scope: "credit:read", effect: "—" },
-  { name: "open_facility", role: "seller", scope: "facility:open", effect: "CreditFacility.openAndFund · step-up above mandate" },
-  { name: "set_budgets", role: "seller", scope: "budget:write", effect: "CreditFacility.setBudgets" },
-  { name: "reserve_spend", role: "worker", scope: "spend:reserve", effect: "CreditFacility.reserve · step-up above maxPerTx" },
-  { name: "pay_x402", role: "worker", scope: "spend:pay", effect: "x402 settle (co-signed)" },
-  { name: "commit_spend", role: "worker", scope: "spend:commit", effect: "CreditFacility.commit" },
-  { name: "repay_receivable", role: "buyer", scope: "repay:write", effect: "RepaymentRouter.repay" },
-  { name: "explain_decision", role: "any", scope: "credit:read", effect: "AI explanation of a deterministic decision" },
+export type McpTool = { name: string; roles: Role[]; scope: string; mutating: boolean; effect: string };
+
+/** All 20 tools, in `apps/mcp-server/src/tools.ts` order, with its roles and scopes (docs/API.md §3). */
+export const MCP_TOOLS: McpTool[] = [
+  { name: "register_agent", roles: ["owner"], scope: "agent:admin", mutating: true, effect: "KYARegistry.register by the KYA issuer · HCS-14 profile as AgentRegistered" },
+  { name: "upload_invoice_document", roles: ["seller"], scope: "receivable:write", mutating: true, effect: "Stores the invoice file and reads its fields · InvoiceDocumentStored (hashes only) · optional HFS copy" },
+  { name: "get_invoice_document", roles: ["any"], scope: "receivable:read", mutating: false, effect: "—" },
+  { name: "upload_receivable", roles: ["seller"], scope: "receivable:write", mutating: true, effect: "Pending record + EIP-712 confirmation request · ReceivableUploaded" },
+  { name: "confirm_receivable", roles: ["buyer"], scope: "receivable:confirm", mutating: true, effect: "ReceivableRegistry.register · receivable NFT mint · ReceivableConfirmed + NftMinted" },
+  { name: "get_receivable_status", roles: ["any"], scope: "receivable:read", mutating: false, effect: "—" },
+  { name: "get_quotes", roles: ["seller"], scope: "credit:read", mutating: false, effect: "— (Aqua discovery + solver preview)" },
+  { name: "open_facility", roles: ["seller"], scope: "facility:open", mutating: true, effect: "CreditFacility.openAndFund, cheapest strategies first · FacilityFunded" },
+  { name: "set_budgets", roles: ["seller"], scope: "budget:write", mutating: true, effect: "CreditFacility.setBudgets (seller key, or calldata to sign)" },
+  { name: "reserve_spend", roles: ["seller", "worker"], scope: "spend:reserve", mutating: true, effect: "Engine checkSpend, then CreditFacility.reserve · SpendReserved / SpendRejected" },
+  { name: "pay_x402", roles: ["worker"], scope: "spend:pay", mutating: true, effect: "Co-signed x402 payment (Hedera transfer) to an allowed merchant origin" },
+  { name: "commit_spend", roles: ["worker"], scope: "spend:commit", mutating: true, effect: "CreditFacility.commit · SpendCommitted" },
+  { name: "release_spend", roles: ["seller", "worker"], scope: "spend:reserve", mutating: true, effect: "CreditFacility.release of an expired reservation · SpendReleased" },
+  { name: "repay_receivable", roles: ["buyer"], scope: "repay:write", mutating: true, effect: "USDC.approve + RepaymentRouter.repay, lenders first · Repaid" },
+  { name: "explain_decision", roles: ["any"], scope: "credit:read", mutating: false, effect: "— (AI explains a deterministic decision, never makes one)" },
+  { name: "list_agents", roles: ["any"], scope: "stats:read", mutating: false, effect: "—" },
+  { name: "get_agent_stats", roles: ["any"], scope: "stats:read", mutating: false, effect: "—" },
+  { name: "fund_agents", roles: ["lender"], scope: "lend:write", mutating: true, effect: "Aqua ship of a credit (and optional base-yield) strategy · StrategyShipped" },
+  { name: "get_lender_yield", roles: ["lender"], scope: "stats:read", mutating: false, effect: "—" },
+  { name: "close_strategy", roles: ["lender"], scope: "lend:write", mutating: true, effect: "Aqua dock · StrategyDocked" },
+];
+
+/** Scopes a token carries per role at KYA level ≥ 2 (level 1: read scopes only; level 0: no token). */
+export const ROLE_SCOPES: [Role, string][] = [
+  ["seller", "receivable:write receivable:read credit:read facility:open budget:write spend:reserve stats:read"],
+  ["buyer", "receivable:confirm receivable:read credit:read repay:write stats:read"],
+  ["worker", "receivable:read credit:read spend:reserve spend:pay spend:commit stats:read"],
+  ["lender", "receivable:read credit:read stats:read lend:write"],
+  ["owner", "agent:admin (the KYA issuer only, JWT-bearer grant)"],
+];
+
+/** The unauthenticated read API (docs/API.md §4): hashes, addresses, amounts and states only. */
+export const READ_API: { method: "GET"; path: string; returns: string }[] = [
+  { method: "GET", path: "/health", returns: "{ ok, resource, authorizationServer, events } — liveness and the audit event count" },
+  { method: "GET", path: "/events", returns: "AuditEvent[] — every state change and rejection, oldest first, each mirrored on the HCS audit topic" },
+  { method: "GET", path: "/agents", returns: "AgentStats[] — KYA level, score, tier, on-time %, receivables funded / repaid / defaulted, spend by merchant" },
+  { method: "GET", path: "/lenders", returns: "LenderYield[] — capital, lent, idle, base / boost / blended APR, open strategies" },
+  { method: "GET", path: "/receivables/:id", returns: "State, amount funded and the lenders owed for one receivable" },
+  { method: "GET", path: "/invoices/:keccak256", returns: "The invoice file itself, so anyone can hash it against the registry's detailsCommitment" },
 ];
 
 export const ERROR_CODES: [string, string][] = [
@@ -160,7 +192,34 @@ export const ERROR_CODES: [string, string][] = [
   ["TERM_INELIGIBLE", "registry"], ["KYA_FAIL", "registry"], ["SELF_DEALING", "registry"], ["NOT_CONFIRMED", "facility · opcode"],
   ["BORROWING_BASE_EXCEEDED", "facility"], ["NOT_CHEAPEST_FIRST", "facility"], ["AGENT_BUDGET_EXCEEDED", "engine · facility"], ["TX_LIMIT_EXCEEDED", "engine · facility"],
   ["DAILY_LIMIT_EXCEEDED", "engine · facility"], ["MERCHANT_NOT_ALLOWED", "engine · facility"], ["GLOBAL_CREDIT_LIMIT_EXCEEDED", "engine · facility"], ["RESERVATION_EXPIRED", "facility"],
-  ["FACILITY_NOT_ACTIVE", "facility"], ["PAUSED", "facility"], ["INSUFFICIENT_SCOPE", "MCP · 403"], ["KYA_LEVEL_TOO_LOW", "auth server"],
+  ["FACILITY_NOT_ACTIVE", "facility"], ["PAUSED", "facility"], ["NOT_PARTY", "facility · MCP"], ["WALLET_BUSY", "facility"],
+  ["RESERVATION_NOT_OPEN", "facility"], ["BUDGETS_EXCEED_FUNDED", "facility"], ["NOT_FINANCED", "repayment router"], ["ZERO_AMOUNT", "repayment router"],
+  ["SELLER_NOT_FUNDED_BY_LENDER", "Aqua opcode"], ["LENDER_RESERVE_TOO_LOW", "Aqua opcode"], ["INSUFFICIENT_SCOPE", "MCP · scope check"], ["KYA_LEVEL_TOO_LOW", "auth server"],
+];
+
+/** MCP-side codes (`McpErrorCode`): a tool error's `code` is a shared code above or one of these. */
+export const MCP_ERROR_CODES: [string, string][] = [
+  ["INSUFFICIENT_SCOPE", "The token lacks the tool's scope or role (reason: scope | role)"],
+  ["NOT_PARTY", "The caller is not the seller, buyer or worker this call is about"],
+  ["BAD_INPUT", "Malformed id, address, amount or URL (field)"],
+  ["INVOICE_MISMATCH", "The invoice document's printed terms differ from the submitted ones"],
+  ["NOT_FOUND", "Unknown pending id, receivable or strategy"],
+  ["NOT_DEPLOYED", "addresses.json lacks a contract the call needs"],
+  ["IDEMPOTENCY_KEY_REUSED", "Same idempotency key, different arguments"],
+  ["CREDIT_DECLINED", "The deterministic credit decision is not approved (reasons)"],
+  ["NO_ELIGIBLE_LIQUIDITY", "No lender strategy can fund the receivable (skipped)"],
+  ["SPEND_WALLET_NOT_REGISTERED", "reserve_spend wallet is not the worker's registered 2-of-2 with the co-signer"],
+  ["MERCHANT_URL_NOT_ALLOWED", "pay_x402 URL origin is not configured for the reservation's merchant"],
+  ["COSIGNER_REFUSED", "The policy co-signer refused the x402 payment (reason)"],
+  ["PAYMENT_FAILED", "The merchant answered without a settlement"],
+  ["PAYMENT_IN_FLIGHT", "A payment for this reservation is in flight or was co-signed without a seen settlement"],
+  ["RESERVATION_PAID", "release_spend on a reservation pay_x402 settled: commit it instead"],
+  ["RESERVATION_NOT_EXPIRED", "release_spend before the reservation's expiry"],
+  ["ALREADY_REPAID", "repay_receivable on a receivable that is already Repaid"],
+  ["KEY_NOT_HELD", "The server would need an agent key it does not hold (demo flags off)"],
+  ["CONTRACT_REVERTED", "A contract reverted with a custom error outside the shared list (error, args)"],
+  ["CHAIN_ERROR", "An RPC failure or an undecodable revert"],
+  ["INTERNAL", "Anything else"],
 ];
 
 export const CONFIG: [string, string][] = [
@@ -172,4 +231,30 @@ export const CONFIG: [string, string][] = [
   ["System contracts", "HTS 0x167 · HAS 0x16a · HSS 0x16b"],
   ["x402 facilitators", "api.testnet.blocky402.com · x402.org/facilitator · testnet.facilitator.launa.dev"],
   ["Explorer", "https://hashscan.io/testnet"],
+  ["MCP endpoint", "http://localhost:4030/mcp · POST · stateless Streamable HTTP"],
+  ["Read API", "http://localhost:4030 · GET · no auth"],
+  ["Authorization server", "http://localhost:4020"],
+  ["HCS audit topic", "0.0.11338927"],
+  ["Receivable NFT", "0.0.11338934"],
+];
+
+/** MCP server environment (docs/API.md §6). */
+export const MCP_ENV: [string, string, string][] = [
+  ["MCP_PORT", "4030", "Listen port"],
+  ["HOST", "127.0.0.1", "Interface the MCP and authorization servers bind to"],
+  ["MCP_RESOURCE_URL", "http://localhost:4030/mcp", "Token audience and MCP path"],
+  ["AUTH_ISSUER", "http://localhost:4020", "Authorization server; metadata fetched at boot, issuer must match"],
+  ["COORDINATOR_KEY, COSIGNER_KEY", "required", "Coordinator writes; x402 co-signature"],
+  ["KYA_ISSUER_KEY", "—", "register_agent"],
+  ["HCS_AUDIT_TOPIC_ID, RECEIVABLE_NFT_TOKEN_ID", "deployments/testnet/hedera.json", "Audit topic and receivable NFT collection"],
+  ["DATA_DIR", "apps/mcp-server/data", "events.jsonl, idempotency.json, pending.json, invoices/"],
+  ["CORS_ORIGINS", "http://localhost:3000", "Browser origins allowed on the read API (add the admin console's origin)"],
+  ["ANTHROPIC_API_KEY", "—", "explain_decision via claude-haiku-5-5"],
+  ["HFS_ENABLED", "false", "Also store invoice documents on the Hedera File Service"],
+  ["CASHETH_LLM_PROVIDER", "— (probe)", "ollama forces the local model for invoice field extraction"],
+  ["OLLAMA_BASE_URL, CASHETH_LLM_MODEL", "http://localhost:11434, qwen2.5:7b", "Ollama OpenAI-compatible endpoint"],
+  ["AGENT_KEYS_IN_PROCESS", "false", "Demo: the server signs as seller, buyer and workers"],
+  ["LENDER_KEYS_IN_PROCESS", "false", "Demo: the server signs as lenders"],
+  ["AQUA_FROM_BLOCK", "swap router creation block", "First block for Aqua log discovery"],
+  ["MERCHANT_ORIGINS", "—", "Extra accountId=origin pairs: the only origins pay_x402 fetches"],
 ];
