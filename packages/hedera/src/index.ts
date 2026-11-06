@@ -32,3 +32,5 @@ export { createClientHederaSigner, PrivateKey } from "@x402/hedera";
 export type { ClientHederaSigner } from "@x402/hedera";
 export { contracts } from "./contracts.js";
 export type { ContractsOptions, CoreContracts, ReadClient, WriteClient } from "./contracts.js";
+export { cheapest, discoverServices, priceUnits } from "./x402/discover.js";
+export type { DiscoveryResult, Service } from "./x402/discover.js";

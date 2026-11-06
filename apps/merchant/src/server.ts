@@ -19,6 +19,8 @@ export const RESEARCH_SOURCES = [
 export interface MerchantOptions {
   /** Facilitator base URL; defaults to `env.X402_FACILITATOR_URL`. */
   facilitatorUrl?: string;
+  /** Public base URL advertised in `/catalog`; defaults to `http://localhost:<port>`. */
+  publicUrl?: string;
 }
 
 /** Short deterministic research note (no LLM): the paid content of `/research`. */
@@ -73,6 +75,25 @@ export function createMerchantApp(env: Env, opts: MerchantOptions = {}): express
   const app = express();
   app.get("/health", (_req, res) => {
     res.json({ ok: true, network, payTo: env.MERCHANT_ACCOUNT_ID, asset: env.USDC_TOKEN_ID, facilitatorUrl });
+  });
+
+  app.get("/catalog", (req, res) => {
+    const base = (opts.publicUrl ?? `http://localhost:${req.socket.localPort ?? ""}`).replace(/\/+$/, "");
+    res.json({
+      services: [
+        {
+          name: "research",
+          description: "Topic research summary with sources",
+          url: `${base}/research?topic=`,
+          method: "GET",
+          price: RESEARCH_PRICE,
+          asset: env.USDC_TOKEN_ID,
+          decimals: 6,
+          network,
+          payTo: env.MERCHANT_ACCOUNT_ID,
+        },
+      ],
+    });
   });
 
   app.use(settlementReceipt());
