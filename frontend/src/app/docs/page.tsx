@@ -143,14 +143,14 @@ X402_FACILITATOR_URL=https://api.testnet.blocky402.com`}
           </p>
           <CodeBlock title='domain "AgentReceivables" · v1 · chainId 296'>
             <span className={styles.k}>struct</span>{` ReceivableConfirmation {
-    address seller;            `}<span className={styles.c}>// seller agent EVM address</span>{`
-    address buyer;             `}<span className={styles.c}>// buyer agent (the signer)</span>{`
-    address currency;          `}<span className={styles.c}>// USDC ERC-20 facade</span>{`
-    uint256 amount;            `}<span className={styles.c}>// base units, 6 decimals</span>{`
+    address seller;            `}<span className={styles.c}>{"// seller agent EVM address"}</span>{`
+    address buyer;             `}<span className={styles.c}>{"// buyer agent (the signer)"}</span>{`
+    address currency;          `}<span className={styles.c}>{"// USDC ERC-20 facade"}</span>{`
+    uint256 amount;            `}<span className={styles.c}>{"// base units, 6 decimals"}</span>{`
     uint64  dueDate;
-    bytes32 buyerRef;          `}<span className={styles.c}>// buyer's PO / AP reference</span>{`
-    bytes32 detailsCommitment; `}<span className={styles.c}>// keccak256(invoiceDocHash, salt)</span>{`
-    address payTo;             `}<span className={styles.c}>// MUST equal RepaymentRouter</span>{`
+    bytes32 buyerRef;          `}<span className={styles.c}>{"// buyer's PO / AP reference"}</span>{`
+    bytes32 detailsCommitment; `}<span className={styles.c}>{"// keccak256(invoiceDocHash, salt)"}</span>{`
+    address payTo;             `}<span className={styles.c}>{"// MUST equal RepaymentRouter"}</span>{`
     uint256 nonce;
     uint64  deadline;
 }
@@ -218,8 +218,8 @@ id = keccak256(abi.encode(buyer, buyerRef))`}
             receivable state. USDC stays in the lender&apos;s wallet until a fill.
           </p>
           <CodeBlock title="opcodes/ReceivableCredit.sol">
-{`taker == facility                       `}<span className={styles.c}>// only our facility can fill</span>{`
-registry.state(id) == Confirmed         `}<span className={styles.c}>// the core rule</span>{`
+{`taker == facility                       `}<span className={styles.c}>{"// only our facility can fill"}</span>{`
+registry.state(id) == Confirmed         `}<span className={styles.c}>{"// the core rule"}</span>{`
 dueDate - now <= maxTenorDays
 advance <= maxAdvanceBps
 kya.reputation(buyer).onTime >= minBuyerOnTime
