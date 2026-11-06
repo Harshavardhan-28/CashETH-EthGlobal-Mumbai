@@ -76,3 +76,30 @@ let callSeq = 0;
 /** An assistant turn that calls `name` with `args`. */
 export const callTool = (name: string, args: Record<string, unknown>): AIMessage =>
   new AIMessage({ content: "", tool_calls: [{ id: `call_${++callSeq}`, name, args, type: "tool_call" }] });
+
+export const PAID_API = "https://paid.example";
+export const SELLER = { address: "0x00000000000000000000000000000000000000a1", accountId: "0.0.1001", key: "0x" + "ab".repeat(32), uaid: "uaid:seller" } as const;
+export const WORKER = { address: "0x00000000000000000000000000000000000000d1", accountId: "0.0.1002", key: "0x" + "cd".repeat(32), uaid: "uaid:worker" } as const;
+export const SPEND_WALLET = "0x00000000000000000000000000000000000f4242";
+export const BUYER = "0x00000000000000000000000000000000000000b1";
+
+/** An in-memory transcript. */
+export function memoryTranscript() {
+  const entries: Record<string, unknown>[] = [];
+  return { entries, write: (entry: Record<string, unknown>) => void entries.push(entry) };
+}
+
+/** A buyer that records what it was asked. */
+export function fakeBuyer(log: string[] = []) {
+  return {
+    log,
+    async confirm(upload: { pendingId: string; id: string }) {
+      log.push(`confirm:${upload.pendingId}`);
+      return { id: upload.id, txHash: "0xc0", hashscan: "https://hashscan.io/testnet/transaction/0xc0", nftSerial: 7, hcsSeq: 9, decision: { approved: true, score: 80, advanceBps: 7500, limit: "1500000", reasons: [] } };
+    },
+    async repay(id: string, amount: bigint) {
+      log.push(`repay:${id}:${amount}`);
+      return { id, mode: "sent" as const, approveTxHash: "0xa0", txHash: "0xr0", hashscan: "https://hashscan.io/testnet/transaction/0xr0", state: "Repaid" };
+    },
+  };
+}
