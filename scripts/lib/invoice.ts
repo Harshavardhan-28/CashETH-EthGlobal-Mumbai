@@ -3,9 +3,11 @@
  * walkthrough uploads a new invoice each run). The PDF prints the labelled fields the MCP server's invoice reader
  * parses, so `upload_invoice_document` verifies them and `upload_receivable` must use the same terms.
  */
-import { PDFDocument, StandardFonts } from "pdf-lib";
 import { parseUnits } from "viem";
 import { INVOICE_PO_1003 } from "../../agents/src/fixtures.js";
+
+/** One renderer for every demo invoice: the fixture, fresh CLI invoices and the seller agent's. */
+export { renderInvoicePdf } from "../../agents/src/invoicePdf.js";
 
 const DAY_MS = 86_400_000;
 /** The registry accepts a tenor of 1 to 120 days. */
@@ -54,35 +56,6 @@ export function invoiceTerms(input: { buyerRef: string; amount: string; due?: st
     dueDate,
     dueDateUnix: BigInt(dueMs / 1000),
   };
-}
-
-/** The invoice PDF; fixed dates keep it reproducible. */
-export async function renderInvoicePdf(inv: Omit<InvoiceTerms, "amountUnits" | "dueDateUnix">): Promise<Uint8Array> {
-  const pdf = await PDFDocument.create();
-  const epoch = new Date(Date.UTC(2026, 10, 6));
-  pdf.setCreationDate(epoch);
-  pdf.setModificationDate(epoch);
-  pdf.setTitle(`Invoice ${inv.invoiceNumber}`);
-  pdf.setProducer("CashETH demo fixture");
-
-  const regular = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const page = pdf.addPage([595, 842]);
-
-  page.drawText("INVOICE", { x: 56, y: 770, size: 26, font: bold });
-  const lines = [
-    `Invoice No: ${inv.invoiceNumber}`,
-    `Seller: ${inv.sellerName}`,
-    `Buyer: ${inv.buyerName}`,
-    `Buyer PO Reference: ${inv.buyerRef}`,
-    `Currency: ${inv.currency}`,
-    `Amount Due: ${inv.currency} ${inv.amountPrinted}`,
-    `Due Date: ${inv.dueDate}`,
-    "Description: Research API credits (demo)",
-  ];
-  lines.forEach((line, i) => page.drawText(line, { x: 56, y: 710 - i * 26, size: 13, font: regular }));
-  page.drawText("Payable on Hedera testnet through the CashETH RepaymentRouter.", { x: 56, y: 470, size: 10, font: regular });
-  return pdf.save({ useObjectStreams: false });
 }
 
 /** `upload_invoice_document`'s arguments and the matching `upload_receivable` terms (add buyer and documentKeccak). */
