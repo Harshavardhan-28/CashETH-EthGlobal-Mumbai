@@ -26,6 +26,10 @@ describe(".mcp.json", () => {
     expect(seller).toMatchObject({ type: "http", url: "http://localhost:4030/mcp" });
     expect(seller.oauth?.scopes?.split(" ").sort()).toEqual([...ROLE_SCOPES[1]!].sort());
   });
+
+  it("gives CashETH tools ten minutes: buy_with_credit sends two Hedera transactions and an x402 settlement", () => {
+    expect((MCP_JSON.mcpServers["casheth-seller"] as { timeout?: number }).timeout).toBe(600_000);
+  });
 });
 
 /** In-memory stand-in for Claude Code's OAuth provider; the "browser" is the test. */

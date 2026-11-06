@@ -5,7 +5,8 @@
       "url": "http://localhost:4030/mcp",
       "oauth": {
         "scopes": "receivable:write receivable:read credit:read facility:open budget:write spend:reserve stats:read"
-      }
+      },
+      "timeout": 600000
     }
   }
 }
