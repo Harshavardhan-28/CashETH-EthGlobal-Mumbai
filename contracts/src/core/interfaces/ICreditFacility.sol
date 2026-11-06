@@ -111,6 +111,8 @@ interface ICreditFacility {
     error RESERVATION_EXPIRED();
     error RESERVATION_EXISTS();
     error RESERVATION_NOT_OPEN();
+    error BUDGET_BELOW_USED();
+    error WALLET_BUSY();
 
     /// @notice One-time wiring of the SwapVM router and the repayment router; both must be non-zero.
     function wire(address swapRouter, address repaymentRouter) external;
@@ -167,4 +169,6 @@ interface ICreditFacility {
     function isMerchantAllowed(bytes32 id, address worker, address merchant) external view returns (bool);
     function merchants(bytes32 id, address worker) external view returns (address[] memory);
     function reservation(bytes32 spendId) external view returns (Reservation memory);
+    function allocated(bytes32 id) external view returns (uint256);
+    function openReservationOf(address spendWallet) external view returns (bytes32);
 }

@@ -48,6 +48,9 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     uint8 private constant _RES_COMMITTED = 2;
     uint8 private constant _RES_RELEASED = 3;
 
+    /// @notice How long after a reservation's expiry only the coordinator may release it (Ruling R25).
+    uint256 public constant RELEASE_GRACE = 1 hours;
+
     IReceivableRegistry public immutable REGISTRY;
     IKYARegistry public immutable KYA;
     IReceivableCreditNote public immutable RCN;
@@ -75,6 +78,10 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     /// @dev Per (facility, worker) merchant allowlist: the enumerable list and its membership mapping.
     mapping(bytes32 => mapping(address => address[])) private _merchantList;
     mapping(bytes32 => mapping(address => mapping(address => bool))) private _merchantAllowed;
+    /// @dev Sum of all workers' allocations per facility, kept at or below `funded`.
+    mapping(bytes32 => uint256) private _allocated;
+    /// @dev The Open reservation a spend wallet holds, if any (Ruling R25: one at a time).
+    mapping(address => bytes32) private _openReservationOf;
 
     modifier onlyCoordinator() {
         _checkCoordinator();
@@ -273,8 +280,8 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     // ------------------------------------------------------------------ budgets and two-phase spend
 
     /// @notice Seller sets each worker's allocation, per-tx and daily limits, and replaces its merchant
-    ///         allowlist. The allocations of one call sum to at most `funded`, and no allocation drops below
-    ///         what the worker already spent plus holds in open reservations.
+    ///         allowlist. All workers' allocations together stay at or below `funded`, and no allocation drops
+    ///         below what the worker already spent plus holds in open reservations.
     function setBudgets(bytes32 id, address[] calldata workers, uint256[] calldata alloc, Limits[] calldata limits)
         external
     {
@@ -284,25 +291,26 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         if (alloc.length != n || limits.length != n) revert LENGTH_MISMATCH();
         if (info.status != STATUS_ACTIVE) revert FACILITY_NOT_ACTIVE();
 
-        uint256 sum;
+        uint256 total = _allocated[id];
         for (uint256 i; i < n; ++i) {
-            sum += alloc[i];
             address worker = workers[i];
             Budget storage b = _budgets[id][worker];
-            if (alloc[i] < b.spent + b.reserved) revert BUDGETS_EXCEED_FUNDED();
+            if (alloc[i] < b.spent + b.reserved) revert BUDGET_BELOW_USED();
+            total = total - b.alloc + alloc[i];
             b.alloc = alloc[i];
             b.maxPerTx = limits[i].maxPerTx;
             b.maxDaily = limits[i].maxDaily;
             _setMerchants(id, worker, limits[i].merchants);
         }
-        if (sum > info.funded) revert BUDGETS_EXCEED_FUNDED();
+        if (total > info.funded) revert BUDGETS_EXCEED_FUNDED();
+        _allocated[id] = total;
         emit BudgetsSet(id, workers, alloc);
     }
 
     /// @notice Moves `amount` USDC to the worker's spend wallet against an open reservation that the
     ///         coordinator later commits (spent on Hedera) or releases (pulled back).
-    /// @dev Check order: spend id unused, facility Active before its due date, expiry in the future; then
-    ///      worker budget, per-tx limit, daily limit, merchant allowlist, facility availability.
+    /// @dev Check order: spend id unused, spend wallet free, facility Active before its due date, expiry in the
+    ///      future; then worker budget, per-tx limit, daily limit, merchant allowlist, facility availability.
     function reserve(
         bytes32 id,
         bytes32 spendId,
@@ -314,6 +322,7 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     ) external onlyCoordinator whenNotPaused {
         Reservation storage r = _reservations[spendId];
         if (r.status != 0) revert RESERVATION_EXISTS();
+        if (_isOpenFor(_openReservationOf[spendWallet], spendWallet)) revert WALLET_BUSY();
         FacilityInfo storage info = _info[id];
         if (info.status != STATUS_ACTIVE || block.timestamp >= info.dueDate) revert FACILITY_NOT_ACTIVE();
         if (expiry <= block.timestamp) revert RESERVATION_EXPIRED();
@@ -324,6 +333,7 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         (uint256 dailySpent, uint64 dayStart) = _currentDay(b);
         if (dailySpent + amount > b.maxDaily) revert DAILY_LIMIT_EXCEEDED();
         if (!_merchantAllowed[id][worker][merchant]) revert MERCHANT_NOT_ALLOWED();
+        // Defense in depth (Ruling R24): unreachable while sum(alloc) <= funded and spent + reserved <= alloc.
         if (amount > available(id)) revert GLOBAL_CREDIT_LIMIT_EXCEEDED();
 
         b.dailySpent = dailySpent;
@@ -337,16 +347,18 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         r.amount = amount;
         r.expiry = expiry;
         r.status = _RES_OPEN;
+        _openReservationOf[spendWallet] = spendId;
 
         IERC20(USDC).safeTransfer(spendWallet, amount);
         emit SpendReserved(id, spendId, worker, merchant, amount, expiry);
     }
 
-    /// @notice Records the Hedera payment for an open, unexpired reservation: reserved becomes spent.
+    /// @notice Records the Hedera payment for an open reservation: reserved becomes spent. Allowed after the
+    ///         expiry too (Ruling R25), so a payment made in time can always be recorded; the engine stops
+    ///         paying at the expiry off-chain.
     function commit(bytes32 spendId, bytes32 hederaTxIdHash) external onlyCoordinator {
         Reservation storage r = _reservations[spendId];
         if (r.status != _RES_OPEN) revert RESERVATION_NOT_OPEN();
-        if (block.timestamp > r.expiry) revert RESERVATION_EXPIRED();
 
         uint256 amount = r.amount;
         Budget storage b = _budgets[r.id][r.worker];
@@ -360,22 +372,30 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         info.committed += amount;
         r.status = _RES_COMMITTED;
         r.txIdHash = hederaTxIdHash;
+        delete _openReservationOf[r.spendWallet];
         emit SpendCommitted(spendId, hederaTxIdHash);
     }
 
     /// @notice Pulls an open reservation's USDC back from the spend wallet (standing allowance). The
-    ///         coordinator may release at any time, anyone once the reservation has expired.
+    ///         coordinator may release at any time, anyone once `expiry + RELEASE_GRACE` has passed. On a Closed
+    ///         facility the USDC goes on to the seller, like the rest of the undrawn amount (Ruling R23).
     function release(bytes32 spendId) external {
         Reservation storage r = _reservations[spendId];
         if (r.status != _RES_OPEN) revert RESERVATION_NOT_OPEN();
-        if (msg.sender != COORDINATOR && block.timestamp <= r.expiry) revert NOT_COORDINATOR();
+        if (msg.sender != COORDINATOR && block.timestamp <= uint256(r.expiry) + RELEASE_GRACE) {
+            revert NOT_COORDINATOR();
+        }
 
         uint256 amount = r.amount;
+        address spendWallet = r.spendWallet;
+        FacilityInfo storage info = _info[r.id];
         _budgets[r.id][r.worker].reserved -= amount;
-        _info[r.id].reserved -= amount;
+        info.reserved -= amount;
         r.status = _RES_RELEASED;
+        delete _openReservationOf[spendWallet];
 
-        IERC20(USDC).safeTransferFrom(r.spendWallet, address(this), amount);
+        IERC20(USDC).safeTransferFrom(spendWallet, address(this), amount);
+        if (info.status == STATUS_CLOSED) IERC20(USDC).safeTransfer(info.seller, amount);
         emit SpendReleased(spendId, amount);
     }
 
@@ -428,6 +448,17 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         return _reservations[spendId];
     }
 
+    /// @return Sum of all workers' allocations on facility `id`.
+    function allocated(bytes32 id) external view returns (uint256) {
+        return _allocated[id];
+    }
+
+    /// @return The spend id of the Open reservation `spendWallet` holds, or zero when it holds none.
+    function openReservationOf(address spendWallet) external view returns (bytes32) {
+        bytes32 spendId = _openReservationOf[spendWallet];
+        return _isOpenFor(spendId, spendWallet) ? spendId : bytes32(0);
+    }
+
     // ------------------------------------------------------------------ internal
 
     /// @dev Sells `fill.amount` freshly minted RCN for exactly `fill.amount` USDC against the lender's order.
@@ -451,6 +482,13 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         _fillMaker = address(0);
         _fillAprBps = 0;
         _fillReported = 0;
+    }
+
+    /// @dev Whether `spendId` is an Open reservation paying through `spendWallet`. Checking the wallet keeps a
+    ///      zero spend id (the mapping's default) from marking every fresh wallet busy.
+    function _isOpenFor(bytes32 spendId, address spendWallet) private view returns (bool) {
+        Reservation storage r = _reservations[spendId];
+        return r.status == _RES_OPEN && r.spendWallet == spendWallet;
     }
 
     /// @dev The worker's daily total and window start, reset to (0, now) once a day has passed since the start.

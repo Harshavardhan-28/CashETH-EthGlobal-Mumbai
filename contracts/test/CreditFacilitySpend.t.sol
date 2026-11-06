@@ -21,6 +21,10 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
     uint256 internal constant OTHER_MAX_TX = 1_000_000;
     uint256 internal constant OTHER_MAX_DAILY = 1_000_000;
     uint64 internal constant TTL = 10 minutes;
+    /// @dev Storage slot of the facility's `_info` mapping (`forge inspect CreditFacility storageLayout`).
+    uint256 internal constant INFO_SLOT = 3;
+    /// @dev Word offset of `committed` inside `FacilityInfo`.
+    uint256 internal constant COMMITTED_OFFSET = 5;
 
     uint8 internal constant RES_NONE = 0;
     uint8 internal constant RES_OPEN = 1;
@@ -32,6 +36,7 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
     address internal dataWorker = makeAddr("dataWorker");
     address internal reserveWorker = makeAddr("reserveWorker");
     address internal researchWallet = makeAddr("researchWallet");
+    address internal researchWallet2 = makeAddr("researchWallet2");
     address internal computeWallet = makeAddr("computeWallet");
     address internal dataWallet = makeAddr("dataWallet");
     address internal reserveWallet = makeAddr("reserveWallet");
@@ -41,7 +46,7 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
     function setUp() public override {
         super.setUp();
         // Spend wallets keep a standing allowance so `release` can pull unspent USDC back.
-        address[4] memory wallets = [researchWallet, computeWallet, dataWallet, reserveWallet];
+        address[5] memory wallets = [researchWallet, researchWallet2, computeWallet, dataWallet, reserveWallet];
         for (uint256 i; i < wallets.length; ++i) {
             vm.prank(wallets[i]);
             usdc.approve(address(facility), type(uint256).max);
@@ -109,6 +114,37 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
         alloc[3] = ALLOC_RESERVE; // exactly 6_000_000
         vm.prank(seller);
         facility.setBudgets(id, workers, alloc, limits);
+        assertEq(facility.allocated(id), FUNDED);
+
+        // The total is enforced across calls: a second call can neither add a worker nor raise one over `funded`.
+        address extra = makeAddr("extraWorker");
+        (address[] memory w, uint256[] memory a, ICreditFacility.Limits[] memory l) = _two(extra, 1, extra, 1);
+        vm.prank(seller);
+        vm.expectRevert(ICreditFacility.BUDGETS_EXCEED_FUNDED.selector);
+        facility.setBudgets(id, w, a, l);
+        (w, a, l) = _two(research, ALLOC_RESEARCH + 1, research, ALLOC_RESEARCH + 1);
+        vm.prank(seller);
+        vm.expectRevert(ICreditFacility.BUDGETS_EXCEED_FUNDED.selector);
+        facility.setBudgets(id, w, a, l);
+
+        // A worker listed twice counts once, with its last allocation.
+        (w, a, l) = _two(research, 2_000_000, research, ALLOC_RESEARCH + 1);
+        vm.prank(seller);
+        vm.expectRevert(ICreditFacility.BUDGETS_EXCEED_FUNDED.selector);
+        facility.setBudgets(id, w, a, l);
+        (w, a, l) = _two(research, 2_000_000, research, ALLOC_RESEARCH);
+        vm.prank(seller);
+        facility.setBudgets(id, w, a, l);
+        assertEq(facility.budget(id, research).alloc, ALLOC_RESEARCH);
+        assertEq(facility.allocated(id), FUNDED);
+
+        // Moving allocation between workers keeps the total.
+        (w, a, l) = _two(compute, ALLOC_COMPUTE - 1_000_000, extra, 1_000_000);
+        vm.prank(seller);
+        facility.setBudgets(id, w, a, l);
+        assertEq(facility.budget(id, compute).alloc, ALLOC_COMPUTE - 1_000_000);
+        assertEq(facility.budget(id, extra).alloc, 1_000_000);
+        assertEq(facility.allocated(id), FUNDED);
 
         // A budget cannot be cut below what the worker already spent plus holds in open reservations.
         _reserve(keccak256("s1"), research, researchWallet, 300_000);
@@ -117,15 +153,17 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
         (address[] memory one, uint256[] memory oneAlloc, ICreditFacility.Limits[] memory oneLimits) =
             _single(research, 399_999, RESEARCH_MAX_TX, RESEARCH_MAX_DAILY, merchant);
         vm.prank(seller);
-        vm.expectRevert(ICreditFacility.BUDGETS_EXCEED_FUNDED.selector);
+        vm.expectRevert(ICreditFacility.BUDGET_BELOW_USED.selector);
         facility.setBudgets(id, one, oneAlloc, oneLimits);
 
+        // Cutting to exactly what is used frees the rest of the allocation.
         oneAlloc[0] = 400_000;
         vm.prank(seller);
         facility.setBudgets(id, one, oneAlloc, oneLimits);
         _assertBudget(
             research, 400_000, 300_000, 100_000, RESEARCH_MAX_TX, RESEARCH_MAX_DAILY, 300_000, uint64(block.timestamp)
         );
+        assertEq(facility.allocated(id), FUNDED - 600_000);
     }
 
     // ------------------------------------------------------------------ reserve
@@ -168,6 +206,7 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
         assertEq(r.status, RES_OPEN);
         assertEq(r.txIdHash, bytes32(0));
         assertEq(facility.reservation(keccak256("unused")).status, RES_NONE);
+        assertEq(facility.openReservationOf(researchWallet), spendId);
 
         // A spend id is single-use.
         vm.prank(coordinator);
@@ -185,15 +224,15 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
 
         // Open reservations count against the budget: 500k + 500k uses all of research's 1_000_000.
         _reserve(keccak256("r1"), research, researchWallet, 500_000);
-        _reserve(keccak256("r2"), research, researchWallet, 500_000);
+        _reserve(keccak256("r2"), research, researchWallet2, 500_000);
         vm.prank(coordinator);
         vm.expectRevert(ICreditFacility.AGENT_BUDGET_EXCEEDED.selector);
-        facility.reserve(id, keccak256("r3"), research, researchWallet, merchant, 1, _expiry());
+        facility.reserve(id, keccak256("r3"), research, computeWallet, merchant, 1, _expiry());
 
         // A worker without a budget has nothing to spend.
         vm.prank(coordinator);
         vm.expectRevert(ICreditFacility.AGENT_BUDGET_EXCEEDED.selector);
-        facility.reserve(id, keccak256("nobody"), stranger, researchWallet, merchant, 1, _expiry());
+        facility.reserve(id, keccak256("nobody"), stranger, dataWallet, merchant, 1, _expiry());
     }
 
     function test_reserve_txLimit() public {
@@ -267,38 +306,28 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
     function test_reserve_globalCreditLimit() public {
         _fundWithBudgets();
 
-        // A later `setBudgets` call budgets a fifth worker; each call's sum fits `funded`, together they do not.
-        address extra = makeAddr("extraWorker");
-        address extraWallet = makeAddr("extraWallet");
-        vm.prank(extraWallet);
-        usdc.approve(address(facility), type(uint256).max);
-        (address[] memory one, uint256[] memory oneAlloc, ICreditFacility.Limits[] memory oneLimits) =
-            _single(extra, 1_000_000, 1_000_000, 1_000_000, merchant);
-        vm.prank(seller);
-        facility.setBudgets(id, one, oneAlloc, oneLimits);
+        // Unreachable through the API (Ruling R24): sum(alloc) <= funded and spent + reserved <= alloc keep
+        // `available` at or above every worker's headroom. Force it: book 5_500_001 as committed with no budget
+        // spend, leaving `available` 499_999 below research's 500_000 headroom.
+        bytes32 committedSlot = bytes32(uint256(keccak256(abi.encode(id, INFO_SLOT))) + COMMITTED_OFFSET);
+        vm.store(address(facility), committedSlot, bytes32(uint256(5_500_001)));
+        assertEq(facility.facilityInfo(id).committed, 5_500_001);
+        assertEq(facility.facilityInfo(id).funded, FUNDED);
+        assertEq(facility.available(id), 499_999);
 
-        // Compute, data, reserve and half of research take 5_500_000 of the 6_000_000.
-        _reserve(keccak256("c1"), compute, computeWallet, 1_000_000);
-        _reserve(keccak256("c2"), compute, computeWallet, 1_000_000);
-        _reserve(keccak256("c3"), compute, computeWallet, 1_000_000);
-        _reserve(keccak256("dt"), dataWorker, dataWallet, 1_000_000);
-        _reserve(keccak256("rs"), reserveWorker, reserveWallet, 1_000_000);
-        _reserve(keccak256("r1"), research, researchWallet, 500_000);
-        assertEq(facility.available(id), 500_000);
-
-        // Within the extra worker's budget, per-tx and daily limits and allowlist, but above `available`.
-        vm.prank(coordinator);
-        vm.expectRevert(ICreditFacility.GLOBAL_CREDIT_LIMIT_EXCEEDED.selector);
-        facility.reserve(id, keccak256("x1"), extra, extraWallet, merchant, 500_001, _expiry());
         // Check order: the allowlist is checked before availability.
         vm.prank(coordinator);
         vm.expectRevert(ICreditFacility.MERCHANT_NOT_ALLOWED.selector);
-        facility.reserve(id, keccak256("x1"), extra, extraWallet, otherMerchant, 500_001, _expiry());
+        facility.reserve(id, keccak256("x1"), research, researchWallet, otherMerchant, 500_000, _expiry());
 
-        _reserve(keccak256("x1"), extra, extraWallet, 500_000);
+        // Within research's budget, per-tx and daily limits and allowlist, but above `available`.
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.GLOBAL_CREDIT_LIMIT_EXCEEDED.selector);
+        facility.reserve(id, keccak256("x1"), research, researchWallet, merchant, 500_000, _expiry());
+
+        _reserve(keccak256("x1"), research, researchWallet, 499_999);
         assertEq(facility.available(id), 0);
-        assertEq(usdc.balanceOf(address(facility)), 0);
-        assertEq(facility.facilityInfo(id).reserved, FUNDED);
+        assertEq(usdc.balanceOf(researchWallet), 499_999);
     }
 
     function test_reserve_frozenFacility() public {
@@ -340,13 +369,13 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
 
     // ------------------------------------------------------------------ commit
 
-    function test_commit_afterExpiryReverts() public {
+    function test_commit_afterExpiry_coordinatorAllowed() public {
         _fundWithBudgets();
         bytes32 s1 = keccak256("c1");
         bytes32 s2 = keccak256("c2");
         uint64 expiry = _expiry();
         _reserve(s1, research, researchWallet, 200_000);
-        _reserve(s2, research, researchWallet, 300_000);
+        _reserve(s2, research, researchWallet2, 300_000);
         bytes32 txHash = keccak256("0.0.1234@1750000000.000000001");
 
         vm.prank(stranger);
@@ -357,7 +386,6 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
         vm.expectRevert(ICreditFacility.RESERVATION_NOT_OPEN.selector);
         facility.commit(keccak256("unknown"), txHash);
 
-        // Committing at the expiry second is still in time.
         vm.warp(expiry);
         vm.expectEmit(true, false, false, true, address(facility));
         emit ICreditFacility.SpendCommitted(s1, txHash);
@@ -367,23 +395,30 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
         ICreditFacility.Reservation memory r = facility.reservation(s1);
         assertEq(r.status, RES_COMMITTED);
         assertEq(r.txIdHash, txHash);
+        assertEq(facility.openReservationOf(researchWallet), bytes32(0));
         _assertBudget(
             research, ALLOC_RESEARCH, 200_000, 300_000, RESEARCH_MAX_TX, RESEARCH_MAX_DAILY, 200_000, expiry - TTL
         );
-        assertEq(facility.facilityInfo(id).committed, 200_000);
-        assertEq(facility.facilityInfo(id).reserved, 300_000);
 
         vm.prank(coordinator);
         vm.expectRevert(ICreditFacility.RESERVATION_NOT_OPEN.selector);
         facility.commit(s1, txHash);
 
-        // One second past the expiry the open reservation can no longer be committed.
-        vm.warp(expiry + 1);
+        // Long past the expiry (and into the next day), a payment made in time can still be recorded.
+        bytes32 txHash2 = keccak256("0.0.1234@1750000001.000000002");
+        vm.warp(uint256(expiry) + 1 days);
+        vm.expectEmit(true, false, false, true, address(facility));
+        emit ICreditFacility.SpendCommitted(s2, txHash2);
         vm.prank(coordinator);
-        vm.expectRevert(ICreditFacility.RESERVATION_EXPIRED.selector);
-        facility.commit(s2, txHash);
-        assertEq(facility.reservation(s2).status, RES_OPEN);
-        assertEq(facility.facilityInfo(id).committed, 200_000);
+        facility.commit(s2, txHash2);
+
+        assertEq(facility.reservation(s2).status, RES_COMMITTED);
+        assertEq(facility.reservation(s2).txIdHash, txHash2);
+        assertEq(facility.openReservationOf(researchWallet2), bytes32(0));
+        _assertBudget(
+            research, ALLOC_RESEARCH, 500_000, 0, RESEARCH_MAX_TX, RESEARCH_MAX_DAILY, 300_000, expiry + 1 days
+        );
+        _assertAccounting(500_000, 0);
     }
 
     // ------------------------------------------------------------------ release
@@ -395,7 +430,7 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
         _reserve(s1, research, researchWallet, 450_000);
         assertEq(usdc.balanceOf(researchWallet), 450_000);
 
-        vm.warp(expiry + 1);
+        vm.warp(uint256(expiry) + 1 hours + 1);
         vm.expectEmit(true, false, false, true, address(facility));
         emit ICreditFacility.SpendReleased(s1, 450_000);
         vm.prank(stranger);
@@ -407,6 +442,7 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
         assertEq(facility.facilityInfo(id).reserved, 0);
         assertEq(facility.facilityInfo(id).committed, 0);
         assertEq(facility.reservation(s1).status, RES_RELEASED);
+        assertEq(facility.openReservationOf(researchWallet), bytes32(0));
         _assertBudget(research, ALLOC_RESEARCH, 0, 0, RESEARCH_MAX_TX, RESEARCH_MAX_DAILY, 0, expiry - TTL);
 
         vm.prank(stranger);
@@ -445,6 +481,138 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
         assertEq(usdc.balanceOf(address(facility)), FUNDED);
         assertEq(facility.reservation(s1).status, RES_RELEASED);
         assertEq(facility.budget(id, research).reserved, 0);
+    }
+
+    function test_release_public_onlyAfterGrace() public {
+        _fundWithBudgets();
+        assertEq(facility.RELEASE_GRACE(), 1 hours);
+        bytes32 s1 = keccak256("rel-3");
+        uint64 expiry = _expiry();
+        _reserve(s1, research, researchWallet, 150_000);
+
+        // Expired, but within the grace hour only the coordinator may release.
+        vm.warp(uint256(expiry) + 1);
+        vm.prank(stranger);
+        vm.expectRevert(ICreditFacility.NOT_COORDINATOR.selector);
+        facility.release(s1);
+        vm.warp(uint256(expiry) + 1 hours);
+        vm.prank(stranger);
+        vm.expectRevert(ICreditFacility.NOT_COORDINATOR.selector);
+        facility.release(s1);
+
+        vm.warp(uint256(expiry) + 1 hours + 1);
+        vm.expectEmit(true, false, false, true, address(facility));
+        emit ICreditFacility.SpendReleased(s1, 150_000);
+        vm.prank(stranger);
+        facility.release(s1);
+
+        assertEq(usdc.balanceOf(researchWallet), 0);
+        assertEq(facility.reservation(s1).status, RES_RELEASED);
+        assertEq(facility.openReservationOf(researchWallet), bytes32(0));
+        _assertAccounting(0, 0);
+    }
+
+    function test_release_afterClose_sendsToSeller() public {
+        _fundWithBudgets();
+        bytes32 s1 = keccak256("rel-closed");
+        _reserve(s1, research, researchWallet, 400_000);
+
+        // Closing sends the undrawn USDC (funded minus the open reservation) to the seller.
+        vm.prank(repaymentRouter);
+        facility.closeFacility(id);
+        assertEq(usdc.balanceOf(seller), FUNDED - 400_000);
+        uint256 facilityBalance = usdc.balanceOf(address(facility));
+        assertEq(facilityBalance, 0);
+
+        // Releasing the reservation forwards its USDC to the seller instead of stranding it in the facility.
+        vm.expectEmit(true, false, false, true, address(facility));
+        emit ICreditFacility.SpendReleased(s1, 400_000);
+        vm.prank(coordinator);
+        facility.release(s1);
+
+        assertEq(usdc.balanceOf(seller), FUNDED);
+        assertEq(usdc.balanceOf(address(facility)), facilityBalance);
+        assertEq(usdc.balanceOf(researchWallet), 0);
+        assertEq(facility.facilityInfo(id).reserved, 0);
+        assertEq(facility.facilityInfo(id).status, STATUS_CLOSED);
+        assertEq(facility.reservation(s1).status, RES_RELEASED);
+        assertEq(facility.budget(id, research).reserved, 0);
+    }
+
+    // ------------------------------------------------------------------ one reservation per wallet
+
+    function test_reserve_revertsWalletBusy() public {
+        _fundWithBudgets();
+        bytes32 a = keccak256("wa");
+        bytes32 b = keccak256("wb");
+        bytes32 c = keccak256("wc");
+        _reserve(a, research, researchWallet, 100_000);
+        assertEq(facility.openReservationOf(researchWallet), a);
+
+        // Another worker cannot reserve into a wallet that holds an Open reservation.
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.WALLET_BUSY.selector);
+        facility.reserve(id, b, compute, researchWallet, merchant, 100_000, _expiry());
+
+        // Committing frees the wallet.
+        _commit(a);
+        assertEq(facility.openReservationOf(researchWallet), bytes32(0));
+        _reserve(b, compute, researchWallet, 100_000);
+        assertEq(facility.openReservationOf(researchWallet), b);
+
+        // So does releasing, and the release pulls back exactly that reservation's USDC.
+        vm.prank(coordinator);
+        facility.release(b);
+        assertEq(facility.openReservationOf(researchWallet), bytes32(0));
+        assertEq(usdc.balanceOf(researchWallet), 100_000);
+        _reserve(c, research, researchWallet, 200_000);
+
+        // Check order: a busy wallet is reported before the facility's status.
+        vm.prank(seller);
+        facility.flagDispute(id);
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.WALLET_BUSY.selector);
+        facility.reserve(id, keccak256("wd"), research, researchWallet, merchant, 1, _expiry());
+    }
+
+    // ------------------------------------------------------------------ check order
+
+    function test_reserve_checkOrder_existsBeforeInactive() public {
+        _fundWithBudgets();
+        _reserve(keccak256("o1"), research, researchWallet, 100_000);
+        vm.prank(seller);
+        facility.flagDispute(id);
+
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.RESERVATION_EXISTS.selector);
+        facility.reserve(id, keccak256("o1"), research, researchWallet2, merchant, 100_000, _expiry());
+    }
+
+    function test_reserve_checkOrder_inactiveBeforeExpired() public {
+        _fundWithBudgets();
+        vm.prank(seller);
+        facility.flagDispute(id);
+
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.FACILITY_NOT_ACTIVE.selector);
+        facility.reserve(id, keccak256("o2"), research, researchWallet, merchant, 100_000, uint64(block.timestamp));
+    }
+
+    function test_reserve_checkOrder_txLimitBeforeDaily() public {
+        _fundWithBudgets();
+        // Daily limit below the per-tx limit, so one amount can break both.
+        (address[] memory one, uint256[] memory oneAlloc, ICreditFacility.Limits[] memory oneLimits) =
+            _single(research, ALLOC_RESEARCH, 500_000, 400_000, merchant);
+        vm.prank(seller);
+        facility.setBudgets(id, one, oneAlloc, oneLimits);
+
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.TX_LIMIT_EXCEEDED.selector);
+        facility.reserve(id, keccak256("o3"), research, researchWallet, merchant, 500_001, _expiry());
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.DAILY_LIMIT_EXCEEDED.selector);
+        facility.reserve(id, keccak256("o3"), research, researchWallet, merchant, 400_001, _expiry());
+        _reserve(keccak256("o3"), research, researchWallet, 400_000);
     }
 
     // ------------------------------------------------------------------ accounting
@@ -586,6 +754,23 @@ contract CreditFacilitySpendTest is CreditFacilityBase {
         alloc[0] = alloc_;
         limits = new ICreditFacility.Limits[](1);
         limits[0] = ICreditFacility.Limits({ maxPerTx: maxPerTx, maxDaily: maxDaily, merchants: allow });
+    }
+
+    /// @dev Two budget entries (possibly the same worker) with the data/reserve limits and the demo allowlist.
+    function _two(address w0, uint256 a0, address w1, uint256 a1)
+        internal
+        view
+        returns (address[] memory workers, uint256[] memory alloc, ICreditFacility.Limits[] memory limits)
+    {
+        address[] memory allow = new address[](1);
+        allow[0] = merchant;
+        workers = new address[](2);
+        alloc = new uint256[](2);
+        limits = new ICreditFacility.Limits[](2);
+        (workers[0], alloc[0]) = (w0, a0);
+        (workers[1], alloc[1]) = (w1, a1);
+        limits[0] = ICreditFacility.Limits({ maxPerTx: OTHER_MAX_TX, maxDaily: OTHER_MAX_DAILY, merchants: allow });
+        limits[1] = ICreditFacility.Limits({ maxPerTx: OTHER_MAX_TX, maxDaily: OTHER_MAX_DAILY, merchants: allow });
     }
 
     /// @dev `vm.getBlockTimestamp()` rather than `block.timestamp`, which via-IR may keep stale across `vm.warp`.
