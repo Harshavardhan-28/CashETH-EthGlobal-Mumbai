@@ -12,8 +12,6 @@ export const ROLE_NUMBERS = { seller: 1, buyer: 2, worker: 3, lender: 4 } as con
 
 export const FACILITY_ACTIVE = 1;
 export const RESERVATION_OPEN = 1;
-/** `CreditFacility.RELEASE_GRACE`: the coordinator must commit within this window after a reservation's expiry. */
-export const RELEASE_GRACE_SECONDS = 3_600n;
 
 export const ZERO_HASH = `0x${"0".repeat(64)}` as Hex;
 

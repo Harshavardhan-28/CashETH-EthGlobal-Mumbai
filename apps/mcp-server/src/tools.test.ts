@@ -2,7 +2,7 @@ import { CreditFacilityAbi, KYARegistryAbi, receivableConfirmationTypedData, Rep
 import request from "supertest";
 import { decodeFunctionData, erc20Abi, getAddress, keccak256, maxUint256, toHex, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ADDRS, AQUA_ADDRS, budget, COSIGNER_PUBLIC_KEY, fakeOrchestrator, kyaAgent, NOW, testApp, type TestOrchestrator } from "./test/fakes.js";
 import { callTool, rpc } from "./test/rpc.js";
 
@@ -76,7 +76,7 @@ async function signConfirmation(typed: { domain: Record<string, unknown>; messag
 }
 
 describe("tool registry", () => {
-  it("tools/list returns all 19 tools", async () => {
+  it("tools/list returns all 20 tools", async () => {
     const { app, tokens } = await setup();
     const body = await rpc(app, tokens.seller, "tools/list");
     const names = (body.result!.tools as { name: string }[]).map((t) => t.name).sort();
@@ -96,6 +96,7 @@ describe("tool registry", () => {
         "open_facility",
         "pay_x402",
         "register_agent",
+        "release_spend",
         "repay_receivable",
         "reserve_spend",
         "set_budgets",
@@ -358,6 +359,148 @@ describe("spending", () => {
     expect(result.isError).toBeUndefined();
     expect(json).toMatchObject({ transactionId: "0.0.5005@1800000000.000000001" });
     expect(o.x402.cosigned).toHaveLength(1);
+  });
+
+  const PAY_URL = "https://merchant.example/research?topic=x";
+
+  it("pay_x402 retried after a settled payment returns the stored settlement without fetching or co-signing again", async () => {
+    const { app, tokens, o } = await setup();
+    const spendId = openReservation(o);
+    const first = await callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-once-1" });
+    const retry = await callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-once-2" });
+    expect(retry.result.isError).toBeUndefined();
+    expect(retry.json).toEqual(first.json);
+    expect(o.x402.payments).toHaveLength(1);
+    expect(o.x402.cosigned).toHaveLength(1);
+  });
+
+  it("pay_x402 refuses a second payment for a reservation whose payment is still in flight", async () => {
+    const { app, tokens, o } = await setup();
+    const spendId = openReservation(o);
+    let settle!: () => void;
+    o.x402.hold = new Promise<void>((resolve) => (settle = resolve));
+    const first = callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-race-1" });
+    await vi.waitFor(() => expect(o.x402.cosigned).toHaveLength(1));
+
+    const second = await callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-race-2" });
+    expect(second.json).toMatchObject({ code: "PAYMENT_IN_FLIGHT", spendId });
+    settle();
+    expect((await first).json).toMatchObject({ transactionId: "0.0.5005@1800000000.000000001" });
+    expect(o.x402.payments).toHaveLength(1);
+  });
+
+  it("pay_x402 keeps a co-signed payment without a settlement in flight, so a retry cannot pay twice", async () => {
+    const { app, tokens, o } = await setup();
+    const spendId = openReservation(o);
+    o.x402.settle = false;
+    expect((await callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-lost-1" })).json).toMatchObject({ code: "PAYMENT_FAILED" });
+    o.x402.settle = true;
+    expect((await callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-lost-2" })).json).toMatchObject({ code: "PAYMENT_IN_FLIGHT" });
+    expect(o.x402.payments).toHaveLength(1);
+    expect(o.x402.cosigned).toHaveLength(1);
+  });
+
+  it("pay_x402 may run again after the co-signer refused (nothing was signed)", async () => {
+    const { app, tokens, o } = await setup();
+    const spendId = openReservation(o);
+    const honest = o.x402.requirements;
+    o.x402.requirements = { ...honest, payTo: "0.0.6666" };
+    expect((await callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-refused-1" })).json).toMatchObject({ code: "COSIGNER_REFUSED" });
+    o.x402.requirements = honest;
+    expect((await callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-refused-2" })).json).toMatchObject({
+      transactionId: "0.0.5005@1800000000.000000001",
+    });
+  });
+
+  it("the co-signer refuses to sign a second payment for the same reservation", async () => {
+    const { app, tokens, o } = await setup();
+    const spendId = openReservation(o);
+    const pay = o.x402.pay.bind(o.x402);
+    // A client that asks for two signatures in one call (say, it retries the facilitator itself).
+    o.x402.pay = async (p) => {
+      const result = await pay(p);
+      await pay(p);
+      return result;
+    };
+    const { json } = await callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-twice-1" });
+    expect(json).toMatchObject({ code: "COSIGNER_REFUSED", reason: "already_cosigned" });
+    expect(o.x402.cosigned).toHaveLength(1);
+  });
+
+  it("commit_spend is allowed while the reservation is open, even past expiry + 1 h (Ruling R25)", async () => {
+    const { app, tokens, o } = await setup();
+    const spendId = openReservation(o);
+    o.chain.reservations.set(spendId.toLowerCase(), { ...o.chain.reservations.get(spendId.toLowerCase())!, expiry: NOW - 7_200n });
+    const { result, json } = await callTool(app, tokens.worker, "commit_spend", { spendId, hederaTxId: "0.0.5005@1800000000.000000001", idempotencyKey: "commit-late-1" });
+    expect(result.isError).toBeUndefined();
+    expect(json).toMatchObject({ spendId });
+    expect(o.chain.sent.map((s) => s.from)).toEqual(["coordinator"]);
+  });
+
+  describe("release_spend", () => {
+    function expiredReservation(o: TestOrchestrator) {
+      const spendId = openReservation(o);
+      o.chain.reservations.set(spendId.toLowerCase(), { ...o.chain.reservations.get(spendId.toLowerCase())!, expiry: NOW - 1n });
+      fundedFacility(o);
+      return spendId;
+    }
+
+    it("releases an expired, unpaid reservation with the coordinator and records SpendReleased", async () => {
+      const { app, tokens, o } = await setup();
+      const spendId = expiredReservation(o);
+      const { result, json } = await callTool(app, tokens.worker, "release_spend", { spendId, idempotencyKey: "release-key-1" });
+      expect(result.isError).toBeUndefined();
+      expect(json).toMatchObject({ spendId, amount: "250000", txHash: expect.stringMatching(/^0x/) });
+      expect(o.chain.sent).toHaveLength(1);
+      expect(o.chain.sent[0]!.from).toBe("coordinator");
+      expect(o.chain.sent[0]!.call.to).toBe(ADDRS.creditFacility);
+      expect(decodeFunctionData({ abi: CreditFacilityAbi, data: o.chain.sent[0]!.call.data })).toMatchObject({ functionName: "release", args: [spendId] });
+      expect(o.events.list().at(-1)).toMatchObject({ type: "SpendReleased", id, spendId, worker, amount: "250000", asset: "0.0.429274" });
+      expect(o.hcsPublished.at(-1)).toMatchObject({ type: "SpendReleased", spendId });
+    });
+
+    it("lets the facility's seller release too, but nobody else", async () => {
+      const { app, tokens, o, issuer } = await setup();
+      const spendId = expiredReservation(o);
+      const stranger = await issuer.mint({ agent: getAddress("0x00000000000000000000000000000000000000d2"), role: 3, level: 2, scope: WORKER_SCOPES });
+      expect((await callTool(app, stranger, "release_spend", { spendId, idempotencyKey: "release-key-2" })).json).toMatchObject({ code: "NOT_PARTY" });
+      expect((await callTool(app, tokens.seller, "release_spend", { spendId, idempotencyKey: "release-key-3" })).result.isError).toBeUndefined();
+    });
+
+    it("refuses a reservation that has not expired yet", async () => {
+      const { app, tokens, o } = await setup();
+      const spendId = openReservation(o);
+      fundedFacility(o);
+      expect((await callTool(app, tokens.worker, "release_spend", { spendId, idempotencyKey: "release-key-4" })).json).toMatchObject({ code: "RESERVATION_NOT_EXPIRED" });
+      expect(o.chain.sent).toHaveLength(0);
+    });
+
+    it("refuses a reservation that was paid or whose payment is in flight: commit it instead", async () => {
+      const { app, tokens, o } = await setup();
+      const spendId = openReservation(o);
+      fundedFacility(o);
+      await callTool(app, tokens.worker, "pay_x402", { spendId, url: PAY_URL, idempotencyKey: "pay-then-release" });
+      o.chain.reservations.set(spendId.toLowerCase(), { ...o.chain.reservations.get(spendId.toLowerCase())!, expiry: NOW - 1n });
+      expect((await callTool(app, tokens.worker, "release_spend", { spendId, idempotencyKey: "release-key-5" })).json).toMatchObject({
+        code: "RESERVATION_PAID",
+        transactionId: "0.0.5005@1800000000.000000001",
+      });
+
+      const lost = keccak256(toHex("spend-lost"));
+      o.chain.reservations.set(lost.toLowerCase(), { ...o.chain.reservations.get(spendId.toLowerCase())!, expiry: NOW + 300n });
+      o.x402.settle = false;
+      await callTool(app, tokens.worker, "pay_x402", { spendId: lost, url: PAY_URL, idempotencyKey: "pay-lost-release" });
+      o.chain.reservations.set(lost.toLowerCase(), { ...o.chain.reservations.get(lost.toLowerCase())!, expiry: NOW - 1n });
+      expect((await callTool(app, tokens.worker, "release_spend", { spendId: lost, idempotencyKey: "release-key-6" })).json).toMatchObject({ code: "PAYMENT_IN_FLIGHT" });
+      expect(o.chain.sent).toHaveLength(0);
+    });
+
+    it("refuses a reservation that is not open", async () => {
+      const { app, tokens, o } = await setup();
+      const spendId = expiredReservation(o);
+      o.chain.reservations.set(spendId.toLowerCase(), { ...o.chain.reservations.get(spendId.toLowerCase())!, status: 3 });
+      expect((await callTool(app, tokens.worker, "release_spend", { spendId, idempotencyKey: "release-key-7" })).json).toMatchObject({ code: "RESERVATION_NOT_OPEN" });
+    });
   });
 
   it("commit_spend records the Hedera transaction id hash with the coordinator", async () => {

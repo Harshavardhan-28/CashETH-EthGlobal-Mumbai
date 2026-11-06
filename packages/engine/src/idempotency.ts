@@ -34,6 +34,15 @@ export class IdempotencyLedger {
 
   put<T>(key: string, result: T): void {
     this.#entries[key] = result;
+    this.#save();
+  }
+
+  delete(key: string): void {
+    delete this.#entries[key];
+    this.#save();
+  }
+
+  #save(): void {
     mkdirSync(dirname(this.#filePath), { recursive: true });
     writeFileSync(this.#filePath, JSON.stringify(this.#entries, replacer, 2));
   }

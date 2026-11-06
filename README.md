@@ -247,7 +247,7 @@ Hedera's `exact` scheme has the client sign a `TransferTransaction` that debits 
 - Each worker has an account with key `KeyList([worker, cosigner], threshold 2)`, associated with USDC, holding no balance between payments.
 - `reserve_spend`: the engine checks policy, then the coordinator calls `CreditFacility.reserve`, which moves exactly the reserved USDC into the wallet. The same checks run again in the contract.
 - `pay_x402`: the worker calls the merchant, gets `402` with `PaymentRequirements` and signs the transfer. The co-signer signs only if scheme, network, asset, `payTo`, amount and payer match the open reservation **and** the transaction bytes move exactly that USDC and nothing else. Facilitator: `https://x402.org/facilitator`. The settlement transaction id is in the `PAYMENT-RESPONSE` header.
-- `commit_spend` records the Hedera transaction id on-chain and posts `SpendCommitted` to HCS. A timeout or failure releases the unspent USDC back through the facility's allowance.
+- `commit_spend` records the Hedera transaction id on-chain and posts `SpendCommitted` to HCS. An expired, unpaid reservation is released with `release_spend` (the coordinator pulls the USDC back through the facility's allowance); the co-signer signs at most one payment per reservation.
 
 | Policy | Error codes (same names in engine, contracts and MCP) |
 | --- | --- |
@@ -275,7 +275,7 @@ undrawn USDC left in the facility goes to the seller agent when the facility clo
 
 ### 4.5 Identity
 
-Every agent has an ECDSA key, a Hedera account, an HCS-14 UAID (published as `AgentRegistered` on the audit topic) and a `KYARegistry` entry (role, level, owner group, mandate hash). The MCP server is an OAuth 2.1 resource server: an agent proves itself to `apps/auth-server` with an ES256K-signed JWT (RFC 7523), the authorization server checks the registry, and issues a short-lived, audience-bound token whose scopes depend on role and level. Tokens are never passed through to other services. Details and all 19 tools: [docs/API.md](docs/API.md).
+Every agent has an ECDSA key, a Hedera account, an HCS-14 UAID (published as `AgentRegistered` on the audit topic) and a `KYARegistry` entry (role, level, owner group, mandate hash). The MCP server is an OAuth 2.1 resource server: an agent proves itself to `apps/auth-server` with an ES256K-signed JWT (RFC 7523), the authorization server checks the registry, and issues a short-lived, audience-bound token whose scopes depend on role and level. Tokens are never passed through to other services. Details and all 20 tools: [docs/API.md](docs/API.md).
 
 ### 4.6 Scheduled lifecycle
 

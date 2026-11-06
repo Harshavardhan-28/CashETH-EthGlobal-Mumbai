@@ -18,7 +18,7 @@ import { getInvoiceDocument, MAX_DOCUMENT_BASE64_CHARS, uploadInvoiceDocument } 
 import { closeStrategy, fundAgents } from "./orchestrator/lender.js";
 import { confirmReceivable, decisionFor, receivableDetails, uploadReceivable } from "./orchestrator/receivables.js";
 import { repayReceivable } from "./orchestrator/repay.js";
-import { commitSpend, payX402, reserveSpend } from "./orchestrator/spend.js";
+import { commitSpend, payX402, releaseSpend, reserveSpend } from "./orchestrator/spend.js";
 import type { Caller, Orchestrator } from "./orchestrator/types.js";
 
 const idempotencyKey = z.string().min(8).max(128).describe("Client-chosen key; a repeat with the same key replays the first result");
@@ -121,7 +121,7 @@ function register<S extends Shape>(server: McpServer, o: Orchestrator, spec: Too
 }
 
 
-/** Registers all 19 tools on `server`. */
+/** Registers all 20 tools on `server`. */
 export function registerTools(server: McpServer, o: Orchestrator): void {
   const add = <S extends Shape>(spec: ToolSpec<S>) => register(server, o, spec);
 
@@ -283,7 +283,7 @@ export function registerTools(server: McpServer, o: Orchestrator): void {
   add({
     name: "pay_x402",
     description:
-      "Worker: pay an x402 URL from the reservation's 2-of-2 spend wallet; the co-signer signs only a payment matching the open reservation. Returns the Hedera transaction id.",
+      "Worker: pay an x402 URL from the reservation's 2-of-2 spend wallet; the co-signer signs only a payment matching the open reservation, and only one per reservation (a retry returns the first settlement; PAYMENT_IN_FLIGHT while one is pending). Returns the Hedera transaction id.",
     roles: ["worker"],
     scope: "spend:pay",
     mutating: true,
@@ -293,12 +293,23 @@ export function registerTools(server: McpServer, o: Orchestrator): void {
 
   add({
     name: "commit_spend",
-    description: "Worker: record the payment's Hedera transaction id on the reservation (CreditFacility.commit, coordinator).",
+    description: "Worker: record the payment's Hedera transaction id on the reservation (CreditFacility.commit, coordinator); allowed while it is open, after its expiry too.",
     roles: ["worker"],
     scope: "spend:commit",
     mutating: true,
     input: { spendId: hex32, hederaTxId: z.string().describe("0.0.x@seconds.nanos") },
     run: (o, c, a) => commitSpend(o, c, a),
+  });
+
+  add({
+    name: "release_spend",
+    description:
+      "Worker of the reservation or seller of its facility: return an expired, unpaid reservation's USDC to the facility (CreditFacility.release, coordinator) and free the spend wallet. A paid or in-flight reservation must be committed instead.",
+    roles: ["seller", "worker"],
+    scope: "spend:reserve",
+    mutating: true,
+    input: { spendId: hex32 },
+    run: (o, c, a) => releaseSpend(o, c, a),
   });
 
   add({

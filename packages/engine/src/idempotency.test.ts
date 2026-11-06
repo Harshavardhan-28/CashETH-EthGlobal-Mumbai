@@ -42,6 +42,17 @@ describe("IdempotencyLedger", () => {
     expect(replay?.nested.fees[1]).toBe(2n ** 70n);
   });
 
+  it("delete removes a key, persistently", () => {
+    const ledger = new IdempotencyLedger(file);
+    ledger.put("a", 1);
+    ledger.put("b", 2);
+    ledger.delete("a");
+    expect(ledger.has("a")).toBe(false);
+    const reopened = new IdempotencyLedger(file);
+    expect(reopened.has("a")).toBe(false);
+    expect(reopened.get("b")).toBe(2);
+  });
+
   it("persists every put and keeps earlier keys", () => {
     const ledger = new IdempotencyLedger(file);
     ledger.put("a", { n: 1n });

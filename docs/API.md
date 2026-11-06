@@ -87,6 +87,7 @@ Every mutating tool requires `idempotencyKey` (8–128 chars). The first success
 | `reserve_spend` | seller, worker | `spend:reserve` | yes | engine `checkSpend`, then `CreditFacility.reserve` (coordinator), `SpendReserved` / `SpendRejected` |
 | `pay_x402` | worker | `spend:pay` | yes | co-signed x402 payment (Hedera transfer) |
 | `commit_spend` | worker | `spend:commit` | yes | `CreditFacility.commit` (coordinator), `SpendCommitted` |
+| `release_spend` | seller, worker | `spend:reserve` | yes | `CreditFacility.release` (coordinator), `SpendReleased` |
 | `repay_receivable` | buyer | `repay:write` | yes | `USDC.approve` + `RepaymentRouter.repay` (buyer key) or calldata, `Repaid` |
 | `explain_decision` | any | `credit:read` | no | – (AI explains, never decides) |
 | `list_agents` | any | `stats:read` | no | – |
@@ -147,11 +148,16 @@ Demo (Ruling R24): the compute worker's 5.5 USDC against a 3.0 budget is `AGENT_
 In: `{ spendId, url }` (caller = the reservation's worker; reservation open and unexpired).
 The URL's origin must be one of the origins configured for the reservation's merchant (`MERCHANT_ORIGINS`; that merchant is on the worker's on-chain allowlist that `checkSpend` enforced); otherwise `MERCHANT_URL_NOT_ALLOWED` and nothing is fetched.
 The worker key signs the facilitator-paid Hedera transfer; the co-signer signs only when the engine's `approvePayment` accepts the `PaymentRequirements` against the open reservation (scheme `exact`, network, USDC asset, `payTo` = the reservation merchant's account, amount ≤ reserved, before expiry, payer = spend wallet) **and** the transaction bytes move exactly that USDC amount from the spend wallet to `payTo` and nothing else.
-Out: `{ spendId, transactionId, hashscan, status, body }`. Refusal: `{ code: "COSIGNER_REFUSED", reason: "wrong_payee" | "amount_exceeds_reservation" | "reservation_expired" | "wrong_asset" | "wrong_network" | "wrong_payer" | "amount_mismatch" | … }`, recorded as `SpendRejected` (`stage: "cosigner"`).
+Out: `{ spendId, transactionId, hashscan, status, body }`. Refusal: `{ code: "COSIGNER_REFUSED", reason: "wrong_payee" | "amount_exceeds_reservation" | "reservation_expired" | "wrong_asset" | "wrong_network" | "wrong_payer" | "amount_mismatch" | "already_cosigned" | … }`, recorded as `SpendRejected` (`stage: "cosigner"`).
+**One payment per reservation**, whatever the `idempotencyKey`: before anything is fetched the server writes an in-flight marker for the `spendId` (`x402:<spendId>` in `DATA_DIR/idempotency.json`). A later `pay_x402` for a paid reservation returns the stored settlement without fetching; one while a payment is in flight gets `PAYMENT_IN_FLIGHT`. The co-signer signs at most once per reservation (`already_cosigned`). The marker is dropped only when nothing was signed (a refusal, or a failure before the co-signature), so the call may run again; once the co-signer has signed, a lost answer (`PAYMENT_FAILED`, a dropped connection) keeps the reservation in flight: find the transfer on the mirror node and `commit_spend` it.
 
 ### `commit_spend`
-In: `{ spendId, hederaTxId: "0.0.x@seconds.nanos" }`. Sends `commit(spendId, keccak256(hederaTxId))` with the coordinator; allowed until `expiry + 1 h` (after that anyone may `release` it, Ruling R25), else `RESERVATION_EXPIRED`.
+In: `{ spendId, hederaTxId: "0.0.x@seconds.nanos" }`. Sends `commit(spendId, keccak256(hederaTxId))` with the coordinator. Allowed while the reservation is open, after its expiry too (the coordinator may commit at any time, Ruling R25), so a payment made in time can always be recorded.
 Out: `{ spendId, txIdHash, txHash, hashscan, payment }` (`payment` = HashScan link of the x402 transfer).
+
+### `release_spend`
+In: `{ spendId }` (caller = the reservation's worker or the seller of its facility). For an open reservation that has expired (`RESERVATION_NOT_EXPIRED` before, `RESERVATION_NOT_OPEN` once committed or released) and was never paid: sends `release(spendId)` with the coordinator, which pulls the USDC back from the spend wallet into the facility (on to the seller if the facility is closed) and frees the wallet. Refused with `RESERVATION_PAID` (`transactionId`) when `pay_x402` settled it and with `PAYMENT_IN_FLIGHT` when the co-signer signed a payment whose answer was lost: those must be committed. Recorded as `SpendReleased` (`id, spendId, worker, spendWallet, amount, asset, txHash`).
+Out: `{ id, spendId, amount, txHash, hashscan }`.
 
 ### `repay_receivable`
 In: `{ id, amount: units }` (caller = buyer; state Financed, Overdue, Defaulted or Repaid, else `NOT_FINANCED`).
@@ -303,6 +309,9 @@ MCP-side codes (`McpErrorCode` in `apps/mcp-server/src/orchestrator/errors.ts`; 
 | `MERCHANT_URL_NOT_ALLOWED` | `pay_x402` URL origin is not configured for the reservation's merchant (`origin`) |
 | `COSIGNER_REFUSED` | the policy co-signer refused the x402 payment (`reason`) |
 | `PAYMENT_FAILED` | the merchant answered without a settlement (`status`, `body`) |
+| `PAYMENT_IN_FLIGHT` | a payment for this reservation is in flight, or was co-signed without a seen settlement (`spendId`) |
+| `RESERVATION_PAID` | `release_spend` on a reservation `pay_x402` settled: commit it (`transactionId`) |
+| `RESERVATION_NOT_EXPIRED` | `release_spend` before the reservation's expiry (`expiry`) |
 | `KEY_NOT_HELD` | the server would need an agent key it does not hold (demo flags off) |
 | `CONTRACT_REVERTED` | a contract reverted with a custom error that is not a shared code (`error`, `args`) |
 | `CHAIN_ERROR` | an RPC failure or an undecodable revert |

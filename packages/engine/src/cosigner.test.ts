@@ -81,6 +81,17 @@ describe("approvePayment", () => {
     expect(approve({}, { now: NOW + 301n })).toEqual({ ok: false, reason: "reservation_expired" });
   });
 
+  it("refuses a second payment for a reservation it already co-signed, even an otherwise valid one", () => {
+    const verdict = approvePayment({
+      requirements: demoRequirements,
+      reservation: { ...reservation, cosigned: true },
+      usdcTokenId: USDC,
+      network: NETWORK,
+      now: NOW,
+    });
+    expect(verdict).toEqual({ ok: false, reason: "already_cosigned" });
+  });
+
   it("refuses a payer other than the reservation's spend wallet", () => {
     expect(approve({}, { payerAccountId: "0.0.7777" })).toEqual({
       ok: false,

@@ -245,6 +245,10 @@ export class FakeX402 implements X402Port {
   cosigned: string[] = [];
   /** URLs `pay` was asked to fetch. */
   payments: string[] = [];
+  /** false: the merchant answers 200 without a settlement header (the payment may still have settled). */
+  settle = true;
+  /** When set, `pay` waits for it after co-signing (a slow facilitator). */
+  hold: Promise<void> | undefined;
   async accountIdOf(evm: Address) {
     const id = this.accounts.get(evm.toLowerCase());
     if (!id) throw new Error(`unknown account ${evm}`);
@@ -270,6 +274,8 @@ export class FakeX402 implements X402Port {
       hbarTransfers: [],
     };
     await p.cosign(Buffer.from(JSON.stringify(summary)).toString("base64"), this.requirements);
+    await this.hold;
+    if (!this.settle) return { status: 200, body: { ok: true } };
     return { status: 200, body: { ok: true }, transactionId: "0.0.5005@1800000000.000000001" };
   }
 }

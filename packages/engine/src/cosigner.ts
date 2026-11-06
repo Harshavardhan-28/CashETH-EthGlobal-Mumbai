@@ -4,6 +4,8 @@ export type OpenReservation = {
   merchantAccountId: string;
   amount: bigint;
   expiry: bigint;
+  /** The co-signer already signed a payment for this reservation: one reservation pays at most once. */
+  cosigned?: boolean;
 };
 
 export type PaymentRequirementsLike = {
@@ -34,6 +36,8 @@ function parseAmount(amount: string): bigint | undefined {
 /** Co-signer policy: only sign a payment that matches an open on-chain reservation. */
 export function approvePayment(input: ApprovePaymentInput): ApprovePaymentResult {
   const { requirements, reservation, now } = input;
+
+  if (reservation.cosigned) return { ok: false, reason: "already_cosigned" };
 
   if (requirements.scheme !== "exact") return { ok: false, reason: "wrong_scheme" };
   if (requirements.network !== input.network) return { ok: false, reason: "wrong_network" };

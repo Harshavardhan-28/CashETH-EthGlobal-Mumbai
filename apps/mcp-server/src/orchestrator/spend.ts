@@ -13,10 +13,10 @@ import {
   addr,
   bytes32,
   FACILITY_ACTIVE,
-  RELEASE_GRACE_SECONDS,
   requireParty,
   RESERVATION_OPEN,
   ROLE_NUMBERS,
+  sameAddress,
   txLink,
   units,
   ZERO_HASH,
@@ -148,11 +148,32 @@ export function checkTransfer(
   return undefined;
 }
 
+type Settlement = { spendId: Hex; transactionId: string; hashscan: string; status: number; body: unknown };
+
 /**
- * `pay_x402`: pays `url` from the reservation's spend wallet. The URL's origin must be configured for the
- * reservation's merchant (no fetches anywhere else). The worker key signs (held in process for the demo);
- * `cosign` runs the engine's `approvePayment` against the open reservation and the byte-level `checkTransfer`,
- * and signs with the co-signer key only when both pass.
+ * One x402 payment per reservation, kept in the idempotency ledger under `x402:<spendId>`. The marker is written
+ * before anything is fetched: `inFlight` until the merchant answers with a settlement, then `paid` with it.
+ * `cosigned` records that the co-signer signed, after which the payment may have settled even if nobody saw the
+ * answer, so the marker is only dropped when no signature was ever given.
+ */
+type PaymentRecord = { state: "inFlight"; cosigned: boolean } | { state: "paid"; settlement: Settlement };
+
+const paymentKey = (spendId: Hex) => `x402:${spendId}`;
+
+function paymentRecord(o: Orchestrator, spendId: Hex): PaymentRecord | undefined {
+  return o.idempotency.get<PaymentRecord>(paymentKey(spendId));
+}
+
+function paymentInFlight(spendId: Hex): never {
+  return fail("PAYMENT_IN_FLIGHT", `a payment for reservation ${spendId} is already in flight`, { spendId });
+}
+
+/**
+ * `pay_x402`: pays `url` from the reservation's spend wallet, at most once per reservation: a retry after a
+ * settled payment returns the stored settlement, a call while a payment is in flight gets `PAYMENT_IN_FLIGHT`.
+ * The URL's origin must be configured for the reservation's merchant (no fetches anywhere else). The worker key
+ * signs (held in process for the demo); `cosign` runs the engine's `approvePayment` against the open reservation
+ * and the byte-level `checkTransfer`, and signs with the co-signer key only when both pass, once.
  */
 export async function payX402(o: Orchestrator, caller: Caller, input: { spendId: string; url: string }) {
   const spendId = bytes32(input.spendId, "spendId");
@@ -163,8 +184,11 @@ export async function payX402(o: Orchestrator, caller: Caller, input: { spendId:
     fail("BAD_INPUT", "url is not a URL");
   }
   const r = await o.chain.reservation(spendId);
-  if (r.status !== RESERVATION_OPEN) fail("RESERVATION_NOT_OPEN", `reservation ${spendId} is not open`);
   requireParty(caller, r.worker, "worker of this reservation");
+  const prior = paymentRecord(o, spendId);
+  if (prior?.state === "paid") return prior.settlement;
+  if (prior) paymentInFlight(spendId);
+  if (r.status !== RESERVATION_OPEN) fail("RESERVATION_NOT_OPEN", `reservation ${spendId} is not open`);
   if (o.now() >= r.expiry) {
     // The co-signer's `approvePayment` would refuse too (`reservation_expired`); answering here keeps the fetch
     // from happening at all, but the refusal is still part of the audit trail.
@@ -176,13 +200,18 @@ export async function payX402(o: Orchestrator, caller: Caller, input: { spendId:
   if (!(o.config.merchantOrigins[merchantAccountId] ?? []).includes(url.origin)) {
     fail("MERCHANT_URL_NOT_ALLOWED", `${url.origin} is not a configured origin of the reservation's merchant ${merchantAccountId}`, { origin: url.origin });
   }
+  // Checked again after the awaits above: a concurrent call may have started paying meanwhile.
+  if (paymentRecord(o, spendId)) paymentInFlight(spendId);
+  o.idempotency.put<PaymentRecord>(paymentKey(spendId), { state: "inFlight", cosigned: false });
+
   let refusal: string | undefined;
+  let cosigned = false;
   const cosign = async (txBase64: string, requirements: PaymentRequirements): Promise<string> => {
     const transfer = o.x402.decodeTransfer(txBase64);
     const payer = transfer.tokenTransfers.find((x) => x.amount < 0n)?.accountId;
     const verdict = approvePayment({
       requirements,
-      reservation: { spendId, spendWalletId, merchantAccountId, amount: r.amount, expiry: r.expiry },
+      reservation: { spendId, spendWalletId, merchantAccountId, amount: r.amount, expiry: r.expiry, cosigned },
       usdcTokenId: o.config.usdcTokenId,
       network: o.config.x402Network,
       now: o.now(),
@@ -192,6 +221,8 @@ export async function payX402(o: Orchestrator, caller: Caller, input: { spendId:
       ? checkTransfer(transfer, { usdcTokenId: o.config.usdcTokenId, spendWalletId, payTo: requirements.payTo, amount: BigInt(requirements.amount) })
       : verdict.reason;
     if (refusal) throw new ToolError("COSIGNER_REFUSED", `co-signer refused: ${refusal}`, { reason: refusal });
+    cosigned = true;
+    o.idempotency.put<PaymentRecord>(paymentKey(spendId), { state: "inFlight", cosigned: true });
     return o.x402.cosignerSign(txBase64);
   };
 
@@ -199,25 +230,32 @@ export async function payX402(o: Orchestrator, caller: Caller, input: { spendId:
   try {
     result = await o.x402.pay({ worker: r.worker, spendWalletId, url: url.href, cosign });
   } catch (err) {
+    if (!cosigned) o.idempotency.delete(paymentKey(spendId));
     if (refusal) {
       await record(o, { type: "SpendRejected", id: r.id, spendId, code: "COSIGNER_REFUSED", reason: refusal, stage: "cosigner", ...actor(caller) });
       throw new ToolError("COSIGNER_REFUSED", `co-signer refused: ${refusal}`, { reason: refusal, spendId });
     }
     throw err;
   }
-  if (!result.transactionId) fail("PAYMENT_FAILED", `the merchant answered ${result.status} without a settlement`, { status: result.status, body: result.body });
-  return {
+  if (!result.transactionId) {
+    if (!cosigned) o.idempotency.delete(paymentKey(spendId));
+    fail("PAYMENT_FAILED", `the merchant answered ${result.status} without a settlement`, { status: result.status, body: result.body });
+  }
+  const settlement: Settlement = {
     spendId,
     transactionId: result.transactionId,
     hashscan: hashscan.tx(result.transactionId),
     status: result.status,
     body: result.body,
   };
+  o.idempotency.put<PaymentRecord>(paymentKey(spendId), { state: "paid", settlement });
+  return settlement;
 }
 
 /**
- * `commit_spend`: records the payment's Hedera transaction id on the reservation. Allowed until `expiry +
- * RELEASE_GRACE` (1 h), after which anyone may release the reservation; the engine commits well inside it.
+ * `commit_spend`: records the payment's Hedera transaction id on the reservation. Allowed while the reservation is
+ * open, after its expiry too: the coordinator may commit at any time (Ruling R25), so a payment made in time can
+ * always be recorded.
  */
 export async function commitSpend(o: Orchestrator, caller: Caller, input: { spendId: string; hederaTxId: string }) {
   const spendId = bytes32(input.spendId, "spendId");
@@ -225,7 +263,6 @@ export async function commitSpend(o: Orchestrator, caller: Caller, input: { spen
   const r = await o.chain.reservation(spendId);
   if (r.status !== RESERVATION_OPEN) fail("RESERVATION_NOT_OPEN", `reservation ${spendId} is not open`);
   requireParty(caller, r.worker, "worker of this reservation");
-  if (o.now() > r.expiry + RELEASE_GRACE_SECONDS) fail("RESERVATION_EXPIRED", "past expiry + 1 h: the reservation can only be released");
   const txIdHash = keccak256(toHex(input.hederaTxId));
   const { txHash } = await o.chain.send("coordinator", {
     to: o.chain.addresses().creditFacility,
@@ -249,4 +286,41 @@ export async function commitSpend(o: Orchestrator, caller: Caller, input: { spen
     ...actor(caller),
   });
   return { spendId, txIdHash, txHash, hashscan: txLink(txHash), payment: hashscan.tx(input.hederaTxId) };
+}
+
+/**
+ * `release_spend`: returns an expired, unpaid reservation's USDC to the facility (`CreditFacility.release` with the
+ * coordinator, which may release at any time) and frees the spend wallet. Refused while a payment for it is in
+ * flight or once it was paid: that reservation must be committed instead.
+ */
+export async function releaseSpend(o: Orchestrator, caller: Caller, input: { spendId: string }) {
+  const spendId = bytes32(input.spendId, "spendId");
+  const r = await o.chain.reservation(spendId);
+  if (r.status !== RESERVATION_OPEN) fail("RESERVATION_NOT_OPEN", `reservation ${spendId} is not open`);
+  if (!sameAddress(caller.agent, r.worker)) requireParty(caller, (await o.chain.facilityInfo(r.id)).seller, "worker of this reservation or seller of its facility");
+  if (o.now() < r.expiry) fail("RESERVATION_NOT_EXPIRED", `reservation ${spendId} is still payable until ${r.expiry}`, { spendId, expiry: Number(r.expiry) });
+  const payment = paymentRecord(o, spendId);
+  if (payment?.state === "paid") {
+    fail("RESERVATION_PAID", "the reservation was paid: commit it with commit_spend", { spendId, transactionId: payment.settlement.transactionId });
+  }
+  if (payment?.cosigned) fail("PAYMENT_IN_FLIGHT", "a co-signed payment for this reservation may have settled: commit it once its transaction id is known", { spendId });
+
+  const { txHash } = await o.chain.send("coordinator", {
+    to: o.chain.addresses().creditFacility,
+    data: encodeFunctionData({ abi: CreditFacilityAbi, functionName: "release", args: [spendId] }),
+    description: "CreditFacility.release(spendId)",
+  });
+  await record(o, {
+    type: "SpendReleased",
+    id: r.id,
+    spendId,
+    worker: r.worker,
+    spendWallet: r.spendWallet,
+    amount: r.amount.toString(),
+    asset: o.config.usdcTokenId,
+    txHash,
+    hashscan: txLink(txHash),
+    ...actor(caller),
+  });
+  return { id: r.id, spendId, amount: r.amount.toString(), txHash, hashscan: txLink(txHash) };
 }
