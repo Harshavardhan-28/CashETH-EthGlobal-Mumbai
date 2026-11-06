@@ -158,6 +158,9 @@ export function dedupeLinks(links: EvidenceLink[]): DistinctLink[] {
 export function mirrorPath(link: Pick<EvidenceLink, "kind" | "id">): string {
   switch (link.kind) {
     case "transaction":
+      // An EVM hash (0x…) is only known to the mirror node as a contract result; a bare consensus timestamp is a
+      // transaction lookup by timestamp; anything else is a Hedera transaction id.
+      if (/^0x[0-9a-fA-F]{64}$/.test(link.id)) return `/contracts/results/${link.id}`;
       return /^\d+\.\d+$/.test(link.id) ? `/transactions?timestamp=${link.id}` : `/transactions/${link.id}`;
     case "contract":
       return `/contracts/${link.id}`;

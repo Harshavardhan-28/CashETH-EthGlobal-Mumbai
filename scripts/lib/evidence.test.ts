@@ -124,3 +124,10 @@ describe("mirrorPath", () => {
     expect(mirrorPath({ kind: "topic", id: "0.0.5" })).toBe("/topics/0.0.5/messages?limit=1");
   });
 });
+
+describe("mirrorPath for EVM hashes", () => {
+  it("looks an EVM transaction hash up as a contract result", () => {
+    const id = "0x" + "ab".repeat(32);
+    expect(mirrorPath({ kind: "transaction", id })).toBe(`/contracts/results/${id}`);
+  });
+});

@@ -67,7 +67,9 @@ async function checkLink(link: DistinctLink): Promise<Pick<Row, "mirror" | "ok">
 
   switch (link.kind) {
     case "transaction": {
-      const txs: { result: string; nonce: number; scheduled?: boolean }[] = body.transactions ?? [];
+      // A contract result (EVM hash lookup) carries its outcome at the top level; a transaction lookup lists records.
+      const txs: { result: string; nonce: number; scheduled?: boolean }[] =
+        body.transactions ?? (typeof body.result === "string" ? [{ result: body.result, nonce: 0 }] : []);
       // A contract call also lists child transactions (HTS transfers, scheduled records); the user transaction is nonce 0.
       const tx = txs.find((t) => t.nonce === 0 && !t.scheduled) ?? txs[0];
       if (!tx) return { mirror: "no transaction record", ok: false };
