@@ -38,6 +38,6 @@ Proposed revenue: a 0.5% origination fee and a 10% share of lender fees. Start w
 
 ## 8. Where we are and the ask
 
-Working end to end on Hedera testnet, with 181 Foundry tests, the TypeScript suites, CI and a HashScan-verified evidence index. Next: pull-based repayment and KMS keys, then a capped pilot with 3 to 5 agent teams.
+Working end to end on Hedera testnet, with 180 Foundry tests, the TypeScript suites, CI and a HashScan-verified evidence index. Next: pull-based repayment and KMS keys, then a capped pilot with 3 to 5 agent teams.
 
 **Ask:** try it and tell us what breaks ([feedback form](https://github.com/Harshavardhan-28/CashETH-EthGlobal-Mumbai/issues/new?template=feedback.yml)), and introduce us to agent teams and lenders who want to pilot.

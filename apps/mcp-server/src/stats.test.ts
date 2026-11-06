@@ -232,4 +232,26 @@ describe("BasicStatsProvider freshness", () => {
     expect(loads).toBeGreaterThan(4); // a refresh started
     release();
   });
+
+  it("reuses the computed agent and lender rows while fresh, so polling clients cause no per-agent chain reads", async () => {
+    const o = fakeOrchestrator();
+    let chainReads = 0;
+    const counted = <A extends unknown[], R>(f: (...a: A) => Promise<R>) => (...a: A) => (chainReads++, f(...a));
+    o.chain.kyaAgent = counted(o.chain.kyaAgent.bind(o.chain));
+    o.chain.reputation = counted(o.chain.reputation.bind(o.chain));
+    o.chain.usdcBalance = counted(o.chain.usdcBalance.bind(o.chain));
+    const stats = new BasicStatsProvider({
+      chain: o.chain,
+      aqua: o.aqua,
+      logs: { logs: async () => [] },
+      events: o.events,
+      directory: () => [{ address: seller, label: "seller", role: "seller", uaid: "" }, { address: lender, label: "lender", role: "lender", uaid: "" }],
+      now: () => 1_800_000_000,
+      cacheMs: 60_000,
+    });
+    await Promise.all([stats.listAgents(), stats.listLenders()]);
+    const afterFirst = chainReads;
+    for (let i = 0; i < 5; i++) await Promise.all([stats.listAgents(), stats.listLenders()]);
+    expect(chainReads).toBe(afterFirst);
+  });
 });

@@ -4,9 +4,18 @@ import type { ApiClient, AuditEvent } from "./api";
 import { groupRuns } from "./derive";
 import { narrateAll } from "./narrate";
 import { SAMPLE_AGENTS, SAMPLE_LENDERS, sampleEvents } from "./sample";
-import { useAdminData } from "./useAdminData";
+import { CACHE_KEY, useAdminData } from "./useAdminData";
 
 const EVENT: AuditEvent = { v: 1, type: "ReceivableUploaded", seq: 1, prevSeq: 0, ts: "2026-11-07T10:00:00.000Z", id: "0x01", amount: "1000000" };
+
+/** A promise the test resolves later, for an endpoint that is still answering. */
+function deferred<T>() {
+  let resolve: (v: T) => void = () => undefined;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+const AGENT = { ...SAMPLE_AGENTS[0] };
 
 function fakeClient() {
   let fail = false;
@@ -28,7 +37,10 @@ function fakeClient() {
 const flush = () => act(async () => {});
 
 describe("useAdminData", () => {
-  beforeEach(() => vi.useFakeTimers());
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.clear();
+  });
   afterEach(() => vi.useRealTimers());
 
   it("starts loading, then goes live with the server's data", async () => {
@@ -73,6 +85,50 @@ describe("useAdminData", () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(result.current).toMatchObject({ status: "live", sample: false, events: [EVENT] });
+  });
+
+  it("goes live with the events while the slower agent and lender stats are still loading", async () => {
+    const { client } = fakeClient();
+    const agents = deferred<typeof SAMPLE_AGENTS>();
+    client.agents = () => agents.promise;
+    const { result } = renderHook(() => useAdminData({ client }));
+    await flush();
+    expect(result.current).toMatchObject({ status: "live", events: [EVENT], agents: [], statsReady: false });
+    await act(async () => agents.resolve([AGENT]));
+    expect(result.current).toMatchObject({ status: "live", agents: [AGENT], statsReady: true });
+  });
+
+  it("does not ask for the stats again while the last request is still running", async () => {
+    const { client } = fakeClient();
+    let agentCalls = 0;
+    client.agents = () => (agentCalls++, new Promise(() => undefined));
+    renderHook(() => useAdminData({ client }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(agentCalls).toBe(1);
+  });
+
+  it("shows the last data seen in this browser at once on reload, before the server answers", async () => {
+    const { client } = fakeClient();
+    const first = renderHook(() => useAdminData({ client }));
+    await flush();
+    first.unmount();
+    expect(localStorage.getItem(CACHE_KEY)).not.toBeNull();
+
+    const hanging = () => new Promise<never>(() => undefined);
+    const silent: ApiClient = { health: hanging, events: hanging, agents: hanging, lenders: hanging };
+    const { result } = renderHook(() => useAdminData({ client: silent }));
+    await flush();
+    expect(result.current).toMatchObject({ status: "loading", sample: false, events: [EVENT], statsReady: true });
+  });
+
+  it("ignores a cached copy it cannot read", async () => {
+    localStorage.setItem(CACHE_KEY, "{not json");
+    const { client } = fakeClient();
+    const { result } = renderHook(() => useAdminData({ client }));
+    await flush();
+    expect(result.current).toMatchObject({ status: "live", events: [EVENT] });
   });
 
   it("stops polling on unmount", async () => {

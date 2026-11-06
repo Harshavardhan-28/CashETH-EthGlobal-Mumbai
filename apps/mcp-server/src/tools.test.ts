@@ -872,6 +872,27 @@ describe("read API", () => {
     await request(app).get("/receivables/not-an-id").expect(400);
   });
 
+  it("GET /receivables/:id answers repeat polls from a short cache instead of re-reading the chain", async () => {
+    const { app, o } = await setup();
+    const id = keccak256(toHex("polled"));
+    o.chain.receivables.set(id.toLowerCase(), {
+      seller: seller.address,
+      buyer: buyer.address,
+      currency: ADDRS.usdc,
+      amount: 1_000_000n,
+      dueDate: NOW + 30n * DAY,
+      detailsCommitment: keccak256(toHex("doc")),
+      state: 1,
+      registeredAt: NOW,
+    });
+    let reads = 0;
+    const read = o.chain.receivable.bind(o.chain);
+    o.chain.receivable = (rid) => (reads++, read(rid));
+    await request(app).get(`/receivables/${id}`).expect(200);
+    await request(app).get(`/receivables/${id.toUpperCase().replace("0X", "0x")}`).expect(200);
+    expect(reads).toBe(1);
+  });
+
   it("GET /agents, GET /lenders and GET /health", async () => {
     const { app, o } = await setup();
     o.stats.agents = [

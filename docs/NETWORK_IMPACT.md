@@ -15,7 +15,7 @@ What CashETH puts on Hedera, counted from the code paths in `apps/mcp-server/src
 | `CreditFacility.openAndFund` through the modified SwapVM router | 1, plus child records: one HTS USDC transfer per filled lender and one `ScheduleCreate` (`markOverdue`) | Smart contract, HTS, HSS | [PO-1003](https://hashscan.io/testnet/transaction/0.0.7314364@1793991157.490753368) |
 | `FacilityFunded` | 1 | HCS | [PO-1002](https://hashscan.io/testnet/transaction/0.0.11333252@1793982667.668877640) |
 | Worker budgets set, plus `BudgetsSet` | 2 | Smart contract, HCS | [PO-1003](https://hashscan.io/testnet/transaction/0.0.7314364@1793991182.937546658) |
-| Repayment: USDC approve, `RepaymentRouter.repay`, plus `Repaid` | 3, plus child records: one HTS transfer per lender and one to the seller | Smart contract, HTS, HCS | Code path `orchestrator/repay.ts`; not yet recorded on the current stack |
+| Repayment: USDC approve, `RepaymentRouter.repay`, plus `Repaid` | 3, plus child records: one HTS transfer per lender and one to the seller | Smart contract, HTS, HCS | [PO-CC-11062242](https://hashscan.io/testnet/transaction/0x21e99be537f5673a192c6be9236aa533c699825dd4c223d161cdaab50d03c92c) |
 | **Fixed per receivable** | **13** | | |
 
 Each paid request a worker makes with that credit adds five more:

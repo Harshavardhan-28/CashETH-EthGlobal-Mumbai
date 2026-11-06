@@ -398,7 +398,9 @@ Spike S1 evidence that Aqua and SwapVM run on Hedera with real HTS USDC: [ship](
 | `packages/engine` | `@casheth/engine`: credit score, borrowing base, spend policy, co-signer policy, event store, idempotency |
 | `apps/merchant` | Our x402 research API |
 | `apps/auth-server` | OAuth 2.1 authorization server with KYA checks |
-| `apps/mcp-server` | MCP tools (20), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`) |
+| `apps/mcp-server` | MCP tools (24), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`, `/invoices/:keccak`, `/health`) |
+| `frontend/` | Next.js app: landing and docs pages, the `/admin` console and the public `/dashboard`, all on the read API |
+| `seller-agent/` | Ollama LangGraph seller agent (`qwen3:8b`) that drives the whole flow through the MCP tools (`pnpm seller-agent`) |
 | `agents/` | `AgentClient` and the seller, buyer, worker, lender and trader agents; Hedera Agent Kit wrapper; demo runner |
 | `wallet-mcp/` | Local stdio MCP wallet for Claude Code: buyer confirmation signing, allowlisted calldata sending ([docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md)) |
 | `scripts/` | Account setup, deploy and wiring drivers (`c2` to `c5`), spikes, sweep, ABI sync |
@@ -455,6 +457,12 @@ Hedera notes: HTS `approve(spender, type(uint256).max)` reverts (allowances are 
 ### Servers and the demo
 
 ```
+pnpm servers                                 # builds, then starts auth (:4020) and MCP (:4030) in one terminal; Ctrl+C stops both
+```
+
+`pnpm servers` (`scripts/start-servers.sh`) is the quickest way to run the Claude Code or seller-agent demo: it checks the ports are free, starts both servers with prefixed logs, and waits for their health checks. The servers can also be started one by one:
+
+```
 pnpm -F @casheth/merchant start              # x402 merchant, MERCHANT_PORT (default 3003)
 pnpm -F @casheth/auth start                  # authorization server, AUTH_PORT (default 4020)
 pnpm -F @casheth/mcp start                   # MCP server and read API, MCP_PORT (default 4030)
@@ -463,16 +471,30 @@ pnpm demo                                    # drives the eight steps, the dupli
 
 `pnpm demo` (root script; walkthrough in `docs/DEMO.md` on the demo branch) starts and stops the servers itself (or expects them with `DEMO_SERVERS=external`), drives the eight steps plus the duplicate and the two rejections through the MCP tools, prints a HashScan link for each step, appends the run to [docs/EVIDENCE.md](docs/EVIDENCE.md) under a dated "Demo run" heading, and exits non-zero if a step has no Hedera transaction id. For a demo run the MCP server may sign for the demo agents (`AGENT_KEYS_IN_PROCESS=true`, `LENDER_KEYS_IN_PROCESS=true`); in normal operation agents sign their own transactions and the server returns calldata.
 
-The agent-driven run on PO-1003 (registered from the invoice PDF, section 4.7) is recorded in the "Demo run 2026-11-07" section of EVIDENCE.md up to the spend reservation: upload, registration, NFT, funding, budgets and reserve. Hashio relay errors stopped it before the x402 payment and repayment. The x402 payment, commit and rejections above come from the PO-1002 run. A repayment through `RepaymentRouter` has not yet been recorded on the current stack.
+The agent-driven run on PO-1003 (registered from the invoice PDF, section 4.7) is recorded in the "Demo run 2026-11-07" section of EVIDENCE.md up to the spend reservation: upload, registration, NFT, funding, budgets and reserve. Hashio relay errors stopped it before the x402 payment and repayment. The x402 payment, commit and rejections above come from the PO-1002 run.
+
+The full lifecycle on the current stack was then recorded by the Claude Code seller agent (receivable `0xd8fc1ccb…a4ee`, PO-CC-11062242, 1.20 USDC, run through the `casheth-seller` MCP server): buyer confirmation [`0x5fba…efcc0`](https://hashscan.io/testnet/transaction/0x5fba58891b62c8fbbf13e0aae18e5b7be09231ca439d16c8ea01ee8b2a8efcc0), funding 0.50 USDC from lender C [`0xd04b…04df`](https://hashscan.io/testnet/transaction/0xd04beb759bdf890a4968be001705b71fca9e1950cc20be9d9b1d9ed38efc04df), spend reserve [`0xc1c0…47c7`](https://hashscan.io/testnet/transaction/0xc1c085bf9d28081fe334594f7b4b1933548ac414ed904d4b599199301b1147c7), x402 settlement [0.0.9185802@1794005127.517122456](https://hashscan.io/testnet/transaction/0.0.9185802@1794005127.517122456), commit [`0x2400…d3fe`](https://hashscan.io/testnet/transaction/0x2400cbe4a4e9c716d7ca84b95b93a02c01f334e05c995506635b1cde7c2cd3fe) and repayment through `RepaymentRouter` [`0x21e9…c92c`](https://hashscan.io/testnet/transaction/0x21e99be537f5673a192c6be9236aa533c699825dd4c223d161cdaab50d03c92c).
+
+### Read API latency
+
+`/events` and `/health` are served from memory. `/agents`, `/lenders` and `/receivables/:id` are derived from chain state through the Hashio relay, so the MCP server keeps them warm:
+
+- At boot it scans the Aqua and contract logs once (about 60 s) and builds the agent and lender stats before the first request.
+- Log reads are incremental (mirror node cursor per contract), and strategy kinds and Aqua logs are cached between scans.
+- The finished `/agents` and `/lenders` rows (10 s) and each `/receivables/:id` (5 s) are cached stale-while-revalidate: a poll is answered from memory at once while one background refresh replaces the value, and a failed refresh keeps the last good one.
+
+Measured against testnet after warm-up: `/agents` and `/lenders` answer in under 10 ms (previously 1 to 35 s per poll), and a receivable in about 1 ms after its first read.
 
 ### Frontend
 
-`frontend/` is a standalone Next.js app (npm, not part of the pnpm workspace): the landing page, the docs page, a public `/dashboard` that follows one agent (live mirror-node balances, its MCP activity log with HashScan proofs, and seller, buyer, lender and worker views; see [frontend/README.md](frontend/README.md)), and an admin console. Both poll the read API (`GET /health`, `/events`, `/agents`, `/lenders`; types in [docs/API.md](docs/API.md)). Point it at the MCP server with `NEXT_PUBLIC_API_URL`; the server allows the frontend's origin through `CORS_ORIGINS`.
+`frontend/` is a standalone Next.js app (npm, not part of the pnpm workspace): the landing page, the docs page, a public `/dashboard` that follows one agent (live mirror-node balances, its MCP activity log with HashScan proofs, and seller, buyer, lender and worker views; see [frontend/README.md](frontend/README.md)), and an admin console. Both read the read API (`GET /health`, `/events`, `/agents`, `/lenders`, `/receivables/:id`; types in [docs/API.md](docs/API.md)). Point it at the MCP server with `NEXT_PUBLIC_API_URL` (default `http://localhost:4030`); the server allows the frontend's origin through `CORS_ORIGINS`.
 
 ```
 cd frontend && npm ci && npm run dev        # http://localhost:3000
 npm test && npm run lint && npm run build
 ```
+
+The admin console and dashboard poll `/health` + `/events` every 3 s and the slower `/agents` + `/lenders` every 10 s in a separate loop, so the activity appears as soon as the server answers. The last live data is kept in the browser's localStorage and painted immediately on reload while the server is asked again.
 
 ### Continuous integration
 
@@ -490,6 +512,7 @@ Everything is recorded in [docs/EVIDENCE.md](docs/EVIDENCE.md) and the run recor
 | Measured base yield, scripted volume (lender A, 4 swaps) | [section 4.2](#42-funding-through-aqua-shared-liquidity); `deployments/testnet/trades.json` |
 | Receivable registered from an invoice PDF (PO-1003) | [0.0.7314364@1793989261.174955397](https://hashscan.io/testnet/transaction/0.0.7314364@1793989261.174955397) |
 | Agent-driven run on PO-1003 (upload to spend reservation; stopped by relay errors before payment and repayment) | EVIDENCE.md "Demo run 2026-11-07" section |
+| Full lifecycle by the Claude Code seller agent (PO-CC-11062242: confirm, fund, x402 spend, repay) | [funding](https://hashscan.io/testnet/transaction/0xd04beb759bdf890a4968be001705b71fca9e1950cc20be9d9b1d9ed38efc04df), [x402](https://hashscan.io/testnet/transaction/0.0.9185802@1794005127.517122456), [repayment](https://hashscan.io/testnet/transaction/0x21e99be537f5673a192c6be9236aa533c699825dd4c223d161cdaab50d03c92c) |
 | x402 mechanism, single-key and 2-of-2 settlements | [A](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214), [B](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) |
 | 2-of-2 spend wallets (threshold key read back from the mirror node) | [research](https://hashscan.io/testnet/account/0.0.11339484), [compute](https://hashscan.io/testnet/account/0.0.11339486) |
 | Scheduled lifecycle: network-executed schedule and a deleted one | [executed](https://hashscan.io/testnet/schedule/0.0.11338268), [deleted](https://hashscan.io/testnet/schedule/0.0.11338283) |

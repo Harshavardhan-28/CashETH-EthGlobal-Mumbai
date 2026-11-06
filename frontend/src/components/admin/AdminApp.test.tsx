@@ -9,9 +9,9 @@ import { Overview } from "./Overview";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
 
-const live = (): AdminData => ({ status: "live", sample: false, events: sampleEvents(Date.now()), agents: SAMPLE_AGENTS, lenders: SAMPLE_LENDERS, updatedAt: Date.now() });
+const live = (): AdminData => ({ status: "live", sample: false, events: sampleEvents(Date.now()), agents: SAMPLE_AGENTS, lenders: SAMPLE_LENDERS, statsReady: true, updatedAt: Date.now() });
 const offlineSample = (): AdminData => ({ ...live(), status: "offline", sample: true, updatedAt: undefined });
-const empty = (): AdminData => ({ status: "live", sample: false, events: [], agents: [], lenders: [], updatedAt: Date.now() });
+const empty = (): AdminData => ({ status: "live", sample: false, events: [], agents: [], lenders: [], statsReady: true, updatedAt: Date.now() });
 
 function renderAt(hash: string, data: () => AdminData = live) {
   window.location.hash = hash;
