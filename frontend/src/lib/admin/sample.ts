@@ -69,23 +69,46 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
-function invoice(ref: string, tag: string, amount: string, start: number, lenders: string[], spends: { worker: string; merchant: string; amount: string; at: number }[], repaidAt?: number): Draft[] {
+/** Advance rate of the sample facility: lenders fund 80% of the face value. */
+const ADVANCE = 0.8;
+const APR_BPS = [700, 850];
+const u = (n: number) => String(Math.round(n));
+
+/** `funded` is what the lenders advanced; the invoice's face value is funded / ADVANCE. `dueIn` is ms after upload. */
+function invoice(ref: string, tag: string, funded: string, start: number, lenders: string[], spends: { worker: string; merchant: string; amount: string; at: number }[], repaidAt?: number, dueIn = 30 * DAY): Draft[] {
   const id = hash(`f${tag}`);
   const doc = hash(`d0c${tag}`);
+  const face = u(Number(funded) / ADVANCE);
+  const terms = { seller: SELLER, buyer: BUYER, amount: face, dueAt: start - dueIn };
+  const shares = lenders.map((_, i) => (lenders.length === 1 ? 1 : i === 0 ? 0.6 : 0.4 / (lenders.length - 1)));
+  const fills = lenders.map((maker, i) => ({ maker, amount: u(Number(funded) * shares[i]), aprBps: APR_BPS[i % APR_BPS.length] }));
   const out: Draft[] = [
     { at: start, type: "InvoiceDocumentStored", receivableRef: ref, keccak256: doc, sha256: hash(`5a${tag}`), bytes: 48213, mime: "application/pdf", agent: SELLER },
-    { at: start - 20_000, type: "ReceivableUploaded", id, seller: SELLER, buyer: BUYER, amount, documentKeccak: doc, agent: SELLER },
-    { at: start - 50_000, type: "ReceivableConfirmed", id, amount, agent: BUYER, hashscan: tx(`c${tag}`) },
+    { at: start - 20_000, type: "ReceivableUploaded", id, ...terms, documentKeccak: doc, agent: SELLER },
+    { at: start - 50_000, type: "ReceivableConfirmed", id, ...terms, agent: BUYER, hashscan: tx(`c${tag}`) },
     { at: start - 65_000, type: "NftMinted", id, serial: Number(tag), agent: BUYER, hashscan: tx(`a${tag}`) },
-    { at: start - 95_000, type: "FacilityFunded", id, amount, makers: lenders, agent: SELLER, hashscan: tx(`b${tag}`) },
-    { at: start - 120_000, type: "BudgetsSet", id, agent: SELLER, hashscan: tx(`e${tag}`) },
+    { at: start - 95_000, type: "FacilityFunded", id, amount: funded, advanceBps: ADVANCE * 10_000, makers: lenders, fills, agent: SELLER, hashscan: tx(`b${tag}`) },
+    {
+      at: start - 120_000,
+      type: "BudgetsSet",
+      id,
+      workers: [WORKER_1, WORKER_2],
+      alloc: [u(Number(funded) * 0.025), u(Number(funded) * 0.02)],
+      limits: [WORKER_1, WORKER_2].map(() => ({ maxPerTx: "5000000", maxDaily: "25000000", merchants: [DATA_API, SEARCH_API] })),
+      agent: SELLER,
+      hashscan: tx(`e${tag}`),
+    },
   ];
   spends.forEach((s, i) => {
     const spendId = hash(`5e${tag}${i}`);
     out.push({ at: s.at, type: "SpendReserved", id, spendId, worker: s.worker, merchant: s.merchant, amount: s.amount, agent: s.worker, hashscan: tx(`7${tag}${i}`) });
     out.push({ at: s.at - 25_000, type: "SpendCommitted", id, spendId, worker: s.worker, merchant: s.merchant, amount: s.amount, agent: s.worker, hashscan: tx(`8${tag}${i}`) });
   });
-  if (repaidAt !== undefined) out.push({ at: repaidAt, type: "Repaid", id, amount, agent: BUYER, hashscan: tx(`9${tag}`) });
+  if (repaidAt !== undefined) {
+    const days = Math.max(1, (start - repaidAt) / DAY);
+    const toLenders = fills.reduce((sum, f) => sum + Number(f.amount) * (1 + (f.aprBps / 10_000) * (days / 365)), 0);
+    out.push({ at: repaidAt, type: "Repaid", id, amount: face, toLenders: u(toLenders), toSeller: u(Number(face) - toLenders), state: "Repaid", agent: BUYER, hashscan: tx(`9${tag}`) });
+  }
   return out;
 }
 
@@ -108,7 +131,7 @@ function drafts(): Draft[] {
   const po1003 = invoice("PO-1003", "3", "800000000", 10 * MIN, [LENDER_A, LENDER_B], [
     { worker: WORKER_1, merchant: DATA_API, amount: "1200000", at: 3 * MIN },
     { worker: WORKER_2, merchant: SEARCH_API, amount: "800000", at: 45_000 },
-  ]);
+  ], undefined, 14 * DAY);
   const po1003Id = hash("f3");
   po1003.push({ at: 70_000, type: "SpendRejected", id: po1003Id, worker: WORKER_1, merchant: DATA_API, amount: "50000000", code: "AGENT_BUDGET_EXCEEDED", stage: "reserve", agent: WORKER_1 });
 
@@ -124,5 +147,13 @@ function drafts(): Draft[] {
 export function sampleEvents(nowMs: number): AuditEvent[] {
   return drafts()
     .sort((a, b) => b.at - a.at)
-    .map(({ at, ...rest }, i): AuditEvent => ({ ...rest, v: 1, seq: i + 1, prevSeq: i, ts: new Date(nowMs - at).toISOString(), hcsSeq: 400 + i }));
+    .map(({ at, dueAt, ...rest }, i): AuditEvent => ({
+      ...rest,
+      ...(typeof dueAt === "number" ? { dueDate: Math.floor((nowMs - dueAt) / 1000) } : {}),
+      v: 1,
+      seq: i + 1,
+      prevSeq: i,
+      ts: new Date(nowMs - at).toISOString(),
+      hcsSeq: 400 + i,
+    }));
 }

@@ -87,6 +87,22 @@ export type LenderYield = {
 
 export type Health = { ok: true; resource: string; authorizationServer: string; events: number };
 
+export type ReceivableState = "Pending" | "Confirmed" | "Financed" | "Repaid" | "Overdue" | "Defaulted" | "Cancelled";
+
+export type ReceivableDetails = {
+  id: string;
+  state: ReceivableState;
+  seller: string;
+  buyer: string;
+  amount: string; // face value, units
+  dueDate: number; // unix seconds
+  funded: string; // facility funded amount
+  debt: string; // principal + fee still owed to lenders
+  positions: { maker: string; principal: string; aprBps: number; fee: string }[];
+  evidence: { label: string; url: string }[];
+  document?: { keccak: string; verified: boolean };
+};
+
 /** Non-2xx response from the read API (`{ code, message }` body when present). */
 export class ApiError extends Error {
   status: number;
