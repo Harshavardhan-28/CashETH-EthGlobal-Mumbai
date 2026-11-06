@@ -6,6 +6,7 @@ describe("isTransientRelayFailure", () => {
     expect(isTransientRelayFailure(400, '{"error":{"message":"RPC Request failed"}}')).toBe(true);
     expect(isTransientRelayFailure(500, "Failed to save transaction to pool")).toBe(true);
     expect(isTransientRelayFailure(503, "Error invoking RPC: timeout")).toBe(true);
+    expect(isTransientRelayFailure(500, "Mirror node upstream failure: statusCode=502, message=Request failed with status code 502")).toBe(true);
     expect(isTransientRelayFailure(429, "")).toBe(true);
     expect(isTransientRelayFailure(502, "")).toBe(true);
     expect(isTransientRelayFailure(504, "gateway timeout")).toBe(true);
@@ -36,7 +37,7 @@ describe("retryingFetch", () => {
     const response = await retryingFetch(fetchImpl, { sleep: async (ms) => void delays.push(ms) })("http://relay");
     expect(await response.json()).toEqual({ result: "0x1" });
     expect(calls).toHaveLength(3);
-    expect(delays).toEqual([500, 1000]);
+    expect(delays).toEqual([1000, 2000]);
   });
 
   it("gives up after five tries and returns the last failure", async () => {

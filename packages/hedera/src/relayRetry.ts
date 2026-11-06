@@ -6,7 +6,7 @@
  */
 
 const TRANSIENT_STATUSES = new Set([400, 429, 500, 502, 503, 504]);
-const TRANSIENT_BODY = /RPC Request failed|Failed to save transaction to pool|Error invoking RPC/i;
+const TRANSIENT_BODY = /RPC Request failed|Failed to save transaction to pool|Error invoking RPC|upstream failure/i;
 /** Plain gateway and rate-limit failures carry no message worth reading: the status alone is transient. */
 const TRANSIENT_WITHOUT_BODY = new Set([429, 502, 503, 504]);
 
@@ -23,8 +23,8 @@ export interface RetryOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
-/** `fetch` that retries the relay's transient failures: 0.5 s, 1 s, 2 s, 4 s between five tries by default. */
-export function retryingFetch(fetchImpl: typeof fetch = fetch, { tries = 5, baseDelayMs = 500, sleep = (ms) => new Promise<void>((r) => setTimeout(r, ms)) }: RetryOptions = {}): typeof fetch {
+/** `fetch` that retries the relay's transient failures: 1 s, 2 s, 4 s, 8 s between five tries by default. */
+export function retryingFetch(fetchImpl: typeof fetch = fetch, { tries = 5, baseDelayMs = 1000, sleep = (ms) => new Promise<void>((r) => setTimeout(r, ms)) }: RetryOptions = {}): typeof fetch {
   return async (input, init) => {
     for (let attempt = 1; ; attempt++) {
       const response = await fetchImpl(input, init);
