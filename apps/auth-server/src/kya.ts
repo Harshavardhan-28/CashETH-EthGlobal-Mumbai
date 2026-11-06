@@ -69,7 +69,8 @@ export function createViemKyaReader(
   abi: Abi = KYA_REGISTRY_READ_ABI,
   opts: ViemKyaReaderOptions = {},
 ): KyaReader {
-  const client = createPublicClient({ transport: http(env.HEDERA_JSON_RPC_URL) });
+  // Hashio is sometimes slower than viem's 10 s default: a token request must not fail on one slow registry read.
+  const client = createPublicClient({ transport: http(env.HEDERA_JSON_RPC_URL, { timeout: 60_000, retryCount: 5, retryDelay: 1_000 }) });
   const candidates =
     opts.candidates ??
     DEMO_ACCOUNTS.map((prefix) => env[`${prefix}_EVM`]).filter((a): a is `0x${string}` => typeof a === "string" && isAddress(a));
