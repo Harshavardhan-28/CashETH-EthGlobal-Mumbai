@@ -21,7 +21,8 @@ import { MockHSS } from "./mocks/MockHSS.sol";
 import { MockHtsUsdc } from "./mocks/MockHtsUsdc.sol";
 import { IHederaScheduleService } from "../src/hedera/IHederaScheduleService.sol";
 
-contract CreditFacilityTest is Test {
+/// @dev Shared deployment and helpers for the facility test suites (funding here, spend in CreditFacilitySpend.t.sol).
+abstract contract CreditFacilityBase is Test {
     address internal constant HSS = address(0x16b);
     uint256 internal constant AMOUNT = 10_000_000;
     uint16 internal constant ADVANCE_BPS = 7500;
@@ -65,7 +66,7 @@ contract CreditFacilityTest is Test {
     bytes32 internal id;
     uint64 internal dueDate;
 
-    function setUp() public {
+    function setUp() public virtual {
         vm.warp(1_750_000_000);
         buyer = vm.addr(buyerPk);
         seller = vm.addr(sellerPk);
@@ -110,6 +111,121 @@ contract CreditFacilityTest is Test {
         id = _registerReceivable(keccak256("PO-1001"), dueDate);
     }
 
+    // ------------------------------------------------------------------ helpers
+
+    function _newFacility(address usdc_) internal returns (CreditFacility) {
+        return new CreditFacility(
+            IReceivableRegistry(address(registry)),
+            IKYARegistry(address(kya)),
+            IReceivableCreditNote(address(rcn)),
+            usdc_,
+            coordinator,
+            owner
+        );
+    }
+
+    function _fundBoth() internal {
+        swapRouter.fund(address(usdc), FILL_A + FILL_B);
+        vm.prank(coordinator);
+        facility.openAndFund(id, _fillsBoth(), ADVANCE_BPS, LIMIT);
+    }
+
+    function _fillsBoth() internal view returns (ICreditFacility.Fill[] memory fills) {
+        fills = new ICreditFacility.Fill[](2);
+        fills[0] = ICreditFacility.Fill({ order: _order(makerA), amount: FILL_A, aprBps: APR_A });
+        fills[1] = ICreditFacility.Fill({ order: _order(makerB), amount: FILL_B, aprBps: APR_B });
+    }
+
+    function _order(address maker) internal view returns (ISwapVM.Order memory) {
+        (address tokenA, address tokenB) =
+            address(rcn) < address(usdc) ? (address(rcn), address(usdc)) : (address(usdc), address(rcn));
+        return MakerTraitsLib.build(
+            MakerTraitsLib.Args({
+                maker: maker,
+                receiver: address(0),
+                tokenA: tokenA,
+                tokenB: tokenB,
+                shouldUnwrapWeth: false,
+                useAquaInsteadOfSignature: true,
+                allowZeroAmountIn: false,
+                usePermit2: false,
+                hasPreTransferInHook: false,
+                hasPostTransferInHook: false,
+                hasPreTransferOutHook: false,
+                hasPostTransferOutHook: false,
+                preTransferInTarget: address(0),
+                preTransferInData: "",
+                postTransferInTarget: address(0),
+                postTransferInData: "",
+                preTransferOutTarget: address(0),
+                preTransferOutData: "",
+                postTransferOutTarget: address(0),
+                postTransferOutData: "",
+                program: ""
+            })
+        );
+    }
+
+    function _assertPosition(address maker, uint256 principal, uint16 aprBps, uint64 start) internal view {
+        ICreditFacility.Position memory p = facility.position(id, maker);
+        assertEq(p.principal, principal);
+        assertEq(p.aprBps, aprBps);
+        assertEq(p.start, start);
+        assertEq(p.paidPrincipal, 0);
+        assertEq(p.paidFee, 0);
+    }
+
+    function _assertSchedule(address schedule, uint256 expiry, uint256 gasLimit, bytes memory callData)
+        internal
+        view
+    {
+        MockHSS.Scheduled memory s = hss.getSchedule(schedule);
+        assertEq(s.scheduler, address(facility));
+        assertEq(s.to, address(facility));
+        assertEq(s.expirySecond, expiry);
+        assertEq(s.gasLimit, gasLimit);
+        assertEq(s.value, 0);
+        assertEq(s.callData, callData);
+        assertFalse(s.deleted);
+        assertFalse(s.executed);
+    }
+
+    function _kyaRegister(address who, bytes32 group, uint8 role, uint8 lvl) internal {
+        kya.register(
+            who,
+            IKYARegistry.Agent({
+                uaidHash: keccak256(abi.encode(who)),
+                ownerGroup: group,
+                role: role,
+                level: lvl,
+                expiresAt: 0,
+                revoked: false,
+                mandateHash: bytes32(0)
+            })
+        );
+    }
+
+    function _registerReceivable(bytes32 buyerRef, uint64 due) internal returns (bytes32) {
+        IReceivableRegistry.ReceivableConfirmation memory c = IReceivableRegistry.ReceivableConfirmation({
+            seller: seller,
+            buyer: buyer,
+            currency: address(usdc),
+            amount: AMOUNT,
+            dueDate: due,
+            buyerRef: buyerRef,
+            detailsCommitment: keccak256("doc"),
+            payTo: repaymentRouter,
+            nonce: registry.nonces(buyer),
+            deadline: uint64(block.timestamp + 1 hours)
+        });
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(buyerPk, registry.hashConfirmation(c));
+        bytes32 rid = registry.register(c, abi.encodePacked(r, s, v));
+        assertEq(uint8(registry.state(rid)), uint8(IReceivableRegistry.State.Confirmed));
+        return rid;
+    }
+}
+
+contract CreditFacilityTest is CreditFacilityBase {
     // ------------------------------------------------------------------ openAndFund
 
     function test_openAndFund_fillsAandB_marksFinanced_andSchedules() public {
@@ -216,9 +332,10 @@ contract CreditFacilityTest is Test {
         vm.expectRevert(ICreditFacility.NOT_CHEAPEST_FIRST.selector);
         facility.openAndFund(id, empty, ADVANCE_BPS, LIMIT);
 
-        // Equal APRs are non-decreasing, so they are accepted.
+        // Equal APRs are non-decreasing, so they are accepted (the router reports the same APR, Ruling R21).
         ICreditFacility.Fill[] memory equal = _fillsBoth();
         equal[1].aprBps = APR_A;
+        swapRouter.setAprBps(makerB, APR_A);
         vm.prank(coordinator);
         facility.openAndFund(id, equal, ADVANCE_BPS, LIMIT);
         assertEq(uint8(registry.state(id)), uint8(IReceivableRegistry.State.Financed));
@@ -867,118 +984,5 @@ contract CreditFacilityTest is Test {
         assertEq(ok.USDC(), address(hts));
         assertEq(ok.COORDINATOR(), coordinator);
         assertEq(ok.owner(), owner);
-    }
-
-    // ------------------------------------------------------------------ helpers
-
-    function _newFacility(address usdc_) internal returns (CreditFacility) {
-        return new CreditFacility(
-            IReceivableRegistry(address(registry)),
-            IKYARegistry(address(kya)),
-            IReceivableCreditNote(address(rcn)),
-            usdc_,
-            coordinator,
-            owner
-        );
-    }
-
-    function _fundBoth() internal {
-        swapRouter.fund(address(usdc), FILL_A + FILL_B);
-        vm.prank(coordinator);
-        facility.openAndFund(id, _fillsBoth(), ADVANCE_BPS, LIMIT);
-    }
-
-    function _fillsBoth() internal view returns (ICreditFacility.Fill[] memory fills) {
-        fills = new ICreditFacility.Fill[](2);
-        fills[0] = ICreditFacility.Fill({ order: _order(makerA), amount: FILL_A, aprBps: APR_A });
-        fills[1] = ICreditFacility.Fill({ order: _order(makerB), amount: FILL_B, aprBps: APR_B });
-    }
-
-    function _order(address maker) internal view returns (ISwapVM.Order memory) {
-        (address tokenA, address tokenB) =
-            address(rcn) < address(usdc) ? (address(rcn), address(usdc)) : (address(usdc), address(rcn));
-        return MakerTraitsLib.build(
-            MakerTraitsLib.Args({
-                maker: maker,
-                receiver: address(0),
-                tokenA: tokenA,
-                tokenB: tokenB,
-                shouldUnwrapWeth: false,
-                useAquaInsteadOfSignature: true,
-                allowZeroAmountIn: false,
-                usePermit2: false,
-                hasPreTransferInHook: false,
-                hasPostTransferInHook: false,
-                hasPreTransferOutHook: false,
-                hasPostTransferOutHook: false,
-                preTransferInTarget: address(0),
-                preTransferInData: "",
-                postTransferInTarget: address(0),
-                postTransferInData: "",
-                preTransferOutTarget: address(0),
-                preTransferOutData: "",
-                postTransferOutTarget: address(0),
-                postTransferOutData: "",
-                program: ""
-            })
-        );
-    }
-
-    function _assertPosition(address maker, uint256 principal, uint16 aprBps, uint64 start) internal view {
-        ICreditFacility.Position memory p = facility.position(id, maker);
-        assertEq(p.principal, principal);
-        assertEq(p.aprBps, aprBps);
-        assertEq(p.start, start);
-        assertEq(p.paidPrincipal, 0);
-        assertEq(p.paidFee, 0);
-    }
-
-    function _assertSchedule(address schedule, uint256 expiry, uint256 gasLimit, bytes memory callData)
-        internal
-        view
-    {
-        MockHSS.Scheduled memory s = hss.getSchedule(schedule);
-        assertEq(s.scheduler, address(facility));
-        assertEq(s.to, address(facility));
-        assertEq(s.expirySecond, expiry);
-        assertEq(s.gasLimit, gasLimit);
-        assertEq(s.value, 0);
-        assertEq(s.callData, callData);
-        assertFalse(s.deleted);
-        assertFalse(s.executed);
-    }
-
-    function _kyaRegister(address who, bytes32 group, uint8 role, uint8 lvl) internal {
-        kya.register(
-            who,
-            IKYARegistry.Agent({
-                uaidHash: keccak256(abi.encode(who)),
-                ownerGroup: group,
-                role: role,
-                level: lvl,
-                expiresAt: 0,
-                revoked: false,
-                mandateHash: bytes32(0)
-            })
-        );
-    }
-
-    function _registerReceivable(bytes32 buyerRef, uint64 due) internal returns (bytes32) {
-        IReceivableRegistry.ReceivableConfirmation memory c = IReceivableRegistry.ReceivableConfirmation({
-            seller: seller,
-            buyer: buyer,
-            currency: address(usdc),
-            amount: AMOUNT,
-            dueDate: due,
-            buyerRef: buyerRef,
-            detailsCommitment: keccak256("doc"),
-            payTo: repaymentRouter,
-            nonce: registry.nonces(buyer),
-            deadline: uint64(block.timestamp + 1 hours)
-        });
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(buyerPk, registry.hashConfirmation(c));
-        bytes32 rid = registry.register(c, abi.encodePacked(r, s, v));
-        assertEq(uint8(registry.state(rid)), uint8(IReceivableRegistry.State.Confirmed));
-        return rid;
     }
 }

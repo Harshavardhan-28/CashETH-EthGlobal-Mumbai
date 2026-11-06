@@ -44,6 +44,10 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     uint8 public constant STATUS_FROZEN = 2;
     uint8 public constant STATUS_CLOSED = 3;
 
+    uint8 private constant _RES_OPEN = 1;
+    uint8 private constant _RES_COMMITTED = 2;
+    uint8 private constant _RES_RELEASED = 3;
+
     IReceivableRegistry public immutable REGISTRY;
     IKYARegistry public immutable KYA;
     IReceivableCreditNote public immutable RCN;
@@ -59,14 +63,18 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     /// @dev Maker of the fill in flight and the USDC the router reported for it through `onCreditFill`.
     address private transient _fillMaker;
     uint256 private transient _fillReported;
+    /// @dev APR of the fill in flight; `onCreditFill` must report the same (Ruling R21).
+    uint16 private transient _fillAprBps;
 
     mapping(bytes32 => FacilityInfo) private _info;
     mapping(bytes32 => address[]) private _makers;
     mapping(bytes32 => mapping(address => Position)) private _positions;
 
-    // Task 3.4 (budgets and two-phase spend) storage.
     mapping(bytes32 => mapping(address => Budget)) private _budgets;
     mapping(bytes32 => Reservation) private _reservations;
+    /// @dev Per (facility, worker) merchant allowlist: the enumerable list and its membership mapping.
+    mapping(bytes32 => mapping(address => address[])) private _merchantList;
+    mapping(bytes32 => mapping(address => mapping(address => bool))) private _merchantAllowed;
 
     modifier onlyCoordinator() {
         _checkCoordinator();
@@ -176,7 +184,7 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     function onCreditFill(bytes32 id, address maker, uint256 usdcIn, uint16 aprBps) external {
         if (msg.sender != swapRouter) revert NOT_SWAP_ROUTER();
         if (id == bytes32(0) || id != _activeId) revert NOT_ACTIVE_ID();
-        if (maker != _fillMaker) revert FILL_MISMATCH();
+        if (maker != _fillMaker || aprBps != _fillAprBps) revert FILL_MISMATCH();
         _fillReported += usdcIn;
 
         Position storage p = _positions[id][maker];
@@ -262,6 +270,115 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         emit FacilityClosed(id, undrawn);
     }
 
+    // ------------------------------------------------------------------ budgets and two-phase spend
+
+    /// @notice Seller sets each worker's allocation, per-tx and daily limits, and replaces its merchant
+    ///         allowlist. The allocations of one call sum to at most `funded`, and no allocation drops below
+    ///         what the worker already spent plus holds in open reservations.
+    function setBudgets(bytes32 id, address[] calldata workers, uint256[] calldata alloc, Limits[] calldata limits)
+        external
+    {
+        FacilityInfo storage info = _info[id];
+        if (msg.sender != info.seller) revert NOT_SELLER();
+        uint256 n = workers.length;
+        if (alloc.length != n || limits.length != n) revert LENGTH_MISMATCH();
+        if (info.status != STATUS_ACTIVE) revert FACILITY_NOT_ACTIVE();
+
+        uint256 sum;
+        for (uint256 i; i < n; ++i) {
+            sum += alloc[i];
+            address worker = workers[i];
+            Budget storage b = _budgets[id][worker];
+            if (alloc[i] < b.spent + b.reserved) revert BUDGETS_EXCEED_FUNDED();
+            b.alloc = alloc[i];
+            b.maxPerTx = limits[i].maxPerTx;
+            b.maxDaily = limits[i].maxDaily;
+            _setMerchants(id, worker, limits[i].merchants);
+        }
+        if (sum > info.funded) revert BUDGETS_EXCEED_FUNDED();
+        emit BudgetsSet(id, workers, alloc);
+    }
+
+    /// @notice Moves `amount` USDC to the worker's spend wallet against an open reservation that the
+    ///         coordinator later commits (spent on Hedera) or releases (pulled back).
+    /// @dev Check order: spend id unused, facility Active before its due date, expiry in the future; then
+    ///      worker budget, per-tx limit, daily limit, merchant allowlist, facility availability.
+    function reserve(
+        bytes32 id,
+        bytes32 spendId,
+        address worker,
+        address spendWallet,
+        address merchant,
+        uint256 amount,
+        uint64 expiry
+    ) external onlyCoordinator whenNotPaused {
+        Reservation storage r = _reservations[spendId];
+        if (r.status != 0) revert RESERVATION_EXISTS();
+        FacilityInfo storage info = _info[id];
+        if (info.status != STATUS_ACTIVE || block.timestamp >= info.dueDate) revert FACILITY_NOT_ACTIVE();
+        if (expiry <= block.timestamp) revert RESERVATION_EXPIRED();
+
+        Budget storage b = _budgets[id][worker];
+        if (amount > b.alloc - b.spent - b.reserved) revert AGENT_BUDGET_EXCEEDED();
+        if (amount == 0 || amount > b.maxPerTx) revert TX_LIMIT_EXCEEDED();
+        (uint256 dailySpent, uint64 dayStart) = _currentDay(b);
+        if (dailySpent + amount > b.maxDaily) revert DAILY_LIMIT_EXCEEDED();
+        if (!_merchantAllowed[id][worker][merchant]) revert MERCHANT_NOT_ALLOWED();
+        if (amount > available(id)) revert GLOBAL_CREDIT_LIMIT_EXCEEDED();
+
+        b.dailySpent = dailySpent;
+        b.dayStart = dayStart;
+        b.reserved += amount;
+        info.reserved += amount;
+        r.id = id;
+        r.worker = worker;
+        r.spendWallet = spendWallet;
+        r.merchant = merchant;
+        r.amount = amount;
+        r.expiry = expiry;
+        r.status = _RES_OPEN;
+
+        IERC20(USDC).safeTransfer(spendWallet, amount);
+        emit SpendReserved(id, spendId, worker, merchant, amount, expiry);
+    }
+
+    /// @notice Records the Hedera payment for an open, unexpired reservation: reserved becomes spent.
+    function commit(bytes32 spendId, bytes32 hederaTxIdHash) external onlyCoordinator {
+        Reservation storage r = _reservations[spendId];
+        if (r.status != _RES_OPEN) revert RESERVATION_NOT_OPEN();
+        if (block.timestamp > r.expiry) revert RESERVATION_EXPIRED();
+
+        uint256 amount = r.amount;
+        Budget storage b = _budgets[r.id][r.worker];
+        (uint256 dailySpent, uint64 dayStart) = _currentDay(b);
+        b.dailySpent = dailySpent + amount;
+        b.dayStart = dayStart;
+        b.reserved -= amount;
+        b.spent += amount;
+        FacilityInfo storage info = _info[r.id];
+        info.reserved -= amount;
+        info.committed += amount;
+        r.status = _RES_COMMITTED;
+        r.txIdHash = hederaTxIdHash;
+        emit SpendCommitted(spendId, hederaTxIdHash);
+    }
+
+    /// @notice Pulls an open reservation's USDC back from the spend wallet (standing allowance). The
+    ///         coordinator may release at any time, anyone once the reservation has expired.
+    function release(bytes32 spendId) external {
+        Reservation storage r = _reservations[spendId];
+        if (r.status != _RES_OPEN) revert RESERVATION_NOT_OPEN();
+        if (msg.sender != COORDINATOR && block.timestamp <= r.expiry) revert NOT_COORDINATOR();
+
+        uint256 amount = r.amount;
+        _budgets[r.id][r.worker].reserved -= amount;
+        _info[r.id].reserved -= amount;
+        r.status = _RES_RELEASED;
+
+        IERC20(USDC).safeTransferFrom(r.spendWallet, address(this), amount);
+        emit SpendReleased(spendId, amount);
+    }
+
     // ------------------------------------------------------------------ admin
 
     function pause() external onlyOwner {
@@ -294,40 +411,27 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         return info.funded - info.committed - info.reserved;
     }
 
-    // ------------------------------------------------------------------ Task 3.4 (not implemented yet)
-
-    function setBudgets(bytes32, address[] calldata, uint256[] calldata, Limits[] calldata) external pure {
-        revert NOT_IMPLEMENTED();
+    /// @return The stored budget, without applying the rolling daily reset.
+    function budget(bytes32 id, address worker) external view returns (Budget memory) {
+        return _budgets[id][worker];
     }
 
-    function reserve(bytes32, bytes32, address, address, address, uint256, uint64) external pure {
-        revert NOT_IMPLEMENTED();
+    function isMerchantAllowed(bytes32 id, address worker, address merchant) external view returns (bool) {
+        return _merchantAllowed[id][worker][merchant];
     }
 
-    function commit(bytes32, bytes32) external pure {
-        revert NOT_IMPLEMENTED();
+    function merchants(bytes32 id, address worker) external view returns (address[] memory) {
+        return _merchantList[id][worker];
     }
 
-    function release(bytes32) external pure {
-        revert NOT_IMPLEMENTED();
-    }
-
-    function budget(bytes32, address) external pure returns (Budget memory) {
-        revert NOT_IMPLEMENTED();
-    }
-
-    function isMerchantAllowed(bytes32, address, address) external pure returns (bool) {
-        revert NOT_IMPLEMENTED();
-    }
-
-    function reservation(bytes32) external pure returns (Reservation memory) {
-        revert NOT_IMPLEMENTED();
+    function reservation(bytes32 spendId) external view returns (Reservation memory) {
+        return _reservations[spendId];
     }
 
     // ------------------------------------------------------------------ internal
 
     /// @dev Sells `fill.amount` freshly minted RCN for exactly `fill.amount` USDC against the lender's order.
-    ///      Reconciles both the USDC actually received and the router's `onCreditFill` reports (maker and
+    ///      Reconciles both the USDC actually received and the router's `onCreditFill` reports (maker, APR and
     ///      amount) against the fill.
     function _fill(address router, bytes32 id, Fill calldata fill, uint16 advanceBps) private {
         uint256 amount = fill.amount;
@@ -335,6 +439,7 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         RCN.approve(router, amount);
 
         _fillMaker = fill.order.maker;
+        _fillAprBps = fill.aprBps;
         _fillReported = 0;
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(this));
         ISwapVM(router).swap(
@@ -344,7 +449,32 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
             revert FILL_MISMATCH();
         }
         _fillMaker = address(0);
+        _fillAprBps = 0;
         _fillReported = 0;
+    }
+
+    /// @dev The worker's daily total and window start, reset to (0, now) once a day has passed since the start.
+    function _currentDay(Budget storage b) private view returns (uint256 dailySpent, uint64 dayStart) {
+        dayStart = b.dayStart;
+        if (block.timestamp >= uint256(dayStart) + 1 days) return (0, uint64(block.timestamp));
+        return (b.dailySpent, dayStart);
+    }
+
+    /// @dev Replaces the worker's merchant allowlist: clears the old set, then records `list` (duplicates once).
+    function _setMerchants(bytes32 id, address worker, address[] calldata list) private {
+        address[] storage current = _merchantList[id][worker];
+        mapping(address => bool) storage allowed = _merchantAllowed[id][worker];
+        for (uint256 i = current.length; i != 0; --i) {
+            allowed[current[i - 1]] = false;
+            current.pop();
+        }
+        for (uint256 i; i < list.length; ++i) {
+            address m = list[i];
+            if (!allowed[m]) {
+                allowed[m] = true;
+                current.push(m);
+            }
+        }
     }
 
     function _defaultExpiry(uint64 dueDate) private pure returns (uint256) {

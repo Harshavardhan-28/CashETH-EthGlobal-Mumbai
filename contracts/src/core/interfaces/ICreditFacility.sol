@@ -99,8 +99,9 @@ interface ICreditFacility {
     error ZERO_ADDRESS();
     error ASSOCIATION_FAILED(uint256 responseCode);
     error PAUSED();
-    error NOT_IMPLEMENTED();
 
+    error NOT_SELLER();
+    error LENGTH_MISMATCH();
     error BUDGETS_EXCEED_FUNDED();
     error AGENT_BUDGET_EXCEEDED();
     error TX_LIMIT_EXCEEDED();
@@ -108,6 +109,8 @@ interface ICreditFacility {
     error MERCHANT_NOT_ALLOWED();
     error GLOBAL_CREDIT_LIMIT_EXCEEDED();
     error RESERVATION_EXPIRED();
+    error RESERVATION_EXISTS();
+    error RESERVATION_NOT_OPEN();
 
     /// @notice One-time wiring of the SwapVM router and the repayment router; both must be non-zero.
     function wire(address swapRouter, address repaymentRouter) external;
@@ -162,5 +165,6 @@ interface ICreditFacility {
     function release(bytes32 spendId) external;
     function budget(bytes32 id, address worker) external view returns (Budget memory);
     function isMerchantAllowed(bytes32 id, address worker, address merchant) external view returns (bool);
+    function merchants(bytes32 id, address worker) external view returns (address[] memory);
     function reservation(bytes32 spendId) external view returns (Reservation memory);
 }
