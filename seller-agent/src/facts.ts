@@ -83,7 +83,8 @@ export function applyResult(facts: Facts, call: { name: string; args: Record<str
     case "open_facility":
       return str(result.funded) ? { funded: String(result.funded) } : {};
     case "set_budgets":
-      return { budgetsSet: true };
+      // `mode: "calldata"` means the server does not hold the seller key and nothing happened on-chain.
+      return result.mode === "sent" ? { budgetsSet: true } : {};
     case "reserve_spend":
       return str(result.spendId)
         ? { spendIds: [...facts.spendIds, String(result.spendId)], spent: (BigInt(facts.spent) + BigInt(String(args.amount))).toString() }
