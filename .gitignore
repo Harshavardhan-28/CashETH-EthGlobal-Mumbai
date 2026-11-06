@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 apps/auth-server/data/
+apps/mcp-server/data/
 
 # deps / build
 node_modules/

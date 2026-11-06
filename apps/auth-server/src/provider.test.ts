@@ -156,7 +156,7 @@ describe("CashEthOAuthProvider.verifyAccessToken", () => {
     const token = res.body.access_token as string;
 
     const info = await new CashEthOAuthProvider({ kya, keys, issuer: ISSUER, resource: RESOURCE }).verifyAccessToken(token);
-    expect(info).toMatchObject({ token, clientId: lender.address, scopes: ["receivable:read", "credit:read"], resource: RESOURCE });
+    expect(info).toMatchObject({ token, clientId: lender.address, scopes: ["receivable:read", "credit:read", "stats:read", "lend:write"], resource: RESOURCE });
     expect(info.extra).toMatchObject({ agent: lender.address, role: 4, sub: lender.uaid });
     expect(info.expiresAt).toBeGreaterThan(Date.now() / 1000);
 

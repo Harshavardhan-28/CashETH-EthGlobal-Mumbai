@@ -35,7 +35,14 @@ describe("scopesForRole", () => {
   });
 
   it("level 1 gets read scopes only", () => {
-    expect(scopesForRole(3, 1)).toEqual(["receivable:read", "credit:read"]);
+    expect(scopesForRole(3, 1)).toEqual(["receivable:read", "credit:read", "stats:read"]);
+  });
+
+  it("every role reads stats and only lenders get lend:write", () => {
+    for (const role of [1, 2, 3, 4]) expect(scopesForRole(role, 2)).toContain("stats:read");
+    expect(scopesForRole(4, 2)).toContain("lend:write");
+    expect([1, 2, 3].some((role) => scopesForRole(role, 2).includes("lend:write"))).toBe(false);
+    expect(scopesForRole(4, 1)).not.toContain("lend:write");
   });
 
   it("level 0 and unknown roles get nothing", () => {

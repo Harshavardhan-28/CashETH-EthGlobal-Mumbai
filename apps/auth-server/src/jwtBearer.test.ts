@@ -54,7 +54,7 @@ describe("POST /token (jwt-bearer)", () => {
       role: 1,
       kya_level: 2,
       owner_group: seller.record.ownerGroup,
-      scope: "receivable:write receivable:read credit:read facility:open budget:write spend:reserve",
+      scope: "receivable:write receivable:read credit:read facility:open budget:write spend:reserve stats:read",
     });
   });
 
@@ -64,10 +64,10 @@ describe("POST /token (jwt-bearer)", () => {
 
     const res = await tokenRequest(app, { assertion: await assertionFor(worker) }).expect(200);
 
-    expect(res.body.scope).toBe("receivable:read credit:read");
+    expect(res.body.scope).toBe("receivable:read credit:read stats:read");
     const { claims } = await verifyWithJwks(app, res.body.access_token);
     expect(claims.kya_level).toBe(1);
-    expect(claims.scope).toBe("receivable:read credit:read");
+    expect(claims.scope).toBe("receivable:read credit:read stats:read");
   });
 
   it("revoked agent is rejected with KYA_FAIL", async () => {
@@ -145,7 +145,7 @@ describe("POST /token (jwt-bearer)", () => {
     expect(claims.aud).toBe(RESOURCE.href);
     expect(claims.exp - claims.iat).toBe(600);
     expect(claims.jti).toEqual(expect.any(String));
-    expect(claims.scope).toBe("receivable:read credit:read");
+    expect(claims.scope).toBe("receivable:read credit:read stats:read lend:write");
   });
 
   it("jti replay is rejected inside the clock-skew window after exp", async () => {

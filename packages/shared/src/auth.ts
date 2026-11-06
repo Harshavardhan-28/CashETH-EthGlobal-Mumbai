@@ -39,16 +39,19 @@ export type AccessTokenClaims = {
 /** Roles as stored in `KYARegistry.Agent.role`. */
 export const ROLES = { Seller: 1, Buyer: 2, Worker: 3, Lender: 4 } as const;
 
-export const READ_SCOPES = ["receivable:read", "credit:read"] as const;
+export const READ_SCOPES = ["receivable:read", "credit:read", "stats:read"] as const;
 /** Only granted through the auth-code path (owner grant page with the demo admin switch). */
 export const AGENT_ADMIN_SCOPE = "agent:admin";
 
-/** BUILD.md section 5.3: scopes per role at KYA level >= 2. */
+/**
+ * BUILD.md section 5.3 plus plan Addendum A: scopes per role at KYA level >= 2. `stats:read` (agent and lender
+ * stats) is granted to every role; `lend:write` (ship and dock lender strategies) to lenders.
+ */
 export const ROLE_SCOPES: Readonly<Record<number, readonly string[]>> = {
-  [ROLES.Seller]: ["receivable:write", "receivable:read", "credit:read", "facility:open", "budget:write", "spend:reserve"],
-  [ROLES.Buyer]: ["receivable:confirm", "receivable:read", "credit:read", "repay:write"],
-  [ROLES.Worker]: ["receivable:read", "credit:read", "spend:reserve", "spend:pay", "spend:commit"],
-  [ROLES.Lender]: ["receivable:read", "credit:read"],
+  [ROLES.Seller]: ["receivable:write", "receivable:read", "credit:read", "facility:open", "budget:write", "spend:reserve", "stats:read"],
+  [ROLES.Buyer]: ["receivable:confirm", "receivable:read", "credit:read", "repay:write", "stats:read"],
+  [ROLES.Worker]: ["receivable:read", "credit:read", "spend:reserve", "spend:pay", "spend:commit", "stats:read"],
+  [ROLES.Lender]: ["receivable:read", "credit:read", "stats:read", "lend:write"],
 };
 
 /** Every scope this system knows (for `scopes_supported`). */
