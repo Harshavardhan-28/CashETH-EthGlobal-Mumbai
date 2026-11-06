@@ -11,6 +11,16 @@ export interface MirrorAccount {
   };
 }
 
+export interface MirrorTopicMessage {
+  consensus_timestamp: string;
+  message: string;
+  sequence_number: number;
+  topic_id: string;
+  chunk_info?: {
+    initial_transaction_id?: { account_id: string; transaction_valid_start: string } | null;
+  } | null;
+}
+
 export interface WaitForOptions {
   attempts?: number;
   delayMs?: number;
@@ -69,6 +79,19 @@ export const mirror = {
     if (!tx) throw new Error(`No transaction at consensus timestamp ${result.timestamp}`);
     const transactionId = toSdkTransactionId(tx.transaction_id);
     return { transactionId, status: result.result, hashscanUrl: hashscan.tx(transactionId) };
+  },
+
+  /** Messages on an HCS topic (`message` is base64), newest first by default. */
+  async topicMessages(
+    env: Env,
+    topicId: string,
+    { limit = 25, order = "desc" }: { limit?: number; order?: "asc" | "desc" } = {},
+  ): Promise<MirrorTopicMessage[]> {
+    const body = await get<{ messages: MirrorTopicMessage[] }>(
+      env,
+      `/topics/${topicId}/messages?limit=${limit}&order=${order}`,
+    );
+    return body.messages;
   },
 
   /**

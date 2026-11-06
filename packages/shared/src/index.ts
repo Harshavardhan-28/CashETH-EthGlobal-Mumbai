@@ -28,3 +28,5 @@ export {
   signAgentAssertion,
 } from "./auth.js";
 export type { AccessTokenClaims, AgentAssertionClaims, SignAgentAssertionInput } from "./auth.js";
+export { HEDERA_IDS_PATH, HederaIdsSchema, loadHederaIds } from "./hederaIds.js";
+export type { HederaIds } from "./hederaIds.js";

@@ -256,3 +256,26 @@ The buyer signed the demo `ReceivableConfirmation` with `@casheth/shared` `signR
 | same confirmation, one byte of `r` flipped | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966532.109597123) | CONTRACT_REVERT_EXECUTED | `0x48fb71e5` | `BAD_BUYER_SIG()` |
 
 `DUPLICATE_RECEIVABLE` on testnet is proven after wiring (Task 4.3).
+## C2: HCS topic, HCS-14 profiles and receivable NFT collection
+
+Produced by `scripts/c2-topic-and-nft.ts` on 2026-11-06. Ids are in `deployments/testnet/hedera.json`.
+
+- HCS audit topic: [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927) (memo `CashETH audit v1`, submit key = operator, so only the orchestrator can write)
+- Receivable NFT collection: [0.0.11338934](https://hashscan.io/testnet/token/0.0.11338934) (`CashETH Receivable` / `CRCV`, non-fungible, infinite supply, treasury and supply key = operator). No serial is minted yet; the first mint follows the on-chain receivable registration in Task 4.3.
+- Creation transactions: topic [0.0.11333252@1793966819.849217866](https://hashscan.io/testnet/transaction/0.0.11333252@1793966819.849217866) (fee 0.29 HBAR), collection [0.0.11333252@1793966833.582306123](https://hashscan.io/testnet/transaction/0.0.11333252@1793966833.582306123) (fee 14.59 HBAR). Mirror node confirms: topic submit key ECDSA, no admin key; token `NON_FUNGIBLE_UNIQUE`, `INFINITE`, total supply 0, treasury `0.0.11333252`, ECDSA supply key, no admin key.
+- Sequence numbers 11 and later include liveness probes from `packages/hedera/src/hcs.test.ts`; they carry `"test": true` and no `agentUaid`, so consumers can skip them.
+
+Each agent's UAID comes from the standards SDK's HCS-14 AID generator (`createUaid` in `@hashgraphonline/standards-sdk@0.1.192`): SHA-384 over the canonical agent data (registry `casheth`, name, version `1`, protocol `mcp`, nativeId = CAIP-10 Hedera account, no skills), base58-encoded, with `uid`, `registry`, `proto` and `nativeId` routing params. Each profile is published as an `AgentRegistered` audit message; the sequence number links to its transaction.
+
+| Agent | Account | UAID | HCS seq |
+| --- | --- | --- | --- |
+| CashETH Seller | 0.0.11337987 | `uaid:aid:3qySZMLB3Vi66NPMjb6xxahguEQmxLktaQSSZhLY2ec6xoaR5mTezhZcg368sn2kby;uid=0.0.11337987;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337987` | [1](https://hashscan.io/testnet/transaction/0.0.11333252@1793966855.703107777) |
+| CashETH Buyer | 0.0.11337988 | `uaid:aid:6n8CxWdsJmRjGgDobg5kTRrgVo84isyzALyeFCZw2oRDASckSXrpa9pa2bkuPQ2o3f;uid=0.0.11337988;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337988` | [2](https://hashscan.io/testnet/transaction/0.0.11333252@1793966862.493865324) |
+| CashETH Research Worker | 0.0.11337989 | `uaid:aid:6vYimBkEr5Tg45D478dN7dBRXBEapLwWQW9TXFcioPgLszQP7KB4tt7Yh6aEfjbmSJ;uid=0.0.11337989;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337989` | [3](https://hashscan.io/testnet/transaction/0.0.11333252@1793966875.115936608) |
+| CashETH Compute Worker | 0.0.11337990 | `uaid:aid:9Jgrz4SisnEynTLNHkRzAFBzrrmtADeFo1CgW6UiY3qQEAib8cQuJe4aggNTmdTRdk;uid=0.0.11337990;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337990` | [4](https://hashscan.io/testnet/transaction/0.0.11333252@1793966895.352273481) |
+| CashETH Lender A | 0.0.11337991 | `uaid:aid:3sRtyrb6rzW2pVT9qAotipLUQr4yT6LLsKRa1KUfEHwEzhqkZHLRfjwCcYMN2sNv36;uid=0.0.11337991;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337991` | [5](https://hashscan.io/testnet/transaction/0.0.11333252@1793966912.572098662) |
+| CashETH Lender B | 0.0.11337992 | `uaid:aid:7Fd7vFnynn8ZZpY9WhFpfWBcybPd4ZqhJyagQ5xPCjXfMoG9r6enAYxCFFRU2JD5hx;uid=0.0.11337992;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337992` | [6](https://hashscan.io/testnet/transaction/0.0.11333252@1793966911.730993138) |
+| CashETH Lender C | 0.0.11337993 | `uaid:aid:5Tts6yLfkJmBqJRWNY2YZuTpRE8B8RFPigaQisxTPs4NR82AXTTLrF9CwqxUwUbW6y;uid=0.0.11337993;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337993` | [7](https://hashscan.io/testnet/transaction/0.0.11333252@1793966918.450289987) |
+| CashETH Coordinator | 0.0.11337994 | `uaid:aid:X7NddMfvkJFiNmyAjjS4rxgLr4SJjdjES1tfqAZZzWRmsHX8SANvuF6kUZKNGuwkx;uid=0.0.11337994;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337994` | [8](https://hashscan.io/testnet/transaction/0.0.11333252@1793966918.777870704) |
+| CashETH Co-signer | 0.0.11337995 | `uaid:aid:8fqd1dSjvy8hm5eV4nQAWbaqRE378grATtuY8vjG4435g7FZGviKunwujd4AjGzuiQ;uid=0.0.11337995;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337995` | [9](https://hashscan.io/testnet/transaction/0.0.11333252@1793966943.450939777) |
+| CashETH KYA Issuer | 0.0.11337996 | `uaid:aid:8KLE1aYD6FURG1HxzCEmyJoVG7PKNQAanxWkKHaRxg5WKLfn6X9qXjsRbR3nUKwoux;uid=0.0.11337996;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337996` | [10](https://hashscan.io/testnet/transaction/0.0.11333252@1793967072.948933279) |
