@@ -6,6 +6,7 @@ describe("isTransientRelayFailure", () => {
     expect(isTransientRelayFailure(400, '{"error":{"message":"RPC Request failed"}}')).toBe(true);
     expect(isTransientRelayFailure(500, "Failed to save transaction to pool")).toBe(true);
     expect(isTransientRelayFailure(503, "Error invoking RPC: timeout")).toBe(true);
+    expect(isTransientRelayFailure(400, "Missing or invalid parameters.\nDouble check you have provided the correct parameters.")).toBe(true);
     expect(isTransientRelayFailure(500, "Mirror node upstream failure: statusCode=502, message=Request failed with status code 502")).toBe(true);
     expect(isTransientRelayFailure(429, "")).toBe(true);
     expect(isTransientRelayFailure(502, "")).toBe(true);

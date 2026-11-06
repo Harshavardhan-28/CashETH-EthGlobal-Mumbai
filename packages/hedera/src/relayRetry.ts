@@ -6,7 +6,7 @@
  */
 
 const TRANSIENT_STATUSES = new Set([400, 429, 500, 502, 503, 504]);
-const TRANSIENT_BODY = /RPC Request failed|Failed to save transaction to pool|Error invoking RPC|upstream failure/i;
+const TRANSIENT_BODY = /RPC Request failed|Failed to save transaction to pool|Error invoking RPC|upstream failure|Missing or invalid parameters/i;
 /** Plain gateway and rate-limit failures carry no message worth reading: the status alone is transient. */
 const TRANSIENT_WITHOUT_BODY = new Set([429, 502, 503, 504]);
 
