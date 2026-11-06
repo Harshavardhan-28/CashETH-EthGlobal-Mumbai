@@ -26,8 +26,8 @@ function skipReasons(quotes: Quotes, maker: Address, lender: LenderKey): string[
 }
 
 /**
- * The solver's plan must be the script: fills A then B (cheapest first) for their full amounts, lender C skipped
- * by price, lender D skipped because the seller is not in its seller set. Returns the one-line summary.
+ * The solver's plan must be the script (`EXPECTED_FILLS`: cheapest first, the last fill possibly partial), lender C
+ * skipped by price, lender D skipped because the seller is not in its seller set. Returns the one-line summary.
  */
 export function checkQuotePlan(quotes: Quotes, makers: Record<LenderKey, Address>): string {
   const { fills, total } = quotes.plan;

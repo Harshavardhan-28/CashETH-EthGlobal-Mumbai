@@ -1,28 +1,78 @@
-/** The numbers of the demo (BUILD.md section 16): who lends what, what is borrowed, spent, rejected and repaid. */
-import type { Tier } from "@casheth/aqua";
+/**
+ * The numbers of the demo, in one place: who lends what, what is borrowed, spent, refused and repaid. Resizing
+ * the demo means editing this file only: the expected fills and payouts are derived from it, and the steps and
+ * the tests read them from here.
+ */
+import { LENDER_TIERS, type Tier } from "@casheth/aqua";
 import { parseUnits } from "viem";
 
 /** USDC has 6 decimals. */
 export const usdc = (amount: string): bigint => parseUnits(amount, 6);
 
-export const INVOICE = { buyerRef: "PO-1003", amount: usdc("8"), termDays: 30n };
+const DAY = 86_400n;
+const YEAR = 365n * DAY;
+const BPS = 10_000n;
+/** The RepaymentRouter charges at least 30 days of fee, however fast the buyer repays (Ruling R29). */
+const MIN_FEE_SECONDS = 30n * DAY;
+
+export const INVOICE = { buyerRef: "PO-1003", amount: usdc("6"), termDays: 30n };
+
+/** The credit decision the facility opens with: the facility borrows this share of the invoice. */
+export const ADVANCE_BPS = 7500;
+export const BORROWING_BASE = (INVOICE.amount * BigInt(ADVANCE_BPS)) / BPS;
+
+export type FreshLender = "A" | "B";
 
 /** The two lenders that ship a fresh credit strategy for the seller (their earlier ones funded PO-1002). */
-export const FRESH_LENDERS: Record<"A" | "B", { tier: Tier; creditUsdc: bigint }> = {
-  A: { tier: "low", creditUsdc: usdc("4") },
-  B: { tier: "medium", creditUsdc: usdc("2") },
+export const FRESH_LENDERS: Record<FreshLender, { tier: Tier; creditUsdc: bigint }> = {
+  A: { tier: "low", creditUsdc: usdc("3.5") },
+  B: { tier: "medium", creditUsdc: usdc("1.5") },
 };
 
-/** The credit decision the facility opens with (BUILD.md 7500 bps advance on PO-1003). */
-export const ADVANCE_BPS = 7500;
+const aprBpsOf = (lender: FreshLender): number => LENDER_TIERS[FRESH_LENDERS[lender].tier].aprBps;
 
-/** What the cheapest-first solver must fund: lender A, then lender B. */
-export const EXPECTED_FILLS = [
-  { lender: "A", amount: usdc("4") },
-  { lender: "B", amount: usdc("2") },
-] as const;
+export interface Fill {
+  lender: FreshLender;
+  amount: bigint;
+}
 
-/** Per-worker facility budgets. The 2 USDC the workers are not allocated stays as the facility's headroom. */
+/** What the cheapest-first solver funds: the lowest APR first, each up to its credit, until `base` is covered. */
+export function expectedFills(base: bigint, lenders = FRESH_LENDERS): Fill[] {
+  const cheapestFirst = (Object.keys(lenders) as FreshLender[]).sort((a, b) => aprBpsOf(a) - aprBpsOf(b));
+  let remaining = base;
+  const fills: Fill[] = [];
+  for (const lender of cheapestFirst) {
+    const amount = remaining < lenders[lender].creditUsdc ? remaining : lenders[lender].creditUsdc;
+    if (amount === 0n) continue;
+    fills.push({ lender, amount });
+    remaining -= amount;
+  }
+  return fills;
+}
+
+/** The RepaymentRouter's lender fee: `principal * aprBps * max(elapsed, 30 days) / (365 days * 10_000)`, rounded down. */
+export function lenderFee(principal: bigint, aprBps: number, elapsedSeconds = 0n): bigint {
+  const charged = elapsedSeconds > MIN_FEE_SECONDS ? elapsedSeconds : MIN_FEE_SECONDS;
+  return (principal * BigInt(aprBps) * charged) / (YEAR * BPS);
+}
+
+export const EXPECTED_FILLS = expectedFills(BORROWING_BASE);
+
+/** What each lender is paid when the buyer repays the whole invoice quickly: its principal plus the minimum fee. */
+export function expectedPayouts(fills: Fill[]): Record<FreshLender, bigint> {
+  const payout = (lender: FreshLender): bigint => {
+    const principal = fills.find((f) => f.lender === lender)?.amount ?? 0n;
+    return principal + lenderFee(principal, aprBpsOf(lender));
+  };
+  return { A: payout("A"), B: payout("B") };
+}
+
+export const EXPECTED_PAYOUTS = expectedPayouts(EXPECTED_FILLS);
+
+/** Lenders are paid first; the seller receives the rest of the repayment. */
+export const EXPECTED_SELLER_PAYOUT = INVOICE.amount - EXPECTED_PAYOUTS.A - EXPECTED_PAYOUTS.B;
+
+/** Per-worker facility budgets. What the workers are not allocated stays as the facility's headroom. */
 export const BUDGETS = {
   research: { alloc: usdc("1"), maxPerTx: usdc("0.5"), maxDaily: usdc("2") },
   compute: { alloc: usdc("3"), maxPerTx: usdc("3"), maxDaily: usdc("3") },
@@ -34,6 +84,3 @@ export const SPEND = {
   researchOverLimit: usdc("0.6"),
   computeOverBudget: usdc("5.5"),
 };
-
-/** What lenders A and B are paid when the buyer repays the whole 8 USDC: principal plus the 30-day fee. */
-export const EXPECTED_PAYOUTS = { A: 4_023_013n, B: 2_013_972n };

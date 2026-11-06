@@ -3,16 +3,31 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env } from "@casheth/shared";
 import { describe, expect, it } from "vitest";
+import { LENDER_TIERS } from "@casheth/aqua";
 import { keccak256, toHex, type Address } from "viem";
-import { checkQuotePlan, formatTable, topUpShortfall } from "./demo/checks.js";
+import { checkQuotePlan, formatTable, formatUsdc, topUpShortfall } from "./demo/checks.js";
 import { appendEvidence, formatEvidenceSection, formatStepLine } from "./demo/evidence.js";
 import { loadIdentity } from "./demo/identity.js";
 import { appendEnvVar, ensureNotesTopic } from "./demo/notesTopic.js";
-import { EXPECTED_PAYOUTS, INVOICE, SPEND, usdc } from "./demo/plan.js";
+import {
+  ADVANCE_BPS,
+  BORROWING_BASE,
+  BUDGETS,
+  EXPECTED_FILLS,
+  EXPECTED_PAYOUTS,
+  EXPECTED_SELLER_PAYOUT,
+  expectedFills,
+  expectedPayouts,
+  FRESH_LENDERS,
+  INVOICE,
+  lenderFee,
+  SPEND,
+  usdc,
+} from "./demo/plan.js";
 import { poll } from "./demo/poll.js";
 import { findEvent, type AuditEvent } from "./demo/readApi.js";
 import { exitCode, failedSteps, runSteps } from "./demo/run.js";
-import { demoServerEnv, demoServers, waitForHealth } from "./demo/servers.js";
+import { createStopper, demoServerEnv, demoServers, startServers, waitForHealth, type ChildLike, type ServerDeps } from "./demo/servers.js";
 import { STEPS } from "./demo/steps.js";
 import type { DemoContext, LenderKey, Step, StepResult } from "./demo/types.js";
 import { ToolCallError } from "./mcpClient.js";
@@ -101,21 +116,43 @@ describe("evidence", () => {
 });
 
 describe("lender top-up arithmetic", () => {
+  const required = FRESH_LENDERS.A.creditUsdc;
+
   it("tops up exactly the shortfall", () => {
-    expect(topUpShortfall(1_500_000n, usdc("4"))).toBe(2_500_000n);
-    expect(topUpShortfall(0n, usdc("2"))).toBe(2_000_000n);
+    expect(topUpShortfall(required - 500_000n, required)).toBe(500_000n);
+    expect(topUpShortfall(0n, required)).toBe(required);
   });
 
   it("tops up nothing when the balance covers what is shipped", () => {
-    expect(topUpShortfall(usdc("4"), usdc("4"))).toBe(0n);
-    expect(topUpShortfall(usdc("9"), usdc("4"))).toBe(0n);
+    expect(topUpShortfall(required, required)).toBe(0n);
+    expect(topUpShortfall(required * 2n, required)).toBe(0n);
   });
 });
 
-describe("demo numbers", () => {
-  it("lets the lenders' payouts leave the seller the remainder of the 8 USDC", () => {
-    expect(INVOICE.amount - EXPECTED_PAYOUTS.A - EXPECTED_PAYOUTS.B).toBe(1_963_015n);
-    expect(SPEND.researchPrice).toBe(250_000n);
+describe("plan", () => {
+  it("charges lenders at least 30 days of fee, rounded down", () => {
+    const day = 86_400n;
+    const principal = usdc("4");
+    expect(lenderFee(principal, 700)).toBe((principal * 700n * 30n) / (365n * 10_000n));
+    expect(lenderFee(principal, 700, 10n * day)).toBe(lenderFee(principal, 700));
+    expect(lenderFee(principal, 700, 60n * day)).toBe((principal * 700n * 60n) / (365n * 10_000n));
+  });
+
+  it("fills the cheapest lender first and the next one only for what is left", () => {
+    const lenders = { A: { tier: "low", creditUsdc: usdc("3") }, B: { tier: "medium", creditUsdc: usdc("4") } } as const;
+    expect(expectedFills(usdc("5"), lenders)).toEqual([{ lender: "A", amount: usdc("3") }, { lender: "B", amount: usdc("2") }]);
+    expect(expectedFills(usdc("2"), lenders)).toEqual([{ lender: "A", amount: usdc("2") }]);
+  });
+
+  it("derives fills and payouts that add up to the invoice and fit the budgets", () => {
+    expect(EXPECTED_FILLS.reduce((sum, f) => sum + f.amount, 0n)).toBe(BORROWING_BASE);
+    expect(EXPECTED_PAYOUTS.A + EXPECTED_PAYOUTS.B + EXPECTED_SELLER_PAYOUT).toBe(INVOICE.amount);
+    expect(EXPECTED_SELLER_PAYOUT).toBeGreaterThan(0n);
+    expect(expectedPayouts(EXPECTED_FILLS)).toEqual(EXPECTED_PAYOUTS);
+    expect(BUDGETS.research.alloc + BUDGETS.compute.alloc).toBeLessThanOrEqual(BORROWING_BASE);
+    expect(SPEND.computeOverBudget).toBeGreaterThan(BUDGETS.compute.alloc);
+    expect(SPEND.researchOverLimit).toBeGreaterThan(BUDGETS.research.maxPerTx);
+    expect(SPEND.researchOverLimit).toBeLessThanOrEqual(BUDGETS.research.alloc);
   });
 });
 
@@ -131,15 +168,17 @@ function quotes(overrides: Partial<Quotes["plan"]> = {}): Quotes {
   const strategy = (lender: LenderKey) => ({ maker: makers[lender], strategyHash: hash(`credit-${lender}`), kind: "credit" as const, virtualUsdc: "1", realUsdc: "1" });
   return {
     id: hash("PO-1003"),
-    decision: { approved: true, score: 80, advanceBps: 7500, limit: "6000000", reasons: [] },
-    borrowingBase: "6000000",
+    decision: { approved: true, score: 80, advanceBps: ADVANCE_BPS, limit: BORROWING_BASE.toString(), reasons: [] },
+    borrowingBase: BORROWING_BASE.toString(),
     strategies: [strategy("A"), strategy("B"), strategy("C"), strategy("D")],
     plan: {
-      fills: [
-        { maker: makers.A, strategyHash: hash("credit-A"), amount: "4000000", aprBps: 700 },
-        { maker: makers.B, strategyHash: hash("credit-B"), amount: "2000000", aprBps: 850 },
-      ],
-      total: "6000000",
+      fills: EXPECTED_FILLS.map((f) => ({
+        maker: makers[f.lender],
+        strategyHash: hash(`credit-${f.lender}`),
+        amount: f.amount.toString(),
+        aprBps: LENDER_TIERS[FRESH_LENDERS[f.lender].tier].aprBps,
+      })),
+      total: BORROWING_BASE.toString(),
       skipped: [
         { strategyHash: hash("credit-C"), reason: "PRICE_ABOVE_CHEAPEST" },
         { strategyHash: hash("credit-D"), reason: "SELLER_NOT_FUNDED_BY_LENDER" },
@@ -150,16 +189,17 @@ function quotes(overrides: Partial<Quotes["plan"]> = {}): Quotes {
 }
 
 describe("checkQuotePlan", () => {
-  it("accepts A 4 + B 2 with C skipped by price and D skipped for its seller set", () => {
+  it("accepts the planned fills with C skipped by price and D skipped for its seller set", () => {
+    const fills = EXPECTED_FILLS.map((f) => `${f.lender} ${formatUsdc(f.amount)}`).join(" + ");
     expect(checkQuotePlan(quotes(), makers)).toBe(
-      "fills A 4 + B 2 = 6; C skipped (PRICE_ABOVE_CHEAPEST); D skipped (SELLER_NOT_FUNDED_BY_LENDER)",
+      `fills ${fills} = ${formatUsdc(BORROWING_BASE)}; C skipped (PRICE_ABOVE_CHEAPEST); D skipped (SELLER_NOT_FUNDED_BY_LENDER)`,
     );
   });
 
   it("rejects a plan that fills in another order or amount", () => {
     const [a, b] = quotes().plan.fills;
-    expect(() => checkQuotePlan(quotes({ fills: [b!, a!] }), makers)).toThrow(/expected fills A 4 \+ B 2/);
-    expect(() => checkQuotePlan(quotes({ fills: [a!, { ...b!, amount: "1000000" }] }), makers)).toThrow(/expected fills/);
+    expect(() => checkQuotePlan(quotes({ fills: [b!, a!] }), makers)).toThrow(/expected fills/);
+    expect(() => checkQuotePlan(quotes({ fills: [a!, { ...b!, amount: (BigInt(b!.amount) + 1n).toString() }] }), makers)).toThrow(/expected fills/);
   });
 
   it("rejects a plan where lender C was not skipped or D was skipped for another reason", () => {
@@ -244,6 +284,86 @@ describe("servers", () => {
   });
 });
 
+describe("server shutdown", () => {
+  const fakeChild = (pid: number): ChildLike => ({ pid, exitCode: null, signalCode: null });
+
+  /** Fake processes, signals and clock: records what `startServers` launches, kills and exits with. */
+  function harness(overrides: Partial<ServerDeps> = {}) {
+    const children: ChildLike[] = [];
+    const killed: number[] = [];
+    const exits: number[] = [];
+    const handlers = new Map<string, () => void>();
+    const deps: Partial<ServerDeps> = {
+      launch: () => {
+        const child = fakeChild(100 + children.length);
+        children.push(child);
+        return child;
+      },
+      kill: (pid) => void killed.push(pid),
+      onSignal: (signal, handler) => void handlers.set(signal, handler),
+      exit: (code) => void exits.push(code),
+      fetch: async () => new Response("{}"),
+      wait: { attempts: 1, delayMs: 0, sleep: noSleep },
+      settleMs: 0,
+      sleep: noSleep,
+      log: () => {},
+      ...overrides,
+    };
+    return { deps, children, killed, exits, handlers };
+  }
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("stops every child's process group on SIGINT, waits, then exits 130; a later SIGTERM does not kill again", async () => {
+    const { deps, killed, exits, handlers } = harness();
+    await startServers(baseEnv, "/repo", deps);
+    expect(handlers.has("SIGINT") && handlers.has("SIGTERM")).toBe(true);
+
+    handlers.get("SIGINT")!();
+    await flush();
+    expect(killed).toEqual([100, 101, 102]);
+    expect(exits).toEqual([130]);
+
+    handlers.get("SIGTERM")!();
+    await flush();
+    expect(killed).toEqual([100, 101, 102]);
+    expect(exits).toEqual([130, 143]);
+  });
+
+  it("handles a signal that arrives while the servers are still starting", async () => {
+    const { deps, killed, exits, handlers } = harness({ fetch: () => new Promise<Response>(() => {}) });
+    void startServers(baseEnv, "/repo", deps).catch(() => {});
+    await flush();
+    handlers.get("SIGTERM")!();
+    await flush();
+    expect(killed).toEqual([100, 101]);
+    expect(exits).toEqual([143]);
+  });
+
+  it("stops the children once, and again does nothing", async () => {
+    const { deps, killed } = harness();
+    const servers = await startServers(baseEnv, "/repo", deps);
+    servers.stop();
+    servers.stop();
+    expect(killed).toEqual([100, 101, 102]);
+  });
+
+  it("stops the children and rethrows when a server never becomes healthy", async () => {
+    const { deps, killed } = harness({ fetch: async () => new Response("", { status: 503 }) });
+    await expect(startServers(baseEnv, "/repo", deps)).rejects.toThrow(/timed out waiting for/);
+    expect(killed).toEqual([100, 101]);
+  });
+
+  it("skips children that already exited and survives a group that vanished", () => {
+    const [running, exited, killedBySignal, vanished] = [fakeChild(1), { ...fakeChild(2), exitCode: 1 }, { ...fakeChild(3), signalCode: "SIGKILL" as const }, fakeChild(4)];
+    const killed: number[] = [];
+    createStopper([running, exited, killedBySignal, vanished], (pid) => {
+      killed.push(pid);
+      if (pid === 1) throw new Error("ESRCH");
+    })();
+    expect(killed).toEqual([1, 4]);
+  });
+});
+
 describe("agent-notes topic", () => {
   it("appends the variable on its own line", () => {
     const file = join(tmp(), ".env.accounts");
@@ -294,7 +414,8 @@ function fakeContext() {
   const sellerAddress: Address = "0x00000000000000000000000000000000000000f1";
   const events: AuditEvent[] = [];
   const calls: string[] = [];
-  const balances = new Map<Address, bigint>([[makers.A, usdc("1")], [makers.B, usdc("2")], [sellerAddress, 0n]]);
+  // Lender A holds half of what it ships (so it is topped up); lender B holds exactly what it ships.
+  const balances = new Map<Address, bigint>([[makers.A, FRESH_LENDERS.A.creditUsdc / 2n], [makers.B, FRESH_LENDERS.B.creditUsdc], [sellerAddress, 0n]]);
   let repaid = false;
   const record = (event: { type: string; [field: string]: unknown }) => events.push({ ...event, seq: events.length + 1 });
   const note = async () => (calls.push("note"), "0.0.9@5.5");
@@ -322,7 +443,7 @@ function fakeContext() {
           return { pendingId: hash("pending"), id, confirmationRequest: {} };
         },
         quotes: async () => quotes(),
-        openFacility: async () => (calls.push("open"), { txHash: "0xfund", total: "6000000" }),
+        openFacility: async () => (calls.push("open"), { txHash: "0xfund", total: BORROWING_BASE.toString() }),
         setBudgets: async () => (calls.push("budgets"), { txHash: "0xbudgets" }),
       },
     },
@@ -332,14 +453,14 @@ function fakeContext() {
         confirm: async () => {
           record({ type: "ReceivableConfirmed", id, hcsSeq: 30, hcsTxId: "0.0.7@2.2" });
           record({ type: "NftMinted", id, serial: 1, tokenId: "0.0.50", txId: "0.0.7@3.3" });
-          return { txHash: "0xregister", decision: { approved: true, score: 80, advanceBps: 7500, limit: "6000000", reasons: [] } };
+          return { txHash: "0xregister", decision: { approved: true, score: 80, advanceBps: ADVANCE_BPS, limit: BORROWING_BASE.toString(), reasons: [] } };
         },
         repay: async () => {
           calls.push("repay");
           repaid = true;
           balances.set(makers.A, balances.get(makers.A)! + EXPECTED_PAYOUTS.A);
           balances.set(makers.B, balances.get(makers.B)! + EXPECTED_PAYOUTS.B);
-          balances.set(sellerAddress, INVOICE.amount - EXPECTED_PAYOUTS.A - EXPECTED_PAYOUTS.B);
+          balances.set(sellerAddress, EXPECTED_SELLER_PAYOUT);
           return { id, mode: "sent", txHash: "0xrepay" };
         },
       },
@@ -374,7 +495,7 @@ function fakeContext() {
       events: async () => events,
       agents: async () => [{ address: buyerAddress, label: "buyer", role: "buyer", level: 3, score: 70, tier: "none", onTimePct: 100, receivablesFunded: 1, receivablesRepaid: repaid ? 1 : 0, receivablesDefaulted: 0, avgDaysToRepay: 0, lenderReturnPct: 0 }],
       lenders: async () => [{ address: makers.A, label: "lenderA", tier: "low", capital: "1", lent: "0", idle: "1", baseFees: "0", creditFees: "0", baseApr: 0, boostApr: 7, blendedApr: 7 }],
-      receivable: async () => ({ id, state: "Repaid", amount: "8000000", funded: "6000000", debt: "0", positions: [] }),
+      receivable: async () => ({ id, state: "Repaid", amount: INVOICE.amount.toString(), funded: BORROWING_BASE.toString(), debt: "0", positions: [] }),
     },
     usdcBalance: async (address: Address) => balances.get(address) ?? 0n,
     topUpFromOperator: async (accountId: string, units: bigint) => {
@@ -402,7 +523,7 @@ describe("the eight lifecycle steps against fake agents", () => {
   it("tops up only the lender that is short, by exactly the shortfall", async () => {
     const { ctx, calls } = fakeContext();
     const results = await runSteps(STEPS, ctx);
-    expect(calls.filter((c) => c.startsWith("top-up"))).toEqual([`top-up 0.0.65 ${usdc("3")}`]);
+    expect(calls.filter((c) => c.startsWith("top-up"))).toEqual([`top-up 0.0.65 ${FRESH_LENDERS.A.creditUsdc - FRESH_LENDERS.A.creditUsdc / 2n}`]);
     expect(results[0]).toMatchObject({ txId: "0.0.1@8.8" });
     expect(results[2]).toMatchObject({ skipped: true });
   });
@@ -429,7 +550,7 @@ describe("the eight lifecycle steps against fake agents", () => {
     const results = await runSteps(STEPS, ctx);
     const last = results[results.length - 1]!;
     expect(last.label).toContain("8. buyer repays");
-    expect(last.error).toMatch(/payouts differ from lender A 4023013/);
+    expect(last.error).toMatch(new RegExp(`payouts differ from lender A ${EXPECTED_PAYOUTS.A}`));
     expect(exitCode(results)).toBe(1);
   });
 

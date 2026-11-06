@@ -8,7 +8,7 @@ import { ToolCallError } from "../mcpClient.js";
 import type { ShipOutcome } from "../lender.js";
 import type { PurchaseOutcome } from "../worker.js";
 import { checkQuotePlan, formatAgentTable, formatLenderTable, formatUsdc, topUpShortfall } from "./checks.js";
-import { ADVANCE_BPS, BUDGETS, EXPECTED_PAYOUTS, FRESH_LENDERS, INVOICE, SPEND } from "./plan.js";
+import { ADVANCE_BPS, BUDGETS, EXPECTED_PAYOUTS, EXPECTED_SELLER_PAYOUT, FRESH_LENDERS, INVOICE, SPEND } from "./plan.js";
 import { poll } from "./poll.js";
 import { findEvent, type AuditEvent } from "./readApi.js";
 import type { DemoContext, DemoWorker, Step, StepOutcome } from "./types.js";
@@ -141,7 +141,7 @@ const duplicateStep: Step = {
     } catch (error) {
       if (!(error instanceof ToolCallError) || error.code !== "DUPLICATE_RECEIVABLE") throw error;
       const event = findEvent(await ctx.read.events(), { type: "ReceivableRejected", id, code: "DUPLICATE_RECEIVABLE" });
-      return { ...proofOfEvent(event, "the rejection"), note: "the same buyer and reference cannot be financed twice; rejection recorded on HCS" };
+      return { ...proofOfEvent(event, "the rejection"), note: "rejected by registry state check: DUPLICATE_RECEIVABLE (the server read the registered state, no contract call); recorded on HCS" };
     }
     throw new Error("the duplicate submission was accepted");
   },
@@ -255,7 +255,7 @@ const repayStep: Step = {
     const result = await ctx.buyer.agent.repay(id, INVOICE.amount);
     const proof = await proofOfEvmTx(ctx, repayTxHash(result));
 
-    const expected = { A: EXPECTED_PAYOUTS.A, B: EXPECTED_PAYOUTS.B, seller: INVOICE.amount - EXPECTED_PAYOUTS.A - EXPECTED_PAYOUTS.B };
+    const expected = { ...EXPECTED_PAYOUTS, seller: EXPECTED_SELLER_PAYOUT };
     const paid = await poll("the repayment payouts", async () => {
       const after = await balances();
       const delta = { A: after.A - before.A, B: after.B - before.B, seller: after.seller - before.seller };

@@ -37,6 +37,7 @@ export async function waitForHealth(url: string, options: PollOptions, fetchImpl
 }
 
 export interface RunningServers {
+  /** Stops every child; safe to call more than once. */
   stop(): void;
 }
 
@@ -46,6 +47,28 @@ export const demoServerEnv = (env: Env): Record<string, string> => ({
   LENDER_KEYS_IN_PROCESS: "true",
   MERCHANT_PORT: merchantPort(env),
 });
+
+/** What the runner needs to know about a child process. */
+export interface ChildLike {
+  pid?: number | undefined;
+  exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
+}
+
+/** Everything `startServers` does to the outside world, replaced by fakes in the unit tests. */
+export interface ServerDeps {
+  launch(spec: ServerSpec, root: string, env: NodeJS.ProcessEnv): ChildLike;
+  /** Signals a child's whole process group. */
+  kill(pid: number, signal: NodeJS.Signals): void;
+  onSignal(signal: "SIGINT" | "SIGTERM", handler: () => void): void;
+  exit(code: number): void;
+  /** How long the children get to shut down before the runner exits on a signal. */
+  settleMs: number;
+  fetch: typeof fetch;
+  wait: PollOptions;
+  sleep(ms: number): Promise<void>;
+  log(message: string): void;
+}
 
 function launch(spec: ServerSpec, root: string, env: NodeJS.ProcessEnv): ChildProcess {
   // Detached, so stopping kills the whole pnpm -> tsx -> node tree through its process group.
@@ -60,20 +83,60 @@ function launch(spec: ServerSpec, root: string, env: NodeJS.ProcessEnv): ChildPr
   return child;
 }
 
-/** Starts the three servers (the MCP server last: it needs the authorization server) and waits for each `/health`. */
-export async function startServers(env: Env, root: string, log: (message: string) => void = console.log): Promise<RunningServers> {
+const realDeps: ServerDeps = {
+  launch,
+  kill: (pid, signal) => process.kill(-pid, signal),
+  onSignal: (signal, handler) => void process.on(signal, handler),
+  exit: (code) => process.exit(code),
+  settleMs: 1000,
+  fetch,
+  wait: { attempts: 90, delayMs: 1000 },
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  log: console.log,
+};
+
+/** SIGTERMs the process group of every child still running; a second call, or a child already gone, does nothing. */
+export function createStopper(children: ChildLike[], kill: ServerDeps["kill"]): () => void {
+  let stopped = false;
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    for (const child of children) {
+      if (!child.pid || child.exitCode !== null || child.signalCode !== null) continue;
+      try {
+        kill(child.pid, "SIGTERM");
+      } catch {
+        // the group exited between the check and the signal
+      }
+    }
+  };
+}
+
+/**
+ * Starts the three servers (the MCP server last: it needs the authorization server) and waits for each `/health`.
+ * Ctrl-C or SIGTERM at any point stops the children, gives them a moment, and exits non-zero: they are detached
+ * (their own process group), so the terminal's signal does not reach them.
+ */
+export async function startServers(env: Env, root: string, overrides: Partial<ServerDeps> = {}): Promise<RunningServers> {
+  const deps = { ...realDeps, ...overrides };
   const { merchant, auth, mcp } = demoServers(env);
   const childEnv = { ...process.env, ...demoServerEnv(env) };
-  const children: ChildProcess[] = [];
-  const stop = () => {
-    for (const child of children) if (child.pid && child.exitCode === null) process.kill(-child.pid, "SIGTERM");
+  const children: ChildLike[] = [];
+  const stop = createStopper(children, deps.kill);
+
+  const shutdown = async (code: number) => {
+    stop();
+    await deps.sleep(deps.settleMs);
+    deps.exit(code);
   };
-  const wait = { attempts: 90, delayMs: 1000 };
+  deps.onSignal("SIGINT", () => void shutdown(130));
+  deps.onSignal("SIGTERM", () => void shutdown(143));
+
   try {
     for (const group of [[merchant, auth], [mcp]]) {
-      for (const spec of group) children.push(launch(spec, root, childEnv));
-      await Promise.all(group.map((spec) => waitForHealth(spec.healthUrl, wait)));
-      for (const spec of group) log(`${spec.name} is healthy at ${spec.healthUrl}`);
+      for (const spec of group) children.push(deps.launch(spec, root, childEnv));
+      await Promise.all(group.map((spec) => waitForHealth(spec.healthUrl, deps.wait, deps.fetch)));
+      for (const spec of group) deps.log(`${spec.name} is healthy at ${spec.healthUrl}`);
     }
   } catch (error) {
     stop();

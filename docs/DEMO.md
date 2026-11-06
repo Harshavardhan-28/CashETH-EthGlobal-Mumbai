@@ -26,23 +26,25 @@ The servers run with `AGENT_KEYS_IN_PROCESS=true` and `LENDER_KEYS_IN_PROCESS=tr
 
 Setup step 0: if `AGENT_NOTES_TOPIC_ID` is not set, the runner creates the agents' HCS notes topic (without a submit key, so every agent account may post) and appends its id to `.env.accounts`; later runs reuse it.
 
-The operator needs enough USDC to top up the two lenders (A needs 4 USDC and B 2 USDC to ship; the runner sends exactly the shortfall, if any). Faucet: <https://faucet.circle.com> (Hedera Testnet).
+The operator needs enough USDC to top up the two lenders (lenders A and B each need what they ship; the runner sends exactly the shortfall, if any). Faucet: <https://faucet.circle.com> (Hedera Testnet).
 
 The run is repeatable only in part: the server remembers idempotency keys and the receivable `PO-1003` stays registered. A full second run needs a new `INVOICE.buyerRef` in `agents/src/demo/plan.ts`.
+
+All amounts (lender credit, invoice, advance, budgets, spend asks) live in `agents/src/demo/plan.ts`; the expected fills and lender payouts are derived from it with the RepaymentRouter fee formula, so resizing the demo is a one-file change.
 
 ## Steps, what each proves, and the track it serves
 
 | # | Step | Proves | Track |
 |---|---|---|---|
 | 0 | Servers up, agent-notes topic | The control plane is a real service the agents reach over MCP | Hedera Agent Kit |
-| 1 | Lenders A (low, 4 USDC) and B (medium, 2 USDC) ship fresh credit strategies for the seller (`fund_agents`), after an exact operator top-up if short | Lenders program credit rules into 1inch Aqua strategies on Hedera; capital stays in the lender's wallet | 1inch Aqua |
-| 2 | Seller uploads `PO-1003` (8 USDC, 30 days), the buyer signs the EIP-712 confirmation naming the RepaymentRouter as payee, registration on-chain, NFT minted, `ReceivableConfirmed` on HCS; seller agent posts an HCS note | Verified, buyer-signed receivable with an on-chain identity and an audit trail | Hedera Agent Kit, HCS |
-| 3 | Same invoice again | `DUPLICATE_RECEIVABLE`: the same obligation cannot be financed twice (proof is the rejection on HCS) | Hedera |
-| 4 | `get_quotes`, then `open_facility` (advance 7500 bps) | The modified SwapVM router fills cheapest first: A 4 + B 2; C skipped by price, D skipped `SELLER_NOT_FUNDED_BY_LENDER`; one transaction funds the facility | 1inch Aqua (headline) |
+| 1 | Lenders A (low tier) and B (medium tier) ship fresh credit strategies for the seller (`fund_agents`), after an exact operator top-up if short | Lenders program credit rules into 1inch Aqua strategies on Hedera; capital stays in the lender's wallet | 1inch Aqua |
+| 2 | Seller uploads `PO-1003` (30-day term), the buyer signs the EIP-712 confirmation naming the RepaymentRouter as payee, registration on-chain, NFT minted, `ReceivableConfirmed` on HCS; seller agent posts an HCS note | Verified, buyer-signed receivable with an on-chain identity and an audit trail | Hedera Agent Kit, HCS |
+| 3 | Same invoice again | `DUPLICATE_RECEIVABLE`, rejected by the server's registry state check (it reads the registered state; no contract call is made); the proof is the rejection recorded on HCS | Hedera |
+| 4 | `get_quotes`, then `open_facility` (advance 7500 bps) | The modified SwapVM router fills cheapest first up to the facility's borrowing base (advance 7500 bps; the last lender may fill partially); C skipped by price, D skipped `SELLER_NOT_FUNDED_BY_LENDER`; one transaction funds the facility | 1inch Aqua (headline) |
 | 5 | `set_budgets` | Per-worker budgets, per-transaction and daily limits, and a merchant allowlist | x402 / agent spend control |
 | 6 | Trader volume on the base-yield strategies | Skipped: the trader agent (Task 4.6) is not in this build | 1inch Aqua |
 | 7 | Research worker buys `/research` (0.25 USDC): reserve, x402 payment from the 2-of-2 spend wallet co-signed through x402.org, commit; worker posts an HCS note. Then 0.6 USDC is refused (`TX_LIMIT_EXCEEDED`) and the compute worker's 5.5 USDC is refused (`AGENT_BUDGET_EXCEEDED`) | Agents spend credit only inside the mandate; the co-signer cannot be bypassed; refusals are on HCS | x402, Hedera Agent Kit |
-| 8 | Buyer repays 8 USDC | Lenders are paid first (A 4,023,013 and B 2,013,972 units, checked by balance deltas), the seller receives the remainder, state `Repaid`, debt 0, buyer reputation updated | 1inch Aqua, Hedera |
+| 8 | Buyer repays the whole invoice | Lenders are paid first (principal plus the 30-day minimum fee, Ruling R29; checked by balance deltas), the seller receives the remainder, state `Repaid`, debt 0, buyer reputation updated | 1inch Aqua, Hedera |
 | 9 | Yield table (`GET /lenders`) and agent stats (`GET /agents`) | What lenders earned and the agents' reputation after the run | 1inch Aqua |
 
 ## Evidence
