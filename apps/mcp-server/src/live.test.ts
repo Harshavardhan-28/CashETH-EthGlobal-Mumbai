@@ -3,7 +3,7 @@ import { AquaRouterAbi, CreditFacilityAbi, RepaymentRouterAbi, type Env } from "
 import { BaseError, decodeFunctionData, encodeErrorResult, erc20Abi, getAddress, keccak256, maxUint256, RawContractError, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
 import { merchantOrigins, type AgentKeyRole, type McpConfig } from "./config.js";
-import { exactApprovalCall, fundCalldata, inProcessAllowed, toToolError } from "./live.js";
+import { exactApprovalCall, fundCalldata, inProcessAllowed, mirrorLogSource, toToolError } from "./live.js";
 import { enqueue } from "./orchestrator/queue.js";
 
 const CALL = { to: getAddress("0x00000000000000000000000000000000000000a3"), data: "0x" as Hex, description: "CreditFacility.reserve(...)" };
@@ -172,5 +172,31 @@ describe("inProcessAllowed (which demo keys the server signs with)", () => {
     expect(inProcessAllowed("LENDER_A", cfg(["seller", "buyer", "worker"]))).toBe(false);
     expect(inProcessAllowed("LENDER_A", cfg([], true))).toBe(true);
     expect(inProcessAllowed("COORDINATOR", cfg(["seller", "buyer", "worker"], true))).toBe(false);
+  });
+});
+
+describe("mirrorLogSource", () => {
+  it("reads a contract's whole log history once, then only logs newer than the last one seen", async () => {
+    const urls: string[] = [];
+    const page = (ts: string) => ({ address: "0x00000000000000000000000000000000000000a2", data: "0x", topics: [], timestamp: ts, transaction_hash: `0x${"1".repeat(64)}` });
+    const responses = [
+      { logs: [page("1800000000.000000001"), page("1800000001.000000002")], links: { next: null } },
+      { logs: [page("1800000005.000000003")], links: { next: null } },
+    ];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      urls.push(String(url));
+      return new Response(JSON.stringify(responses.shift() ?? { logs: [], links: { next: null } }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const source = mirrorLogSource({ HEDERA_MIRROR_NODE_URL: "https://mirror.example" } as unknown as Env);
+      const address = getAddress("0x00000000000000000000000000000000000000a2");
+      expect(await source.logs(address)).toHaveLength(2);
+      const again = await source.logs(address);
+      expect(again).toHaveLength(3);
+      expect(urls[1]).toContain("timestamp=gt:1800000001.000000002");
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

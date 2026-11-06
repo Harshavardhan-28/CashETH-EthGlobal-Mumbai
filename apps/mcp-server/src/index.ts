@@ -56,12 +56,14 @@ app.listen(cfg.port, host, (error?: Error) => {
   warmStrategyDiscovery();
 });
 
-/** Reads the Aqua history once at boot, so the first `get_quotes` / `open_facility` only scans new blocks. */
+/** Reads the Aqua and contract history once at boot, so quotes, funding and the read API (`/agents`, `/lenders`) answer quickly from the first request. */
 function warmStrategyDiscovery(): void {
   const started = Date.now();
   console.log("warming lender strategy discovery (one full Aqua log scan; quotes are fast once this finishes)...");
   orchestrator.aqua
     .discover()
     .then(({ strategies }) => console.log(`lender strategy discovery ready: ${strategies.length} open strategies in ${((Date.now() - started) / 1000).toFixed(0)} s`))
-    .catch((error: unknown) => console.error(`lender strategy discovery warm-up failed (the first quote will scan instead): ${error instanceof Error ? error.message : String(error)}`));
+    .then(() => Promise.all([orchestrator.stats.listAgents(), orchestrator.stats.listLenders()]))
+    .then(([agents, lenders]) => console.log(`read API ready: stats for ${agents.length} agents and ${lenders.length} lenders in ${((Date.now() - started) / 1000).toFixed(0)} s`))
+    .catch((error: unknown) => console.error(`warm-up failed (the first request will scan instead): ${error instanceof Error ? error.message : String(error)}`));
 }

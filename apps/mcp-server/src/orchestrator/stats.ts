@@ -95,7 +95,8 @@ export type BasicStatsOptions = {
 };
 
 export class BasicStatsProvider implements StatsProvider {
-  #snapshot: Promise<Snapshot> | undefined;
+  #latest: Snapshot | undefined;
+  #refreshing: Promise<Snapshot> | undefined;
   #snapshotAt = 0;
 
   constructor(private readonly opts: BasicStatsOptions) {}
@@ -118,31 +119,47 @@ export class BasicStatsProvider implements StatsProvider {
     return [...byAddress.values()];
   }
 
+  /**
+   * The current snapshot. A fresh one is reused; a stale one is answered at once while a single background refresh
+   * replaces it, so read-API callers never wait on the chain scan except the very first time.
+   */
   async #load(): Promise<Snapshot> {
     const cacheMs = this.opts.cacheMs ?? 10_000;
-    if (this.#snapshot && Date.now() - this.#snapshotAt < cacheMs) return this.#snapshot;
-    this.#snapshotAt = Date.now();
-    this.#snapshot = (async () => {
-      const a = this.opts.chain.addresses();
-      let aquaAddr: Address | undefined;
-      try {
-        aquaAddr = this.opts.aqua.addresses().aqua;
-      } catch {
-        aquaAddr = undefined; // Aqua not deployed yet: no strategies, no base fees
-      }
-      const [registry, facility, router, aqua, strategies] = await Promise.all([
-        this.opts.logs.logs(a.receivableRegistry).then((l) => decodeAll(ReceivableRegistryAbi as Abi, l)),
-        this.opts.logs.logs(a.creditFacility).then((l) => decodeAll(CreditFacilityAbi as Abi, l)),
-        this.opts.logs.logs(a.repaymentRouter).then((l) => decodeAll(RepaymentRouterAbi as Abi, l)),
-        aquaAddr ? this.opts.logs.logs(aquaAddr).then((l) => decodeAll(AquaRouterAbi as Abi, l)) : Promise.resolve([]),
-        aquaAddr ? this.opts.aqua.discover().then((d) => d.strategies) : Promise.resolve([] as LenderStrategy[]),
-      ]);
-      return { at: this.opts.now(), registry, facility, router, aqua, strategies };
-    })();
-    this.#snapshot.catch(() => {
-      this.#snapshot = undefined;
-    });
-    return this.#snapshot;
+    const stale = Date.now() - this.#snapshotAt >= cacheMs;
+    if (!this.#latest) return (this.#refreshing ??= this.#refresh());
+    if (stale) this.#refreshing ??= this.#refresh();
+    return this.#latest;
+  }
+
+  #refresh(): Promise<Snapshot> {
+    const started = Date.now();
+    return this.#build()
+      .then((snapshot) => {
+        this.#latest = snapshot;
+        this.#snapshotAt = started;
+        return snapshot;
+      })
+      .finally(() => {
+        this.#refreshing = undefined;
+      });
+  }
+
+  async #build(): Promise<Snapshot> {
+    const a = this.opts.chain.addresses();
+    let aquaAddr: Address | undefined;
+    try {
+      aquaAddr = this.opts.aqua.addresses().aqua;
+    } catch {
+      aquaAddr = undefined; // Aqua not deployed yet: no strategies, no base fees
+    }
+    const [registry, facility, router, aqua, strategies] = await Promise.all([
+      this.opts.logs.logs(a.receivableRegistry).then((l) => decodeAll(ReceivableRegistryAbi as Abi, l)),
+      this.opts.logs.logs(a.creditFacility).then((l) => decodeAll(CreditFacilityAbi as Abi, l)),
+      this.opts.logs.logs(a.repaymentRouter).then((l) => decodeAll(RepaymentRouterAbi as Abi, l)),
+      aquaAddr ? this.opts.logs.logs(aquaAddr).then((l) => decodeAll(AquaRouterAbi as Abi, l)) : Promise.resolve([]),
+      aquaAddr ? this.opts.aqua.discover().then((d) => d.strategies) : Promise.resolve([] as LenderStrategy[]),
+    ]);
+    return { at: this.opts.now(), registry, facility, router, aqua, strategies };
   }
 
   async listAgents(): Promise<AgentStats[]> {

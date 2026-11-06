@@ -172,29 +172,36 @@ async function mirrorGet<T>(env: Env, pathOrUrl: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** All logs of a contract from the mirror node (no block-range limit, consensus timestamps included). */
+/**
+ * All logs of a contract from the mirror node (no block-range limit, consensus timestamps included). The history
+ * is read once per contract; later calls ask only for logs after the last consensus timestamp seen.
+ */
 export function mirrorLogSource(env: Env): LogSource {
+  const seen = new Map<string, { logs: RawLog[]; cursor?: string }>();
   return {
     async logs(address: Address): Promise<RawLog[]> {
-      const out: RawLog[] = [];
-      let next: string | null = `/contracts/${address}/results/logs?order=asc&limit=100`;
+      const entry = seen.get(address.toLowerCase()) ?? { logs: [] };
+      const after = entry.cursor ? `&timestamp=gt:${entry.cursor}` : "";
+      let next: string | null = `/contracts/${address}/results/logs?order=asc&limit=100${after}`;
       for (let page = 0; next && page < 200; page++) {
         const body: {
           logs: { address: string; data: string | null; topics: string[]; timestamp: string; transaction_hash: string }[];
           links?: { next?: string | null };
         } = await mirrorGet(env, next);
         for (const l of body.logs) {
-          out.push({
+          entry.logs.push({
             address: getAddress(l.address),
             data: (l.data ?? "0x") as Hex,
             topics: l.topics as Hex[],
             timestamp: Math.floor(Number(l.timestamp)),
             txHash: l.transaction_hash as Hex,
           });
+          entry.cursor = l.timestamp;
         }
         next = body.links?.next ?? null;
       }
-      return out;
+      seen.set(address.toLowerCase(), entry);
+      return [...entry.logs];
     },
   };
 }

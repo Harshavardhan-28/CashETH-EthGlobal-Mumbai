@@ -204,3 +204,32 @@ describe("HCS message fitting", () => {
     expect(out).toMatchObject({ id: big.id, txHash: big.txHash, decision: big.decision, seq: 2, prevSeq: 1 });
   });
 });
+
+describe("BasicStatsProvider freshness", () => {
+  it("answers from the last snapshot at once when it is stale and refreshes in the background", async () => {
+    const o = fakeOrchestrator();
+    let loads = 0;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const stats = new BasicStatsProvider({
+      chain: o.chain,
+      aqua: o.aqua,
+      logs: {
+        logs: async () => {
+          loads++;
+          if (loads > 4) await gate; // the second snapshot's log reads hang until released
+          return [];
+        },
+      },
+      events: o.events,
+      directory: () => [],
+      now: () => 1_800_000_000,
+      cacheMs: 0,
+    });
+    await stats.listLenders(); // first snapshot: 4 log reads
+    const quick = await Promise.race([stats.listLenders().then(() => "answered"), new Promise((r) => setTimeout(() => r("waited"), 200))]);
+    expect(quick).toBe("answered");
+    expect(loads).toBeGreaterThan(4); // a refresh started
+    release();
+  });
+});
