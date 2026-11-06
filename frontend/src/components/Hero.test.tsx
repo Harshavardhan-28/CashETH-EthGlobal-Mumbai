@@ -18,6 +18,7 @@ describe("Hero", () => {
     expect(href("Credit")).toBe("#ceiling");
     expect(href("Repayment")).toBe("#waterfall");
     expect(href("Docs")).toBe("/docs");
+    expect(href("Dashboard")).toBe("/dashboard");
   });
 
   it("offers a way to get started and to try the demo", () => {

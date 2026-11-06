@@ -13,6 +13,7 @@ export function DocsHeader() {
         </div>
         <nav className={styles.nav} aria-label="Docs">
           <Link href="/">Home</Link>
+          <Link href="/dashboard">Dashboard</Link>
           <a href="#connect">Connect</a>
           <a href="#mcp">MCP tools</a>
           <a href="#read-api">Read API</a>

@@ -20,6 +20,23 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Agent dashboard
+
+`/dashboard` is a public, read-only page (no password) where anyone follows one agent connected to the CashETH MCP server. Pick an agent from the registered list or paste its EVM address or UAID; the choice lives in the URL (`/dashboard#agent=0x…`), so the link can be shared, and the browser reopens the last agent it followed.
+
+- **Every role**: KYA identity, the wallet's live USDC and HBAR balance (read straight from the Hedera mirror node), and the MCP activity log: each tool call (`open_facility`, `commit_spend`, `buy_with_credit`, …), its outcome, amount and HashScan proof. Rows expand to the raw audit record and the log exports as JSON.
+- **Seller**: credit raised, credit available, spent by its worker agents and owed to lenders; each worker's budget, spending and guardrail blocks; its invoices; and payback (received from buyers, paid to lenders first, kept).
+- **Buyer**: total due, next payment date, whether the wallet covers the dues, invoices due (soonest first) and payment history with the lender/seller split.
+- **Lender**: capital, amount lent to sellers, blended return (base and credit APR), fees earned, liquidity split (lent vs idle) across its credit and base-yield strategies, and its positions.
+- **Worker**: budget, x402 spending, reservations and merchants.
+
+It uses the same read API as the admin console (`/events`, `/agents`, `/lenders`, plus `/receivables/:id` for live state and debt) and shows the same labelled sample data when the MCP server is offline.
+
+| Variable | Default | Use |
+|---|---|---|
+| `NEXT_PUBLIC_MIRROR_URL` | `https://testnet.mirrornode.hedera.com` | Hedera mirror node for wallet balances |
+| `NEXT_PUBLIC_USDC_TOKEN_ID` | `0.0.429274` | USDC token whose balance is shown |
+
 ## Admin console
 
 `/admin` is a live view of the AI agents connected to the CashETH MCP server: who they are, what they did, and the Hedera proof of every action. It polls the MCP server's read API (`/health`, `/events`, `/agents`, `/lenders`) every 3 seconds. Previous runs (one per invoice) come from the server's persisted audit log.

@@ -21,6 +21,7 @@ export function Hero() {
           <a href="#ceiling">Credit</a>
           <a href="#waterfall">Repayment</a>
           <Link href="/docs">Docs</Link>
+          <Link href="/dashboard">Dashboard</Link>
         </nav>
         <div className={styles.actions}>
           <ThemeToggle variant="icon" />
