@@ -7,8 +7,8 @@ const PENDING = "0x" + "e".repeat(64);
 const DOC = "0x" + "d".repeat(64);
 const SPEND = "0x" + "5".repeat(64);
 const PAID_URL = "https://paid.example/price-feed?symbols=HBAR";
-const PAYEE_EVM = "0x0000000000000000000000000000000000aceeb8"; // 0.0.11333304 in long-zero form
-const WORKER = "0x00000000000000000000000000000000000000d1";
+const PAYEE = "0.0.11333304";
+const WORKER = "0x5c1E2a3B4d5F60718293A4b5C6d7E8F9a0B1c2D3"; // an ECDSA account, as the real research worker is
 
 const context: HintContext = {
   account: { seller: { address: "0xa1", accountId: "0.0.1" }, worker: { address: WORKER, accountId: "0.0.2", spendWallet: "0xf1" } },
@@ -28,8 +28,8 @@ describe("nextStepHint", () => {
     ["the receivable uploaded", at(raised), ["request_buyer_confirmation", PENDING]],
     ["the buyer confirmed", at({ ...raised, confirmed: "x" }), ["get_quotes", ID]],
     ["quotes read", at({ ...raised, confirmed: "x", quoted: true }), ["open_facility", ID]],
-    ["the facility funded", at({ ...raised, confirmed: "x", quoted: true, funded: "1500000" }), ["set_budgets", WORKER, PAYEE_EVM, "500000"]],
-    ["budgets set", at({ ...raised, confirmed: "x", quoted: true, funded: "1", budgetsSet: true }), ["reserve_spend", PAYEE_EVM, "500000"]],
+    ["the facility funded", at({ ...raised, confirmed: "x", quoted: true, funded: "1500000" }), ["set_budgets", WORKER, `"merchants":["${PAYEE}"]`, "500000"]],
+    ["budgets set", at({ ...raised, confirmed: "x", quoted: true, funded: "1", budgetsSet: true }), ["reserve_spend", `"merchant":"${PAYEE}"`, "500000"]],
     ["reserved", at({ ...raised, confirmed: "x", quoted: true, funded: "1", budgetsSet: true, spendIds: [SPEND] }), ["pay_x402", SPEND, PAID_URL]],
     [
       "paid",
@@ -49,6 +49,12 @@ describe("nextStepHint", () => {
   ])("after %s, names the next tool and the exact values to use", (_label, facts, expected) => {
     const hint = nextStepHint(facts, context);
     for (const piece of expected) expect(hint).toContain(piece);
+  });
+
+  it("never asks the model to copy a zero-padded long-zero address (qwen3:8b stops generating inside one)", () => {
+    const facts = at({ ...raised, confirmed: "x", quoted: true, funded: "1" });
+    expect(nextStepHint(facts, context)).not.toMatch(/0x0{20}/);
+    expect(nextStepHint({ ...facts, budgetsSet: true }, context)).not.toMatch(/0x0{20}/);
   });
 
   it("once repaid, tells the model to stop calling tools and summarise", () => {

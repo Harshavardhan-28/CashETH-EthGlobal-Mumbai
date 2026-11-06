@@ -2,7 +2,6 @@
  * The deterministic next step the plan node shows the model, derived from the facts the run has established. A small
  * local model loses track of a twelve-call plan; the graph does not. The model still chooses and makes every call.
  */
-import { longZeroEvmAddress } from "@casheth/hedera";
 import type { Facts } from "./facts.js";
 import type { PromptContext } from "./prompt.js";
 
@@ -12,7 +11,9 @@ const json = (value: unknown) => JSON.stringify(value);
 
 export function nextStepHint(facts: Facts, { account, invoice, paidApiUrl }: HintContext): string {
   const id = facts.receivableId;
-  const merchant = facts.paywall ? longZeroEvmAddress(facts.paywall.payTo) : undefined;
+  // The payee as its Hedera account id: the wrapper converts it to the long-zero EVM address the tools take
+  // (qwen3:8b stops generating halfway through a zero-padded address).
+  const merchant = facts.paywall?.payTo;
   const price = facts.paywall?.amount;
   const spendId = facts.spendIds.at(-1);
 
