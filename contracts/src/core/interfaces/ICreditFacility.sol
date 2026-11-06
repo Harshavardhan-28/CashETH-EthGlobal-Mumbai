@@ -72,6 +72,9 @@ interface ICreditFacility {
     event Disputed(bytes32 indexed id);
     event FacilityClosed(bytes32 indexed id, uint256 undrawnToSeller);
     event Scheduled(bytes32 indexed id, address overdueSchedule, address defaultSchedule);
+    /// @notice The default check `markOverdue` tried to schedule was refused with HSS response `code`
+    ///         (-1 if the call reverted); the overdue transition still happened.
+    event ScheduleSkipped(bytes32 indexed id, int64 code);
 
     event BudgetsSet(bytes32 indexed id, address[] workers, uint256[] alloc);
     event SpendReserved(

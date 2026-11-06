@@ -27,6 +27,9 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
 
     address private constant _HSS = address(0x16b);
     uint256 private constant _SCHEDULE_GAS = 400_000;
+    /// @dev Gas for a scheduled `markOverdue` that must itself schedule the default check (Ruling R17):
+    ///      a nested `scheduleCall` costs about 1.45M gas on testnet.
+    uint256 private constant _SCHEDULE_GAS_WITH_NESTED = 1_800_000;
     /// @dev HSS refuses expiries more than 62 days out; keep an hour of margin.
     uint256 private constant _SCHEDULE_HORIZON = 62 days - 1 hours;
     /// @dev A scheduled call executes at `expiry - 1 s` (Ruling R5), so schedules sit past the thresholds.
@@ -53,6 +56,9 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
 
     /// @dev The receivable being funded; set only for the duration of `openAndFund`'s fills.
     bytes32 private transient _activeId;
+    /// @dev Maker of the fill in flight and the USDC the router reported for it through `onCreditFill`.
+    address private transient _fillMaker;
+    uint256 private transient _fillReported;
 
     mapping(bytes32 => FacilityInfo) private _info;
     mapping(bytes32 => address[]) private _makers;
@@ -110,7 +116,8 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
 
     // ------------------------------------------------------------------ funding
 
-    /// @notice Check order: Confirmed, cheapest first, borrowing base; then fills, Financed, schedules.
+    /// @notice Check order: Confirmed, cheapest first (an empty fill also reverts `NOT_CHEAPEST_FIRST`),
+    ///         borrowing base (including `advanceBps <= 10_000`); then fills, Financed, schedules.
     function openAndFund(bytes32 id, Fill[] calldata fills, uint16 advanceBps, uint256 limit)
         external
         onlyCoordinator
@@ -120,14 +127,17 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
 
         uint256 n = fills.length;
         if (n == 0) revert NOT_CHEAPEST_FIRST();
-        uint256 total = fills[0].amount;
-        for (uint256 i = 1; i < n; ++i) {
-            if (fills[i].aprBps < fills[i - 1].aprBps) revert NOT_CHEAPEST_FIRST();
-            total += fills[i].amount;
+        uint256 total;
+        for (uint256 i; i < n; ++i) {
+            uint256 amount = fills[i].amount;
+            if (amount == 0 || (i != 0 && fills[i].aprBps < fills[i - 1].aprBps)) revert NOT_CHEAPEST_FIRST();
+            total += amount;
         }
 
         IReceivableRegistry.Receivable memory r = REGISTRY.get(id);
-        if (total > r.amount * advanceBps / _BPS || total > limit) revert BORROWING_BASE_EXCEEDED();
+        if (advanceBps > _BPS || total > r.amount * advanceBps / _BPS || total > limit) {
+            revert BORROWING_BASE_EXCEEDED();
+        }
 
         _activeId = id;
         address router = swapRouter;
@@ -146,8 +156,15 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
 
         REGISTRY.markFinanced(id);
 
-        address overdueSchedule = _scheduleOverdue(id, r.dueDate);
-        address defaultSchedule = _scheduleDefault(id, r.dueDate);
+        uint256 defaultExpiry = _defaultExpiry(r.dueDate);
+        bool defaultInHorizon = defaultExpiry <= block.timestamp + _SCHEDULE_HORIZON;
+        address overdueSchedule = _schedule(
+            uint256(r.dueDate) + _OVERDUE_AFTER + _SCHEDULE_SLACK,
+            defaultInHorizon ? _SCHEDULE_GAS : _SCHEDULE_GAS_WITH_NESTED,
+            abi.encodeCall(ICreditFacility.markOverdue, (id))
+        );
+        address defaultSchedule =
+            _schedule(defaultExpiry, _SCHEDULE_GAS, abi.encodeCall(ICreditFacility.markDefaulted, (id)));
         info.overdueSchedule = overdueSchedule;
         info.defaultSchedule = defaultSchedule;
 
@@ -159,6 +176,8 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     function onCreditFill(bytes32 id, address maker, uint256 usdcIn, uint16 aprBps) external {
         if (msg.sender != swapRouter) revert NOT_SWAP_ROUTER();
         if (id == bytes32(0) || id != _activeId) revert NOT_ACTIVE_ID();
+        if (maker != _fillMaker) revert FILL_MISMATCH();
+        _fillReported += usdcIn;
 
         Position storage p = _positions[id][maker];
         if (p.start == 0) {
@@ -173,7 +192,9 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     // ------------------------------------------------------------------ overdue, default, dispute
 
     /// @notice From `dueDate + 7 days`, anyone: Financed -> Overdue and the facility freezes. Schedules the
-    ///         default check if it was beyond the horizon at funding.
+    ///         default check if it was beyond the horizon at funding, best-effort (Ruling R18): skipped when
+    ///         its expiry is already past or beyond the horizon, and a failed schedule emits `ScheduleSkipped`
+    ///         instead of reverting, so the overdue transition can never be blocked.
     function markOverdue(bytes32 id) external {
         FacilityInfo storage info = _info[id];
         _checkOpen(info);
@@ -184,7 +205,7 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         emit Overdue(id);
 
         if (info.defaultSchedule == address(0)) {
-            address defaultSchedule = _scheduleDefault(id, info.dueDate);
+            address defaultSchedule = _tryScheduleDefault(id, info.dueDate);
             if (defaultSchedule != address(0)) {
                 info.defaultSchedule = defaultSchedule;
                 emit Scheduled(id, info.overdueSchedule, defaultSchedule);
@@ -265,8 +286,11 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         return _positions[id][maker];
     }
 
+    /// @return `funded - committed - reserved`, or 0 once the facility is Closed (the undrawn USDC has gone to
+    ///         the seller).
     function available(bytes32 id) public view returns (uint256) {
         FacilityInfo storage info = _info[id];
+        if (info.status == STATUS_CLOSED) return 0;
         return info.funded - info.committed - info.reserved;
     }
 
@@ -303,37 +327,57 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     // ------------------------------------------------------------------ internal
 
     /// @dev Sells `fill.amount` freshly minted RCN for exactly `fill.amount` USDC against the lender's order.
+    ///      Reconciles both the USDC actually received and the router's `onCreditFill` reports (maker and
+    ///      amount) against the fill.
     function _fill(address router, bytes32 id, Fill calldata fill, uint16 advanceBps) private {
         uint256 amount = fill.amount;
         RCN.mint(address(this), amount);
         RCN.approve(router, amount);
 
+        _fillMaker = fill.order.maker;
+        _fillReported = 0;
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(this));
         ISwapVM(router).swap(
             fill.order, amount, CashEthTraits.takerData(address(this), address(RCN), USDC, amount, id, advanceBps)
         );
-        if (IERC20(USDC).balanceOf(address(this)) != usdcBefore + amount) revert FILL_MISMATCH();
+        if (IERC20(USDC).balanceOf(address(this)) != usdcBefore + amount || _fillReported != amount) {
+            revert FILL_MISMATCH();
+        }
+        _fillMaker = address(0);
+        _fillReported = 0;
     }
 
-    function _scheduleOverdue(bytes32 id, uint64 dueDate) private returns (address) {
-        return _schedule(
-            uint256(dueDate) + _OVERDUE_AFTER + _SCHEDULE_SLACK, abi.encodeCall(ICreditFacility.markOverdue, (id))
-        );
+    function _defaultExpiry(uint64 dueDate) private pure returns (uint256) {
+        return uint256(dueDate) + _DEFAULT_AFTER + _SCHEDULE_SLACK;
     }
 
-    function _scheduleDefault(bytes32 id, uint64 dueDate) private returns (address) {
-        return _schedule(
-            uint256(dueDate) + _DEFAULT_AFTER + _SCHEDULE_SLACK, abi.encodeCall(ICreditFacility.markDefaulted, (id))
-        );
-    }
-
-    /// @return schedule The schedule address, or `address(0)` if `expiry` is beyond the HSS horizon.
-    function _schedule(uint256 expiry, bytes memory callData) private returns (address schedule) {
+    /// @dev Funding-time schedule: skipped (`address(0)`) beyond the HSS horizon; a non-SUCCESS response
+    ///      reverts `SCHEDULE_FAILED`.
+    function _schedule(uint256 expiry, uint256 gasLimit, bytes memory callData) private returns (address schedule) {
         if (expiry > block.timestamp + _SCHEDULE_HORIZON) return address(0);
         int64 rc;
-        (rc, schedule) =
-            IHederaScheduleService(_HSS).scheduleCall(address(this), expiry, _SCHEDULE_GAS, 0, callData);
+        (rc, schedule) = IHederaScheduleService(_HSS).scheduleCall(address(this), expiry, gasLimit, 0, callData);
         if (rc != HederaResponseCodes.SUCCESS) revert SCHEDULE_FAILED();
+    }
+
+    /// @dev Best-effort default schedule from `markOverdue` (Ruling R18). Returns `address(0)` when the expiry is
+    ///      already past or beyond the horizon, or when the HSS refuses; a refusal emits `ScheduleSkipped`
+    ///      with its response code (-1 if the call itself reverted, e.g. out of gas).
+    function _tryScheduleDefault(bytes32 id, uint64 dueDate) private returns (address) {
+        uint256 expiry = _defaultExpiry(dueDate);
+        if (expiry <= block.timestamp || expiry > block.timestamp + _SCHEDULE_HORIZON) return address(0);
+        try IHederaScheduleService(_HSS)
+            .scheduleCall(
+                address(this), expiry, _SCHEDULE_GAS, 0, abi.encodeCall(ICreditFacility.markDefaulted, (id))
+            ) returns (
+            int64 rc, address schedule
+        ) {
+            if (rc == HederaResponseCodes.SUCCESS) return schedule;
+            emit ScheduleSkipped(id, rc);
+        } catch {
+            emit ScheduleSkipped(id, -1);
+        }
+        return address(0);
     }
 
     function _deleteSchedule(address schedule) private {

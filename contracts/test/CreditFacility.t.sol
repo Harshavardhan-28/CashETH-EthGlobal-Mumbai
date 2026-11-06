@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import { Test } from "forge-std/Test.sol";
+import { Vm } from "forge-std/Vm.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { ISwapVM } from "@1inch/swap-vm/contracts/interfaces/ISwapVM.sol";
@@ -17,6 +18,8 @@ import { ICreditFacility } from "../src/core/interfaces/ICreditFacility.sol";
 import { MockUSDC } from "./mocks/MockUSDC.sol";
 import { MockSwapRouter } from "./mocks/MockSwapRouter.sol";
 import { MockHSS } from "./mocks/MockHSS.sol";
+import { MockHtsUsdc } from "./mocks/MockHtsUsdc.sol";
+import { IHederaScheduleService } from "../src/hedera/IHederaScheduleService.sol";
 
 contract CreditFacilityTest is Test {
     address internal constant HSS = address(0x16b);
@@ -28,12 +31,15 @@ contract CreditFacilityTest is Test {
     uint16 internal constant APR_A = 700;
     uint16 internal constant APR_B = 850;
     uint256 internal constant GAS = 400_000;
+    /// @dev Ruling R17: the overdue check gets room for a nested `scheduleCall` when the default was skipped.
+    uint256 internal constant GAS_NESTED = 1_800_000;
     /// @dev Ruling R5: a scheduled call runs at `expiry - 1 s`, so schedules sit 5 minutes past the threshold.
     uint256 internal constant SLACK = 5 minutes;
 
     uint8 internal constant STATUS_NONE = 0;
     uint8 internal constant STATUS_ACTIVE = 1;
     uint8 internal constant STATUS_FROZEN = 2;
+    uint8 internal constant STATUS_CLOSED = 3;
 
     uint256 internal buyerPk = 0xB0B;
     uint256 internal sellerPk = 0x5E11E4;
@@ -167,9 +173,11 @@ contract CreditFacilityTest is Test {
 
         // Schedules recorded by the HSS: self-calls, 400k gas, no value, R5 slack past each threshold.
         assertEq(hss.n(), 2);
-        _assertSchedule(address(1), uint256(dueDate) + 7 days + SLACK, abi.encodeCall(ICreditFacility.markOverdue, (id)));
         _assertSchedule(
-            address(2), uint256(dueDate) + 30 days + SLACK, abi.encodeCall(ICreditFacility.markDefaulted, (id))
+            address(1), uint256(dueDate) + 7 days + SLACK, GAS, abi.encodeCall(ICreditFacility.markOverdue, (id))
+        );
+        _assertSchedule(
+            address(2), uint256(dueDate) + 30 days + SLACK, GAS, abi.encodeCall(ICreditFacility.markDefaulted, (id))
         );
     }
 
@@ -397,7 +405,9 @@ contract CreditFacilityTest is Test {
         ICreditFacility.FacilityInfo memory info = facility.facilityInfo(id40);
         assertEq(info.overdueSchedule, address(1));
         assertEq(info.defaultSchedule, address(0));
-        _assertSchedule(address(1), uint256(due40) + 7 days + SLACK, abi.encodeCall(ICreditFacility.markOverdue, (id40)));
+        _assertSchedule(
+            address(1), uint256(due40) + 7 days + SLACK, GAS_NESTED, abi.encodeCall(ICreditFacility.markOverdue, (id40))
+        );
 
         // When the overdue check runs, the default check is inside the horizon and gets scheduled.
         vm.warp(uint256(due40) + 7 days);
@@ -411,7 +421,7 @@ contract CreditFacilityTest is Test {
         assertEq(info.overdueSchedule, address(1));
         assertEq(info.defaultSchedule, address(2));
         _assertSchedule(
-            address(2), uint256(due40) + 30 days + SLACK, abi.encodeCall(ICreditFacility.markDefaulted, (id40))
+            address(2), uint256(due40) + 30 days + SLACK, GAS, abi.encodeCall(ICreditFacility.markDefaulted, (id40))
         );
     }
 
@@ -476,7 +486,401 @@ contract CreditFacilityTest is Test {
         assertEq(uint8(registry.state(id)), uint8(IReceivableRegistry.State.Financed));
     }
 
+    // ------------------------------------------------------------------ fix round 1: schedules (R17, R18)
+
+    function test_openAndFund_overdueGas_400k_whenBothScheduled() public {
+        _fundBoth();
+        assertEq(hss.n(), 2);
+        assertEq(hss.getSchedule(address(1)).gasLimit, GAS);
+        assertEq(hss.getSchedule(address(2)).gasLimit, GAS);
+    }
+
+    function test_openAndFund_overdueGas_1_8M_whenDefaultSkipped() public {
+        swapRouter.fund(address(usdc), FILL_A + FILL_B);
+        uint64 due40 = uint64(block.timestamp + 40 days);
+        bytes32 id40 = _registerReceivable(keccak256("PO-40"), due40);
+        vm.prank(coordinator);
+        facility.openAndFund(id40, _fillsBoth(), ADVANCE_BPS, LIMIT);
+
+        assertEq(hss.n(), 1);
+        assertEq(facility.facilityInfo(id40).defaultSchedule, address(0));
+        _assertSchedule(
+            address(1), uint256(due40) + 7 days + SLACK, GAS_NESTED, abi.encodeCall(ICreditFacility.markOverdue, (id40))
+        );
+    }
+
+    function test_openAndFund_revertsScheduleFailed() public {
+        swapRouter.fund(address(usdc), FILL_A + FILL_B);
+        hss.setScheduleResponseCode(21);
+
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.SCHEDULE_FAILED.selector);
+        facility.openAndFund(id, _fillsBoth(), ADVANCE_BPS, LIMIT);
+
+        assertEq(uint8(registry.state(id)), uint8(IReceivableRegistry.State.Confirmed));
+        assertEq(rcn.totalSupply(), 0);
+        assertEq(usdc.balanceOf(address(swapRouter)), FILL_A + FILL_B);
+        assertEq(facility.facilityInfo(id).status, STATUS_NONE);
+        assertEq(facility.makers(id).length, 0);
+        assertEq(hss.n(), 0);
+    }
+
+    function test_markOverdue_toleratesScheduleFailure() public {
+        swapRouter.fund(address(usdc), 2 * (FILL_A + FILL_B));
+        uint64 due40 = uint64(block.timestamp + 40 days);
+        bytes32 idRefused = _registerReceivable(keccak256("PO-40a"), due40);
+        bytes32 idReverted = _registerReceivable(keccak256("PO-40b"), due40);
+        vm.startPrank(coordinator);
+        facility.openAndFund(idRefused, _fillsBoth(), ADVANCE_BPS, LIMIT);
+        facility.openAndFund(idReverted, _fillsBoth(), ADVANCE_BPS, LIMIT);
+        vm.stopPrank();
+        assertEq(hss.n(), 2);
+
+        vm.warp(uint256(due40) + 7 days);
+
+        // HSS refuses with a non-SUCCESS code: the overdue transition still happens.
+        hss.setScheduleResponseCode(21);
+        vm.expectEmit(true, false, false, true, address(facility));
+        emit ICreditFacility.Overdue(idRefused);
+        vm.expectEmit(true, false, false, true, address(facility));
+        emit ICreditFacility.ScheduleSkipped(idRefused, 21);
+        vm.prank(stranger);
+        facility.markOverdue(idRefused);
+
+        assertEq(uint8(registry.state(idRefused)), uint8(IReceivableRegistry.State.Overdue));
+        assertEq(facility.facilityInfo(idRefused).status, STATUS_FROZEN);
+        assertEq(facility.facilityInfo(idRefused).defaultSchedule, address(0));
+
+        // The HSS call itself reverts (e.g. out of gas): skipped with code -1, still no revert.
+        hss.setScheduleResponseCode(0);
+        vm.mockCallRevert(HSS, abi.encodeWithSelector(IHederaScheduleService.scheduleCall.selector), "boom");
+        vm.expectEmit(true, false, false, true, address(facility));
+        emit ICreditFacility.ScheduleSkipped(idReverted, -1);
+        vm.prank(stranger);
+        facility.markOverdue(idReverted);
+        vm.clearMockedCalls();
+
+        assertEq(uint8(registry.state(idReverted)), uint8(IReceivableRegistry.State.Overdue));
+        assertEq(facility.facilityInfo(idReverted).defaultSchedule, address(0));
+        assertEq(hss.n(), 2);
+
+        // The default check stays available permissionlessly.
+        vm.warp(uint256(due40) + 30 days);
+        facility.markDefaulted(idRefused);
+        assertEq(uint8(registry.state(idRefused)), uint8(IReceivableRegistry.State.Defaulted));
+    }
+
+    function test_markOverdue_skipsPastDefaultExpiry() public {
+        swapRouter.fund(address(usdc), FILL_A + FILL_B);
+        uint64 due40 = uint64(block.timestamp + 40 days);
+        bytes32 id40 = _registerReceivable(keccak256("PO-40"), due40);
+        vm.prank(coordinator);
+        facility.openAndFund(id40, _fillsBoth(), ADVANCE_BPS, LIMIT);
+        assertEq(hss.n(), 1);
+
+        // A late manual call at the default schedule's expiry: nothing to schedule any more.
+        vm.warp(uint256(due40) + 30 days + SLACK);
+        vm.recordLogs();
+        vm.prank(stranger);
+        facility.markOverdue(id40);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(facility)) continue;
+            assertTrue(logs[i].topics[0] != ICreditFacility.Scheduled.selector);
+            assertTrue(logs[i].topics[0] != ICreditFacility.ScheduleSkipped.selector);
+        }
+        assertEq(uint8(registry.state(id40)), uint8(IReceivableRegistry.State.Overdue));
+        assertEq(facility.facilityInfo(id40).status, STATUS_FROZEN);
+        assertEq(facility.facilityInfo(id40).defaultSchedule, address(0));
+        assertEq(hss.n(), 1);
+
+        facility.markDefaulted(id40);
+        assertEq(uint8(registry.state(id40)), uint8(IReceivableRegistry.State.Defaulted));
+    }
+
+    // ------------------------------------------------------------------ fix round 1: fill reconciliation
+
+    function test_openAndFund_revertsFillMismatch() public {
+        swapRouter.fund(address(usdc), 2 * (FILL_A + FILL_B));
+        ICreditFacility.Fill[] memory fills = _fillsBoth();
+
+        // The router pays one unit short while reporting the full amount: only the USDC delta catches it.
+        swapRouter.setPayAdjust(-1);
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.FILL_MISMATCH.selector);
+        facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
+
+        // Paying extra is a mismatch too.
+        swapRouter.setPayAdjust(1);
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.FILL_MISMATCH.selector);
+        facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
+
+        assertEq(uint8(registry.state(id)), uint8(IReceivableRegistry.State.Confirmed));
+        assertEq(rcn.totalSupply(), 0);
+        assertEq(usdc.balanceOf(address(facility)), 0);
+        assertEq(facility.makers(id).length, 0);
+
+        swapRouter.setPayAdjust(0);
+        vm.prank(coordinator);
+        facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
+        assertEq(usdc.balanceOf(address(facility)), FILL_A + FILL_B);
+    }
+
+    function test_openAndFund_revertsFillMismatch_onCreditFillReport() public {
+        swapRouter.fund(address(usdc), FILL_A + FILL_B);
+        ICreditFacility.Fill[] memory fills = _fillsBoth();
+
+        // Correct USDC, but the callback reports a different amount.
+        swapRouter.setReportAdjust(-1);
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.FILL_MISMATCH.selector);
+        facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
+
+        swapRouter.setReportAdjust(1);
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.FILL_MISMATCH.selector);
+        facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
+
+        // Correct USDC and amount, but the callback credits a different maker than the order's.
+        swapRouter.setReportAdjust(0);
+        swapRouter.setReportedMaker(stranger);
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.FILL_MISMATCH.selector);
+        facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
+
+        assertEq(uint8(registry.state(id)), uint8(IReceivableRegistry.State.Confirmed));
+        assertEq(rcn.totalSupply(), 0);
+        _assertPosition(stranger, 0, 0, 0);
+        assertEq(facility.makers(id).length, 0);
+    }
+
+    function test_openAndFund_revertsBorrowingBase_advanceAbove10000() public {
+        swapRouter.fund(address(usdc), FILL_A + FILL_B);
+
+        // 6e6 is far below 10e6 * 10_001 / 10_000, but an advance above 100% is never allowed.
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.BORROWING_BASE_EXCEEDED.selector);
+        facility.openAndFund(id, _fillsBoth(), 10_001, type(uint256).max);
+
+        vm.prank(coordinator);
+        facility.openAndFund(id, _fillsBoth(), 10_000, type(uint256).max);
+        assertEq(uint8(registry.state(id)), uint8(IReceivableRegistry.State.Financed));
+    }
+
+    function test_openAndFund_revertsNotCheapestFirst_emptyFill() public {
+        swapRouter.fund(address(usdc), FILL_A + FILL_B);
+
+        ICreditFacility.Fill[] memory first = _fillsBoth();
+        first[0].amount = 0;
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.NOT_CHEAPEST_FIRST.selector);
+        facility.openAndFund(id, first, ADVANCE_BPS, LIMIT);
+
+        ICreditFacility.Fill[] memory last = _fillsBoth();
+        last[1].amount = 0;
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.NOT_CHEAPEST_FIRST.selector);
+        facility.openAndFund(id, last, ADVANCE_BPS, LIMIT);
+
+        assertEq(uint8(registry.state(id)), uint8(IReceivableRegistry.State.Confirmed));
+        assertEq(rcn.totalSupply(), 0);
+    }
+
+    // ------------------------------------------------------------------ fix round 1: close, repayment, dispute
+
+    function test_closeFacility_onlyRouter_sendsUndrawn_setsClosed_secondCloseReverts() public {
+        swapRouter.fund(address(usdc), 3 * (FILL_A + FILL_B));
+        bytes32 idFired = _registerReceivable(keccak256("PO-2"), dueDate);
+        bytes32 idRefused = _registerReceivable(keccak256("PO-3"), dueDate);
+        vm.startPrank(coordinator);
+        facility.openAndFund(id, _fillsBoth(), ADVANCE_BPS, LIMIT);
+        facility.openAndFund(idFired, _fillsBoth(), ADVANCE_BPS, LIMIT);
+        facility.openAndFund(idRefused, _fillsBoth(), ADVANCE_BPS, LIMIT);
+        vm.stopPrank();
+        uint256 funded = FILL_A + FILL_B;
+
+        address[2] memory notRouter = [stranger, coordinator];
+        for (uint256 i; i < notRouter.length; ++i) {
+            vm.prank(notRouter[i]);
+            vm.expectRevert(ICreditFacility.NOT_REPAYMENT_ROUTER.selector);
+            facility.closeFacility(id);
+        }
+
+        // Happy path: both pending schedules deleted, undrawn USDC to the seller.
+        ICreditFacility.FacilityInfo memory info = facility.facilityInfo(id);
+        vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.overdueSchedule)));
+        vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.defaultSchedule)));
+        vm.expectEmit(true, false, false, true, address(facility));
+        emit ICreditFacility.FacilityClosed(id, funded);
+        vm.prank(repaymentRouter);
+        facility.closeFacility(id);
+
+        assertEq(usdc.balanceOf(seller), funded);
+        assertEq(usdc.balanceOf(address(facility)), 2 * funded);
+        assertEq(facility.facilityInfo(id).status, STATUS_CLOSED);
+        assertTrue(hss.getSchedule(info.overdueSchedule).deleted);
+        assertTrue(hss.getSchedule(info.defaultSchedule).deleted);
+
+        vm.prank(repaymentRouter);
+        vm.expectRevert(ICreditFacility.FACILITY_NOT_ACTIVE.selector);
+        facility.closeFacility(id);
+
+        // A delete that reverts (the overdue schedule already executed) does not block the close.
+        info = facility.facilityInfo(idFired);
+        vm.warp(hss.getSchedule(info.overdueSchedule).expirySecond - 1);
+        hss.fire(info.overdueSchedule);
+        assertEq(uint8(registry.state(idFired)), uint8(IReceivableRegistry.State.Overdue));
+        vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.overdueSchedule)));
+        vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.defaultSchedule)));
+        vm.prank(repaymentRouter);
+        facility.closeFacility(idFired);
+        assertEq(facility.facilityInfo(idFired).status, STATUS_CLOSED);
+        assertTrue(hss.getSchedule(info.overdueSchedule).executed);
+        assertTrue(hss.getSchedule(info.defaultSchedule).deleted);
+        assertEq(usdc.balanceOf(seller), 2 * funded);
+
+        // A delete refused with a non-SUCCESS code does not block the close either.
+        hss.setDeleteResponseCode(21);
+        info = facility.facilityInfo(idRefused);
+        vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.overdueSchedule)));
+        vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.defaultSchedule)));
+        vm.prank(repaymentRouter);
+        facility.closeFacility(idRefused);
+        assertEq(facility.facilityInfo(idRefused).status, STATUS_CLOSED);
+        assertFalse(hss.getSchedule(info.overdueSchedule).deleted);
+        assertFalse(hss.getSchedule(info.defaultSchedule).deleted);
+        assertEq(usdc.balanceOf(seller), 3 * funded);
+        assertEq(usdc.balanceOf(address(facility)), 0);
+    }
+
+    function test_available_zeroOnceClosed() public {
+        _fundBoth();
+        assertEq(facility.available(id), FILL_A + FILL_B);
+
+        vm.prank(repaymentRouter);
+        facility.closeFacility(id);
+
+        assertEq(facility.available(id), 0);
+        ICreditFacility.FacilityInfo memory info = facility.facilityInfo(id);
+        assertEq(info.funded, FILL_A + FILL_B);
+        assertEq(info.status, STATUS_CLOSED);
+    }
+
+    function test_recordRepayment_onlyRouter_accumulates() public {
+        _fundBoth();
+
+        address[3] memory notRouter = [stranger, coordinator, address(swapRouter)];
+        for (uint256 i; i < notRouter.length; ++i) {
+            vm.prank(notRouter[i]);
+            vm.expectRevert(ICreditFacility.NOT_REPAYMENT_ROUTER.selector);
+            facility.recordRepayment(id, makerA, 1, 1);
+        }
+
+        vm.startPrank(repaymentRouter);
+        facility.recordRepayment(id, makerA, 1_000_000, 5_000);
+        facility.recordRepayment(id, makerA, 3_000_000, 18_013);
+        facility.recordRepayment(id, makerB, 2_000_000, 13_972);
+        vm.stopPrank();
+
+        ICreditFacility.Position memory a = facility.position(id, makerA);
+        assertEq(a.principal, FILL_A);
+        assertEq(a.aprBps, APR_A);
+        assertEq(a.paidPrincipal, 4_000_000);
+        assertEq(a.paidFee, 23_013);
+        ICreditFacility.Position memory b = facility.position(id, makerB);
+        assertEq(b.principal, FILL_B);
+        assertEq(b.paidPrincipal, 2_000_000);
+        assertEq(b.paidFee, 13_972);
+    }
+
+    function test_flagDispute_partiesOnly_freezes() public {
+        vm.prank(seller);
+        vm.expectRevert(ICreditFacility.FACILITY_NOT_ACTIVE.selector);
+        facility.flagDispute(id);
+
+        _fundBoth();
+
+        address[3] memory outsiders = [stranger, repaymentRouter, makerA];
+        for (uint256 i; i < outsiders.length; ++i) {
+            vm.prank(outsiders[i]);
+            vm.expectRevert(ICreditFacility.NOT_PARTY.selector);
+            facility.flagDispute(id);
+        }
+        assertEq(facility.facilityInfo(id).status, STATUS_ACTIVE);
+
+        address[3] memory parties = [seller, buyer, coordinator];
+        for (uint256 i; i < parties.length; ++i) {
+            uint256 snap = vm.snapshotState();
+            vm.expectEmit(true, false, false, true, address(facility));
+            emit ICreditFacility.Disputed(id);
+            vm.prank(parties[i]);
+            facility.flagDispute(id);
+            assertEq(facility.facilityInfo(id).status, STATUS_FROZEN);
+            assertTrue(vm.revertToState(snap));
+        }
+        // Registry state is untouched by a dispute.
+        assertEq(uint8(registry.state(id)), uint8(IReceivableRegistry.State.Financed));
+    }
+
+    // ------------------------------------------------------------------ fix round 1: wiring, construction
+
+    function test_wire_once_and_nonZero() public {
+        CreditFacility fresh = _newFacility(address(usdc));
+
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
+        fresh.wire(address(swapRouter), repaymentRouter);
+
+        vm.startPrank(owner);
+        vm.expectRevert(ICreditFacility.ZERO_ADDRESS.selector);
+        fresh.wire(address(0), repaymentRouter);
+        vm.expectRevert(ICreditFacility.ZERO_ADDRESS.selector);
+        fresh.wire(address(swapRouter), address(0));
+
+        fresh.wire(address(swapRouter), repaymentRouter);
+        assertEq(fresh.swapRouter(), address(swapRouter));
+        assertEq(fresh.repaymentRouter(), repaymentRouter);
+
+        vm.expectRevert(ICreditFacility.ALREADY_WIRED.selector);
+        fresh.wire(stranger, stranger);
+        vm.stopPrank();
+        assertEq(fresh.swapRouter(), address(swapRouter));
+        assertEq(fresh.repaymentRouter(), repaymentRouter);
+    }
+
+    function test_constructor_revertsAssociationFailed() public {
+        MockHtsUsdc hts = new MockHtsUsdc();
+
+        hts.setAssociateResponseCode(21);
+        vm.expectRevert(abi.encodeWithSelector(ICreditFacility.ASSOCIATION_FAILED.selector, 21));
+        _newFacility(address(hts));
+
+        // TOKEN_ALREADY_ASSOCIATED_TO_ACCOUNT is accepted.
+        hts.setAssociateResponseCode(194);
+        _newFacility(address(hts));
+
+        hts.setAssociateResponseCode(22);
+        CreditFacility ok = _newFacility(address(hts));
+        assertTrue(hts.associated(address(ok)));
+        assertEq(ok.USDC(), address(hts));
+        assertEq(ok.COORDINATOR(), coordinator);
+        assertEq(ok.owner(), owner);
+    }
+
     // ------------------------------------------------------------------ helpers
+
+    function _newFacility(address usdc_) internal returns (CreditFacility) {
+        return new CreditFacility(
+            IReceivableRegistry(address(registry)),
+            IKYARegistry(address(kya)),
+            IReceivableCreditNote(address(rcn)),
+            usdc_,
+            coordinator,
+            owner
+        );
+    }
 
     function _fundBoth() internal {
         swapRouter.fund(address(usdc), FILL_A + FILL_B);
@@ -529,12 +933,15 @@ contract CreditFacilityTest is Test {
         assertEq(p.paidFee, 0);
     }
 
-    function _assertSchedule(address schedule, uint256 expiry, bytes memory callData) internal view {
+    function _assertSchedule(address schedule, uint256 expiry, uint256 gasLimit, bytes memory callData)
+        internal
+        view
+    {
         MockHSS.Scheduled memory s = hss.getSchedule(schedule);
         assertEq(s.scheduler, address(facility));
         assertEq(s.to, address(facility));
         assertEq(s.expirySecond, expiry);
-        assertEq(s.gasLimit, GAS);
+        assertEq(s.gasLimit, gasLimit);
         assertEq(s.value, 0);
         assertEq(s.callData, callData);
         assertFalse(s.deleted);

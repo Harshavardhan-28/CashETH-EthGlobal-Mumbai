@@ -24,6 +24,10 @@ contract MockSwapRouter {
     mapping(address => uint16) public aprOf;
     bool public failNext;
     uint16 public lastAdvanceBps;
+    /// @dev Misbehaviour knobs for the facility's reconciliation tests (all default to honest).
+    int256 public payAdjust;
+    int256 public reportAdjust;
+    address public reportedMaker;
 
     error MockSwapFailed();
 
@@ -41,6 +45,21 @@ contract MockSwapRouter {
     ///         flag stays set until `fail(false)`.
     function fail(bool value) external {
         failNext = value;
+    }
+
+    /// @notice Pays `amount + adjust` USDC instead of `amount` on every swap.
+    function setPayAdjust(int256 adjust) external {
+        payAdjust = adjust;
+    }
+
+    /// @notice Reports `usdcIn = amount + adjust` to `onCreditFill` instead of `amount`.
+    function setReportAdjust(int256 adjust) external {
+        reportAdjust = adjust;
+    }
+
+    /// @notice Reports `maker` to `onCreditFill` instead of `order.maker` (zero restores honest reporting).
+    function setReportedMaker(address maker) external {
+        reportedMaker = maker;
     }
 
     function swap(ISwapVM.Order calldata order, uint256 amount, bytes calldata takerData)
@@ -61,8 +80,11 @@ contract MockSwapRouter {
         // Simplified order: the real router fires the credit callback inside `runLoop`, before the transfers.
         // From = the caller (facility, an RCN peer), so the direct facility -> maker move is allowed.
         IERC20(tokenIn).safeTransferFrom(msg.sender, order.maker, amount);
-        IERC20(tokenOut).safeTransfer(msg.sender, amount);
-        IOnCreditFill(msg.sender).onCreditFill(id, order.maker, amount, aprOf[order.maker]);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        IERC20(tokenOut).safeTransfer(msg.sender, uint256(int256(amount) + payAdjust));
+        address maker = reportedMaker == address(0) ? order.maker : reportedMaker;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        IOnCreditFill(msg.sender).onCreditFill(id, maker, uint256(int256(amount) + reportAdjust), aprOf[order.maker]);
 
         return (amount, amount, keccak256(abi.encode(order)));
     }
