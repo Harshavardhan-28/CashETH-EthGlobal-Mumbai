@@ -1,9 +1,12 @@
-/* Agent dashboard: builds on the admin console's layout and tokens (Admin.module.css), single column, no side nav. */
+/*
+ * Agent dashboard: a cloud-console layout (side nav, breadcrumbs, panels) on the admin console's tokens and shell
+ * (Admin.module.css provides .app, .bar, .body, .nav, .main and the colour mixes).
+ */
 
 .main {
-  max-width: 1320px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 24px 28px 56px;
+  padding: 28px 28px 64px;
 }
 
 /* ---------- top bar extras ---------- */
@@ -12,7 +15,7 @@
   align-items: center;
   gap: 8px;
   height: 36px;
-  padding: 0 6px 0 10px;
+  padding: 0 6px 0 12px;
   border: 1px solid var(--line-2);
   border-radius: 10px;
   background: var(--card);
@@ -43,47 +46,7 @@
   color: var(--accent);
 }
 
-/* ---------- picker ---------- */
-.pickHero {
-  padding: 28px 28px 24px;
-  margin-bottom: 22px;
-  background:
-    radial-gradient(120% 140% at 100% 0%, var(--accent-tint), transparent 55%),
-    var(--card);
-}
-.pickHero h1 {
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-.pickHero p {
-  margin-top: 6px;
-  color: var(--muted);
-  max-width: 680px;
-}
-.pickForm {
-  display: flex;
-  gap: 10px;
-  margin-top: 18px;
-  max-width: 640px;
-}
-.pickForm input {
-  flex: 1;
-  min-width: 0;
-  height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--ink);
-  font: inherit;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-}
-.pickForm input:focus {
-  outline: 0;
-  border-color: var(--accent);
-}
+/* ---------- buttons ---------- */
 .btn {
   height: 40px;
   padding: 0 18px;
@@ -95,15 +58,16 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  transition: filter 0.15s;
 }
 .btn:hover {
-  filter: brightness(1.06);
+  filter: brightness(1.07);
 }
 .btnGhost {
-  height: 32px;
+  height: 30px;
   padding: 0 12px;
   border: 1px solid var(--line-2);
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--card);
   color: var(--ink-2);
   font: inherit;
@@ -116,130 +80,540 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ---------- picker ---------- */
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.pickHero {
+  position: relative;
+  overflow: hidden;
+  padding: 44px 40px 36px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  text-align: center;
+  background:
+    radial-gradient(60% 90% at 50% -10%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--card), color-mix(in oklab, var(--card) 70%, var(--bg)));
+}
+.pickHero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(color-mix(in oklab, var(--ink) 9%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(70% 80% at 50% 0%, #000 30%, transparent 75%);
+  pointer-events: none;
+}
+.pickHero > * {
+  position: relative;
+}
+.pickHero h1 {
+  font-size: clamp(28px, 3.4vw, 38px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.pickHero > p {
+  margin: 10px auto 0;
+  max-width: 600px;
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.pickForm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 26px auto 0;
+  max-width: 620px;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 12px 34px var(--shadow);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.pickForm:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-tint), 0 12px 34px var(--shadow);
+}
+.pickIcon {
+  display: grid;
+  color: var(--faint);
+}
+.pickForm input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+.pickForm input::placeholder {
+  color: var(--faint);
+}
 .pickError {
-  margin-top: 10px;
+  margin-top: 12px;
   color: var(--err);
   font-size: 12.5px;
 }
-.pickNote {
-  margin-top: 12px;
+.pickPoints {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 22px;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
   color: var(--faint);
-  font-size: 12px;
+  font-size: 12.5px;
 }
-
-/* ---------- identity header ---------- */
-.identity {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  margin-bottom: 14px;
-  overflow: hidden;
-}
-.idMain {
-  display: flex;
-  gap: 16px;
-  padding: 20px 22px;
-  min-width: 0;
-}
-.idName {
-  display: flex;
+.pickPoints li {
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  gap: 7px;
 }
-.rolePill {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 3px 9px;
-  border-radius: 999px;
-  color: var(--on-accent);
-}
-.idJob {
-  margin-top: 2px;
-  color: var(--muted);
-}
-.idFacts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
-  margin-top: 12px;
-  font-size: 12px;
-  color: var(--faint);
-}
-.idFacts b {
-  color: var(--ink-2);
-  font-weight: 500;
-}
-.idFacts a {
+.pickPoints svg {
   color: var(--accent);
 }
-.wallet {
-  border-left: 1px solid var(--line);
-  padding: 20px 22px;
-  background: var(--card-2);
+
+.tabs {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  gap: 2px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 10px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tabs button:hover {
+  color: var(--ink);
+}
+.tabs button[aria-selected="true"] {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.tabs i {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+}
+.tabs span {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--ink) 7%, transparent);
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+}
+.roleTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.roleTag i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+/* ---------- page header ---------- */
+.pageHeader {
+  margin-bottom: 18px;
+}
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-size: 12.5px;
+  color: var(--faint);
+}
+.crumbs > span {
+  display: inline-flex;
+  align-items: center;
+}
+.crumbs button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  padding: 2px 3px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.crumbs button:hover {
+  color: var(--accent);
+}
+.crumbs [aria-current] {
+  color: var(--ink-2);
+  padding: 2px 3px;
+}
+.crumbs i {
+  font-style: normal;
+  margin: 0 4px;
+  color: var(--faint-2, var(--faint));
+}
+.pageTitleRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.pageTitleRow h1 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.pageTitleRow p {
+  margin-top: 4px;
+  color: var(--faint);
+  font-size: 13px;
+  max-width: 760px;
+}
+.updated {
+  font-size: 12px;
+  color: var(--faint);
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* ---------- side nav agent chip ---------- */
+.navAgent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  margin-bottom: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
   min-width: 0;
 }
-.walletLabel {
+.navAgent > div {
+  flex: 1;
+  min-width: 0;
+}
+.navAgent b {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.navAgent > div > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+}
+.navAgent > div > span i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.navSwitch {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+.navSwitch:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------- panels ---------- */
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.panelHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.panelHead h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.panelHead p {
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: 12px;
+}
+.panelActions {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--muted);
+  flex: 0 0 auto;
+}
+.panelBody {
+  padding: 16px 18px 18px;
+  flex: 1;
+}
+.panelFoot {
+  margin-top: auto;
+  padding: 10px 18px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in oklab, var(--card-2) 60%, transparent);
+  border-radius: 0 0 14px 14px;
+}
+.notice {
+  padding: 10px 18px;
+  border-top: 1px solid var(--line);
+  color: var(--warn);
   font-size: 12.5px;
-}
-.walletUsdc {
-  margin-top: 6px;
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  font-variant-numeric: tabular-nums;
-}
-.walletUsdc small {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--faint);
-  margin-left: 6px;
-  letter-spacing: 0;
-}
-.walletMeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--faint);
-}
-.walletMeta a {
-  color: var(--accent);
 }
 
 /* ---------- grids ---------- */
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
 .split {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  align-items: start;
   gap: 14px;
   margin-bottom: 14px;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
 }
 .section {
   margin-bottom: 14px;
 }
-.body {
-  padding: 14px 18px 18px;
+
+/* ---------- details (key/value columns) ---------- */
+.details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 22px;
+  margin: 0;
+}
+.details dt {
+  color: var(--faint);
+  font-size: 11.5px;
+  margin-bottom: 2px;
+}
+.details dd {
+  margin: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- wallet ---------- */
+.walletBig {
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.walletBig small {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--faint);
+  margin-left: 8px;
+  letter-spacing: 0;
+}
+.walletRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line-2);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.walletRow span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------- tool usage bars ---------- */
+.bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bars li {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+}
+.bars b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bars em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--err);
+}
+.barTrack {
+  height: 8px;
+  border-radius: 99px;
+  background: var(--line);
+  overflow: hidden;
+}
+.barTrack i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--accent);
+}
+
+/* ---------- service health ---------- */
+.health {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.health li {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.health li:first-child {
+  padding-top: 0;
+}
+.health li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.health b {
+  display: block;
+  font-weight: 500;
+}
+.health span {
+  color: var(--faint);
+  font-size: 12px;
+}
+.health > li > i {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 50%;
+}
+.dotOk {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+.dotWarn {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-tint);
+}
+.dotBad {
+  background: var(--err);
+  box-shadow: 0 0 0 3px var(--err-tint);
+}
+
+/* ---------- recent calls ---------- */
+.recent {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+.recent li {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.recent li:last-child {
+  border-bottom: 0;
+}
+.recent li > div {
+  flex: 1;
+  min-width: 0;
+}
+.recent p {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.recent p b {
+  font-weight: 600;
+}
+.recent .when,
+.recent li > span:last-child {
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 /* ---------- meters ---------- */
 .meter {
-  height: 8px;
+  height: 10px;
   border-radius: 99px;
-  background: var(--line-2);
+  background: var(--line);
   overflow: hidden;
   display: flex;
+  gap: 2px;
 }
 .meter i {
   display: block;
@@ -249,7 +623,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 16px;
-  margin-top: 8px;
+  margin-top: 10px;
   font-size: 12px;
   color: var(--muted);
 }
@@ -278,8 +652,12 @@
   padding: 9px 0;
   border-bottom: 1px solid var(--line);
 }
+.kv li:first-child {
+  padding-top: 0;
+}
 .kv li:last-child {
   border-bottom: 0;
+  padding-bottom: 0;
 }
 .kv span {
   color: var(--muted);
@@ -302,7 +680,7 @@
 .workers {
   list-style: none;
   margin: 0;
-  padding: 4px 0;
+  padding: 0;
 }
 .worker {
   padding: 14px 18px;
@@ -339,27 +717,36 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 18px;
 }
 .strategy {
   border: 1px solid var(--line);
-  border-radius: 11px;
-  padding: 12px 14px;
+  border-radius: 12px;
+  padding: 14px 16px;
   background: var(--card-2);
 }
 .strategy h3 {
-  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink-2);
 }
+.strategy h3 .chip,
+.strategy h3 span {
+  font-size: 11px;
+  padding: 2px 8px;
+}
 .strategy p {
-  margin-top: 2px;
+  margin-top: 3px;
   color: var(--faint);
   font-size: 11.5px;
 }
 .strategyApr {
-  margin-top: 8px;
-  font-size: 20px;
+  margin-top: 10px;
+  font-size: 22px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -414,7 +801,7 @@
 .log {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .log th {
   text-align: left;
@@ -425,11 +812,15 @@
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
+  background: color-mix(in oklab, var(--card-2) 50%, transparent);
 }
 .log td {
   padding: 11px 18px;
   border-bottom: 1px solid var(--line);
   vertical-align: middle;
+}
+.log tr:last-child td {
+  border-bottom: 0;
 }
 .logRow {
   cursor: pointer;
@@ -447,11 +838,14 @@
   display: inline-block;
   font-family: var(--font-mono);
   font-size: 11.5px;
-  padding: 3px 8px;
-  border-radius: 7px;
+  padding: 2px 8px;
+  border-radius: 6px;
   background: color-mix(in oklab, var(--ink) 7%, transparent);
   color: var(--ink-2);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .logWhat {
   min-width: 260px;
@@ -494,28 +888,50 @@
   display: flex;
   justify-content: center;
   padding: 12px;
+  border-top: 1px solid var(--line);
 }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1100px) {
   .split,
-  .identity {
+  .grid2 {
     grid-template-columns: minmax(0, 1fr);
   }
-  .wallet {
-    border-left: 0;
-    border-top: 1px solid var(--line);
+}
+@media (max-width: 1024px) {
+  .navAgent {
+    margin: 0 6px 0 0;
+    padding: 6px 8px;
+    flex: 0 0 auto;
+  }
+  .navAgent > div > span {
+    display: none;
   }
 }
 @media (max-width: 720px) {
   .main {
     padding: 18px 16px 40px;
   }
-  .pickForm {
-    flex-direction: column;
+  .pickHero {
+    padding: 32px 18px 26px;
   }
-  .strategies {
+  .pickForm {
+    flex-wrap: wrap;
+    padding: 8px;
+  }
+  .pickForm .btn {
+    flex: 1 0 100%;
+  }
+  .strategies,
+  .details {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .bars li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .barTrack {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
   .switcher select {
     max-width: 140px;

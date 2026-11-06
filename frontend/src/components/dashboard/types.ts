@@ -1,4 +1,7 @@
+import type { ReactNode } from "react";
 import type { AgentStats, AuditEvent, LenderYield } from "@/lib/admin/api";
+import type { Narrated } from "@/lib/admin/narrate";
+import type { ConnStatus } from "@/lib/admin/useAdminData";
 import type { Invoice } from "@/lib/dashboard/derive";
 import type { Wallet } from "@/lib/dashboard/live";
 
@@ -12,4 +15,14 @@ export type RoleViewProps = {
   mine: Invoice[];
   wallet: Wallet;
   nowMs: number;
+  /** MCP calls that concern this agent, newest first, and the raw records behind them. */
+  log: Narrated[];
+  raw: ReadonlyMap<number, AuditEvent>;
+  status: ConnStatus;
+  sample: boolean;
+  /** Opens another section of this agent's console. */
+  go(view: string): void;
 };
+
+/** One page of an agent's console: a nav entry with its page header. */
+export type SectionDef = { id: string; label: string; icon: () => ReactNode; title: string; description: string };

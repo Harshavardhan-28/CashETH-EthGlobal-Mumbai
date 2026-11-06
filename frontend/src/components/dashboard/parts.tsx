@@ -49,23 +49,6 @@ export function Meter({ segments, total, label }: { segments: Segment[]; total?:
   );
 }
 
-export function Card({ title, sub, children, className, action }: { title: ReactNode; sub?: ReactNode; children: ReactNode; className?: string; action?: ReactNode }) {
-  return (
-    <section className={`${a.card} ${className ?? ""}`}>
-      <div className={a.cardHead}>
-        <h2>{title}</h2>
-        {(sub || action) && (
-          <span>
-            {sub}
-            {action}
-          </span>
-        )}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 export function KV({ rows, strong }: { rows: { label: ReactNode; value: ReactNode; hint?: ReactNode }[]; strong?: boolean }) {
   return (
     <ul className={`${d.kv} ${strong ? d.kvStrong : ""}`}>

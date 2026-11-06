@@ -11,7 +11,7 @@ import { formatUsdc, humanizeCode, relativeTime, shortAddress } from "@/lib/admi
 import type { Narrated } from "@/lib/admin/narrate";
 import { toolOf } from "@/lib/dashboard/derive";
 import d from "./Dashboard.module.css";
-import { Card } from "./parts";
+import { Panel } from "./console";
 
 type Outcome = "all" | "ok" | "blocked";
 const OUTCOMES: { value: Outcome; label: string }[] = [
@@ -146,7 +146,7 @@ export function McpLog({ items, raw, nowMs, agentName, showActor = true }: Props
   const cols = showActor ? 7 : 6;
 
   return (
-    <Card title="MCP activity log" sub={`${items.length} call${items.length === 1 ? "" : "s"} · ${blocked} blocked by guardrails`}>
+    <Panel title="Calls" description={`${items.length} call${items.length === 1 ? "" : "s"} · ${blocked} blocked by guardrails`} flush>
       <div className={d.logTools}>
         <RangeControl range={range} onRange={setRange} />
         <div className={a.seg} role="group" aria-label="Outcome">
@@ -260,6 +260,6 @@ export function McpLog({ items, raw, nowMs, agentName, showActor = true }: Props
           )}
         </div>
       )}
-    </Card>
+    </Panel>
   );
 }

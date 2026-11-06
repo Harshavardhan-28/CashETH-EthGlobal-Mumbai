@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SAMPLE_AGENTS, SAMPLE_LENDERS, sampleEvents } from "@/lib/admin/sample";
 import type { AdminData } from "@/lib/admin/useAdminData";
-import { DashboardApp, SAVED_AGENT_KEY, agentFromHash } from "./DashboardApp";
+import { DashboardApp, SAVED_AGENT_KEY, agentFromHash, parseDashboardHash } from "./DashboardApp";
 
 const live = (): AdminData => ({ status: "live", sample: false, events: sampleEvents(Date.now()), agents: SAMPLE_AGENTS, lenders: SAMPLE_LENDERS, statsReady: true, updatedAt: Date.now() });
 const offline = (): AdminData => ({ ...live(), status: "offline", sample: true, updatedAt: undefined });
@@ -28,11 +28,13 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-describe("agentFromHash", () => {
-  it("reads #agent=<id>", () => {
+describe("routing", () => {
+  it("reads #agent=<id>&view=<section>", () => {
     expect(agentFromHash("#agent=0xAbC")).toBe("0xAbC");
     expect(agentFromHash("#agent=uaid%3Aaid%3Ax")).toBe("uaid:aid:x");
     expect(agentFromHash("#overview")).toBeUndefined();
+    expect(parseDashboardHash("#agent=0xabc&view=invoices")).toEqual({ agent: "0xabc", view: "invoices" });
+    expect(parseDashboardHash("#agent=0xabc").view).toBe("overview");
   });
 });
 
@@ -43,19 +45,26 @@ describe("agent picker", () => {
     expect(screen.queryByText("No agents registered yet")).not.toBeInTheDocument();
   });
 
-  it("lists registered agents by role without any sign-in and opens one", async () => {
+  it("lists registered agents with role tabs, without any sign-in, and opens one", async () => {
     renderAt("");
     expect(screen.getByRole("heading", { name: "Follow your agent" })).toBeInTheDocument();
-    for (const role of ["Sellers", "Buyers", "Lenders", "Workers"]) expect(screen.getByRole("region", { name: role })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Open Seller" }));
+    const tabs = within(screen.getByRole("tablist", { name: "Role" }));
+    expect(tabs.getByRole("tab", { name: /Lenders\s*2/ })).toBeInTheDocument();
+    await userEvent.click(tabs.getByRole("tab", { name: /Lenders/ }));
+    const table = within(screen.getByRole("region", { name: "Registered agents" }));
+    expect(table.getByRole("button", { name: "Open Lender A" })).toBeInTheDocument();
+    expect(table.queryByRole("button", { name: "Open Seller" })).not.toBeInTheDocument();
+    await userEvent.click(tabs.getByRole("tab", { name: /All agents/ }));
+    await userEvent.click(table.getByRole("button", { name: "Open Seller" }));
     expect(window.location.hash).toBe(`#agent=${addrOf("Seller")}`);
     expect(localStorage.getItem(SAVED_AGENT_KEY)).toBe(addrOf("Seller"));
   });
 
-  it("accepts a pasted address or UAID and rejects unknown ones", async () => {
+  it("filters as you type, accepts a UAID and rejects unknown ones", async () => {
     renderAt("");
     const input = screen.getByRole("textbox", { name: "Agent address or UAID" });
     await userEvent.type(input, "0x0000000000000000000000000000000000000001");
+    expect(screen.getByText("No agents match")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Open dashboard" }));
     expect(screen.getByRole("alert")).toHaveTextContent("No agent with that address");
     await userEvent.clear(input);
@@ -65,29 +74,46 @@ describe("agent picker", () => {
   });
 });
 
-describe("seller dashboard", () => {
-  it("shows the wallet, credit, worker agents, invoices, payback and the MCP log", async () => {
+describe("console shell", () => {
+  it("has a side nav of the role's sections, breadcrumbs, and navigates between sections", async () => {
+    renderAt(`#agent=${addrOf("Seller")}`);
+    const nav = within(screen.getByRole("navigation", { name: "Agent console" }));
+    for (const s of ["Overview", "Wallet & credit", "Worker agents", "Invoices", "Payback", "Activity log"]) expect(nav.getByRole("button", { name: new RegExp(s) })).toBeInTheDocument();
+    expect(nav.getByRole("button", { name: /Overview/ })).toHaveAttribute("aria-current", "page");
+    await userEvent.click(nav.getByRole("button", { name: /Invoices/ }));
+    expect(window.location.hash).toBe(`#agent=${addrOf("Seller")}&view=invoices`);
+    const crumbs = within(screen.getByRole("navigation", { name: "Breadcrumb" }));
+    expect(crumbs.getByText("Invoices")).toHaveAttribute("aria-current", "page");
+    await userEvent.click(crumbs.getByRole("button", { name: "Agents" }));
+    expect(window.location.hash).toBe("");
+  });
+});
+
+describe("seller console", () => {
+  it("overview: wallet, credit KPIs, details, workers, recent invoices, health and tool usage", async () => {
     renderAt(`#agent=${addrOf("Seller")}`);
     await waitFor(() => expect(screen.getByTestId("wallet-usdc")).toHaveTextContent("$5,000.00"));
     expect(loadWallet).toHaveBeenCalledWith(addrOf("Seller"));
-    expect(screen.getByText("0.0.1234 on HashScan ↗")).toBeInTheDocument();
     const kpis = screen.getByRole("region", { name: "Credit" });
     for (const label of ["Credit raised", "Credit available", "Spent by your agents", "Owed to lenders"]) expect(within(kpis).getByText(label)).toBeInTheDocument();
     expect(within(kpis).getByText("$3,600.00")).toBeInTheDocument();
-    const workers = screen.getByRole("heading", { name: "Your worker agents" }).closest("section")!;
-    expect(within(workers).getByText("Worker 1")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Agent details" })).getByText("0.0.1234")).toBeInTheDocument();
+    const workers = screen.getByRole("region", { name: "Worker agents" });
     expect(within(workers).getByText(/1 blocked by guardrails/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Payback" })).toBeInTheDocument();
-    const invoices = screen.getByRole("heading", { name: "Your invoices" }).closest("section")!;
-    expect(within(invoices).getByText("PO-1003")).toBeInTheDocument();
-    expect(within(invoices).getAllByText("Repaid")).toHaveLength(2);
-    expect(screen.getByRole("heading", { name: "MCP activity log" })).toBeInTheDocument();
-    expect(screen.getAllByText("open_facility").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("commit_spend").length).toBeGreaterThan(0);
+    expect(within(screen.getByRole("region", { name: "Recent invoices" })).getByText("PO-1003")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Service health" })).getByText("CashETH MCP server")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "MCP tools used" })).getByText("open_facility")).toBeInTheDocument();
   });
 
-  it("expands a log row into its raw record and filters blocked calls", async () => {
-    renderAt(`#agent=${addrOf("Seller")}`);
+  it("invoices and payback sections", () => {
+    renderAt(`#agent=${addrOf("Seller")}&view=invoices`);
+    const invoices = screen.getByRole("region", { name: "Invoices" });
+    expect(within(invoices).getAllByText("Repaid")).toHaveLength(2);
+    expect(within(invoices).getAllByText("HashScan ↗")).toHaveLength(3);
+  });
+
+  it("activity log expands a row into its raw record and filters blocked calls", async () => {
+    renderAt(`#agent=${addrOf("Seller")}&view=activity`);
     const rows = screen.getAllByTestId("log-row");
     await userEvent.click(rows[0]);
     expect(rows[0]).toHaveAttribute("aria-expanded", "true");
@@ -99,30 +125,32 @@ describe("seller dashboard", () => {
   });
 });
 
-describe("buyer dashboard", () => {
-  it("shows what is due, when, and the payment history", () => {
+describe("buyer console", () => {
+  it("overview shows what is due and when, without worker spending", () => {
     renderAt(`#agent=${addrOf("Buyer")}`);
-    for (const label of ["Total due", "Next payment", "Paid so far", "Wallet covers dues"]) expect(screen.getByText(label)).toBeInTheDocument();
-    const due = screen.getByRole("heading", { name: "Invoices due" }).closest("section")!;
+    for (const label of ["Total due", "Next payment", "Paid so far", "Wallet covers dues"]) expect(within(screen.getByRole("region", { name: "Payables" })).getByText(label)).toBeInTheDocument();
+    const due = screen.getByRole("region", { name: "Invoices due" });
     expect(within(due).getByText("PO-1003")).toBeInTheDocument();
     expect(within(due).getByText(/in 14 days/)).toBeInTheDocument();
-    const history = screen.getByRole("heading", { name: "Payment history" }).closest("section")!;
-    expect(within(history).getAllByText("HashScan ↗")).toHaveLength(2);
     expect(screen.queryByText("commit_spend")).not.toBeInTheDocument();
+  });
+
+  it("payments section lists repayments with proof", () => {
+    renderAt(`#agent=${addrOf("Buyer")}&view=payments`);
+    expect(within(screen.getByRole("region", { name: "Payment history" })).getAllByText("HashScan ↗")).toHaveLength(2);
   });
 });
 
-describe("lender dashboard", () => {
-  it("shows capital, lent, return rate, liquidity strategies and positions", () => {
+describe("lender console", () => {
+  it("overview shows capital, return rate, liquidity strategies and positions", () => {
     renderAt(`#agent=${addrOf("Lender A")}`);
     const kpis = screen.getByRole("region", { name: "Capital" });
     for (const label of ["Total capital", "Lent to sellers", "Blended return", "Earned so far"]) expect(within(kpis).getByText(label)).toBeInTheDocument();
     expect(within(kpis).getByText("9.4%")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Liquidity" })).toBeInTheDocument();
-    expect(screen.getByText("Credit strategy")).toBeInTheDocument();
-    expect(screen.getByText("Base-yield strategy")).toBeInTheDocument();
-    const positions = screen.getByRole("heading", { name: "Positions" }).closest("section")!;
-    expect(within(positions).getAllByText("7.0%")).toHaveLength(3);
+    const liquidity = screen.getByRole("region", { name: "Liquidity" });
+    expect(within(liquidity).getByText("Credit strategy")).toBeInTheDocument();
+    expect(within(liquidity).getByText("Base-yield strategy")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Recent positions" })).getAllByText("7.0%")).toHaveLength(3);
   });
 });
 
