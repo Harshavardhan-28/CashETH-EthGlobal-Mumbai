@@ -308,3 +308,68 @@ SPEND_WALLET_COMPUTE `GET /api/v1/accounts/0.0.11339486` → `key`:
 Decoded (protobuf `Key.thresholdKey`): threshold 2, keys worker ECDSA_SECP256K1 `027a33ace3cb59908b07d55fea1c023b22612c291faa049911f7fc604471cf71a2`, cosigner ECDSA_SECP256K1 `031ca1230064d86ff1e48a4825d999f30dea7f006f29c20e4f62d4af7b3397e0a1`.
 
 Facility allowance: not granted yet. The `CreditFacility` is not deployed at this checkpoint, so the standing USDC allowance from each wallet to the facility contract (`AccountAllowanceApproveTransaction.approveTokenAllowance(USDC, wallet, facilityContractId, units)`, signed by worker and co-signer, `units` < 2^63) is granted in C5 spend (Task 5.3) by `approveFacilityAllowance`.
+
+## C3: facility and repayment router
+
+Deployed on 2026-11-06 by `contracts/script/02_DeployFacility.s.sol` through the Hashio relay from the operator, driven by `scripts/c3-deploy.ts`, against the C2 registries (not redeployed). Addresses are in `deployments/testnet/addresses.json` (`rcn`, `creditFacility`, `repaymentRouter`) and the full run record is in `deployments/testnet/c3.json`. `rcn.wire(...)` and `facility.wire(swapRouter, repaymentRouter)` need the SwapVM router, so Task 4.3 does them. Both still read zero on-chain.
+
+### Contracts
+
+| Contract | Address | Contract id | Deploy tx | Gas used |
+| --- | --- | --- | --- | --- |
+| ReceivableCreditNote (owner = operator) | `0x54a665d52E2e79bA3Ec46b20f8c2cfE950C9A0ce` | [0.0.11339718](https://hashscan.io/testnet/contract/0.0.11339718) | [0.0.7314364@1793971488.122320980](https://hashscan.io/testnet/transaction/0.0.7314364@1793971488.122320980) | 808,696 |
+| CreditFacility (coordinator `0x45fDF15ed9c6327DEb0E57db6B78f592b254aB68`, owner = operator) | `0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640` | [0.0.11339720](https://hashscan.io/testnet/contract/0.0.11339720) | [0.0.7314364@1793971495.452167794](https://hashscan.io/testnet/transaction/0.0.7314364@1793971495.452167794) | 4,226,858 |
+| RepaymentRouter | `0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7` | [0.0.11339725](https://hashscan.io/testnet/contract/0.0.11339725) | [0.0.7314364@1793971507.280224870](https://hashscan.io/testnet/transaction/0.0.7314364@1793971507.280224870) | 1,864,935 |
+
+### Funding and wiring
+
+| Step | Tx | Gas limit | Gas used |
+| --- | --- | --- | --- |
+| 20 HBAR into `CreditFacility.receive()`. The facility was created without value and the transfer carries an explicit gas limit, as in S4. | [0.0.7314364@1793971542.575088301](https://hashscan.io/testnet/transaction/0.0.7314364@1793971542.575088301) | 62,300 | 21,062 |
+| `ReceivableRegistry.wire(facility, repaymentRouter)` | [0.0.7314364@1793971547.693584156](https://hashscan.io/testnet/transaction/0.0.7314364@1793971547.693584156) | 150,000 | 68,845 |
+| `KYARegistry.wire(repaymentRouter, facility)` (the argument order is the reverse of the registry's) | [0.0.7314364@1793971571.194228108](https://hashscan.io/testnet/transaction/0.0.7314364@1793971571.194228108) | 150,000 | 68,743 |
+
+The script read these values back from the chain after deploying:
+
+- `registry.facility()` and `kya.facility()` both equal the facility address.
+- `registry.repaymentRouter()` and `kya.repaymentRouter()` both equal the router address.
+- `facility.REGISTRY/KYA/RCN/USDC/COORDINATOR/owner()` and `router.REGISTRY/KYA/FACILITY/RCN/USDC()` match the deployed addresses.
+- `rcn.owner()` is the operator.
+- The facility holds 20 HBAR.
+- The mirror node shows the facility (0.0.11339720) and the router (0.0.11339725) both associated with USDC 0.0.429274. The constructors made these associations through the HIP-719 facade.
+
+### Contract sizes (`forge build --sizes`, solc 0.8.30, via-IR, 600 runs; exits 0, every contract under 24,576 B)
+
+| Contract | Runtime (B) | Initcode (B) | Runtime margin (B) |
+| --- | --- | --- | --- |
+| ReceivableCreditNote | 3,104 | 4,066 | 21,472 |
+| CreditFacility | 15,877 | 16,689 | 8,699 |
+| RepaymentRouter | 5,073 | 5,576 | 19,503 |
+| KYARegistry | 2,962 | 3,228 | 21,614 |
+| ReceivableRegistry | 6,379 | 7,700 | 18,197 |
+| CashEthSwapVMRouter (Task 4.3) | 23,759 | 25,445 | 817 |
+| CashEthOrderBuilder (Task 4.3) | 8,807 | 8,833 | 15,769 |
+
+### Fuzz and invariant suite
+
+`contracts/test/invariants/FacilityInvariants.t.sol` and `FacilityHandler.sol` drive the real registries, RCN, facility and repayment router. `MockSwapRouter` stands in for the SwapVM router, `MockHSS` sits at 0x16b and `MockUSDC` is the currency. The suite runs with `[invariant] runs = 128, depth = 32, fail_on_revert = false` and `[fuzz] runs = 512`. Full `forge test`: 167 passed, 0 failed.
+
+```
+[PASS] invariant_budgetsNeverExceedFunded() (runs: 128, calls: 4096, reverts: 0)
+[PASS] invariant_committedPlusReservedPlusAvailableEqualsFunded() (runs: 128, calls: 4096, reverts: 0)
+[PASS] invariant_debtNeverExceedsBorrowingBase() (runs: 128, calls: 4096, reverts: 0)
+[PASS] invariant_sellerGetsNothingWhileLendersOwed() (runs: 128, calls: 4096, reverts: 0)
+[PASS] invariant_stateOnlyMovesForward() (runs: 128, calls: 4096, reverts: 0)
+[PASS] testFuzz_feeOf_monotonicInTime(uint64) (runs: 512)
+[PASS] testFuzz_feeOf_noOverflow(uint256,uint16,uint64) (runs: 512)
+[PASS] testFuzz_repay_neverPaysSellerWhileLendersOwed(uint256) (runs: 512)
+```
+
+To show the invariants catch real faults, each of the following deliberate source changes was made and then reverted. Every one made at least one invariant fail:
+
+- The router pays the seller 1 unit on a partial repayment.
+- `setBudgets` drops the `funded` cap.
+- `markOverdue` drops its due check.
+- `release` forgets to decrement `info.reserved`.
+- `openAndFund` drops the borrowing-base check.
+- `closeFacility` keeps the undrawn USDC.

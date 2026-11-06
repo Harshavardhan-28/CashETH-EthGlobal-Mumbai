@@ -13,6 +13,16 @@ export const AddressesSchema = z.looseObject({
   chainId: z.number().int().positive(),
   kyaRegistry: address.optional(),
   receivableRegistry: address.optional(),
+  /** C3 (Task 3.6): Receivable Credit Note, credit facility and repayment router. */
+  rcn: address.optional(),
+  creditFacility: address.optional(),
+  repaymentRouter: address.optional(),
+  /** C4 (Task 4.3): CashETH SwapVM router, on-chain order builder, Aqua, test USDT and the demo taker. */
+  swapRouter: address.optional(),
+  orderBuilder: address.optional(),
+  aqua: address.optional(),
+  tUsdt: address.optional(),
+  taker: address.optional(),
   usdc: address.optional(),
   deployer: address.optional(),
   deployedAt: z.string().optional(),

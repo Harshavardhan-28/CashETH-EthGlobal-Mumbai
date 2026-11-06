@@ -469,6 +469,18 @@ contract RepaymentRouterTest is CreditFacilityBase {
         if (dt <= 30 days) assertEq(fee, 23_013);
     }
 
+    /// @dev No overflow for any APR and principal up to 1e12 (1,000,000 USDC) over up to 10 years: the fee is
+    ///      the exact floored formula and never above `principal * aprBps * 10 / 10_000`.
+    function testFuzz_feeOf_noOverflow(uint256 principal, uint16 aprBps, uint64 dt) public view {
+        principal = bound(principal, 0, 1e12);
+        dt = uint64(bound(dt, 0, 10 * 365 days));
+        uint64 t0 = uint64(block.timestamp);
+        uint256 fee = router.feeOf(principal, aprBps, t0, t0 + dt);
+        uint256 elapsed = dt < 30 days ? 30 days : dt;
+        assertEq(fee, principal * aprBps * elapsed / (365 days * 10_000));
+        assertLe(fee, principal * aprBps * 10 / 10_000);
+    }
+
     function testFuzz_repay_neverPaysSellerWhileLendersOwed(uint256 amount) public {
         amount = bound(amount, 1, 3 * AMOUNT);
         _fund(id);

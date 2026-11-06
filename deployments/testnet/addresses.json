@@ -3,6 +3,9 @@
   "kyaRegistry": "0xE51950be227c5A31B603e1343cD53e813C593f39",
   "receivableRegistry": "0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b",
   "usdc": "0x0000000000000000000000000000000000068cDa",
+  "deployer": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
   "deployedAt": "2026-11-06T12:00:14.512Z",
-  "deployer": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e"
+  "rcn": "0x54a665d52E2e79bA3Ec46b20f8c2cfE950C9A0ce",
+  "creditFacility": "0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640",
+  "repaymentRouter": "0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7"
 }

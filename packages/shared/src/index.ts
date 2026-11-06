@@ -3,7 +3,15 @@ export type { DemoAccount, Env, LoadEnvOptions } from "./env.js";
 export { ERROR_CODES, isErrorCode } from "./errors.js";
 export type { ErrorCode } from "./errors.js";
 export { hashscan } from "./hashscan.js";
-export { KYARegistryAbi, ReceivableRegistryAbi } from "./abis/index.js";
+export {
+  CashEthOrderBuilderAbi,
+  CashEthSwapVMRouterAbi,
+  CreditFacilityAbi,
+  KYARegistryAbi,
+  ReceivableCreditNoteAbi,
+  ReceivableRegistryAbi,
+  RepaymentRouterAbi,
+} from "./abis/index.js";
 export { ADDRESSES_PATH, AddressesSchema, loadAddresses } from "./addresses.js";
 export type { Addresses } from "./addresses.js";
 export {

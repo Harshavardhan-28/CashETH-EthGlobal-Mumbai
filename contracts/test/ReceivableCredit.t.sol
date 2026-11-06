@@ -3,10 +3,6 @@ pragma solidity 0.8.30;
 
 import { Test } from "forge-std/Test.sol";
 import { AquaRouter } from "@1inch/aqua/contracts/AquaRouter.sol";
-import { Simulator } from "@1inch/solidity-utils/contracts/mixins/Simulator.sol";
-import { SwapVM } from "@1inch/swap-vm/contracts/SwapVM.sol";
-import { AquaOpcodes } from "@1inch/swap-vm/contracts/opcodes/AquaOpcodes.sol";
-import { Context } from "@1inch/swap-vm/contracts/libs/VM.sol";
 import { ISwapVM } from "@1inch/swap-vm/contracts/interfaces/ISwapVM.sol";
 import { MakerTraitsLib } from "@1inch/swap-vm/contracts/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "@1inch/swap-vm/contracts/libs/TakerTraits.sol";
@@ -19,40 +15,8 @@ import { IReceivableRegistry } from "../src/core/interfaces/IReceivableRegistry.
 import { ReceivableCreditNote } from "../src/core/ReceivableCreditNote.sol";
 import { CashEthTraits } from "../src/core/libs/CashEthTraits.sol";
 import { ReceivableCredit } from "../src/aqua/ReceivableCredit.sol";
+import { CashEthSwapVMRouter } from "../src/aqua/CashEthSwapVMRouter.sol";
 import { MockUSDC } from "./mocks/MockUSDC.sol";
-
-/// @notice Preview of Task 4.2's router: the unmodified Aqua opcode set plus `ReceivableCredit`.
-contract TestCreditRouter is Simulator, SwapVM, AquaOpcodes {
-    IReceivableRegistry public immutable REGISTRY;
-    IKYARegistry public immutable KYA;
-    address public immutable FACILITY;
-
-    constructor(
-        address aqua,
-        address weth,
-        address owner,
-        IReceivableRegistry registry,
-        IKYARegistry kya,
-        address facility
-    ) SwapVM(aqua, weth, owner, "CashETH SwapVM", "1.0.0") {
-        REGISTRY = registry;
-        KYA = kya;
-        FACILITY = facility;
-    }
-
-    function exposure(address maker, address buyer) external view returns (uint256) {
-        return ReceivableCredit.store().exposure[maker][buyer];
-    }
-
-    function _runOpcode(Context memory ctx, uint256 opcode, bytes calldata args) internal override {
-        if (opcode == ReceivableCredit.opcode.asU8()) ReceivableCredit.exec(ctx, args, REGISTRY, KYA, FACILITY);
-        else super._runOpcode(ctx, opcode, args);
-    }
-
-    function _dispatch(Context memory ctx, uint256 opcode, bytes calldata args) internal override {
-        _runOpcode(ctx, opcode, args);
-    }
-}
 
 /// @notice Stands in for the CreditFacility: the only allowed taker, holds RCN, records `onCreditFill`.
 contract MockFacilityTaker {
@@ -124,7 +88,7 @@ contract ReceivableCreditTest is Test {
     ReceivableCreditNote internal rcn;
     MockUSDC internal usdc;
     MockFacilityTaker internal facility;
-    TestCreditRouter internal router;
+    CashEthSwapVMRouter internal router;
 
     uint256 internal buyerPk = 0xB0B;
     uint256 internal sellerPk = 0x5E11E4;
@@ -153,8 +117,8 @@ contract ReceivableCreditTest is Test {
         registry = new ReceivableRegistry(IKYARegistry(address(kya)), address(usdc), owner);
         rcn = new ReceivableCreditNote(owner);
         facility = new MockFacilityTaker(rcn);
-        router = new TestCreditRouter(
-            address(aqua), WETH, owner, IReceivableRegistry(address(registry)), IKYARegistry(address(kya)), address(facility)
+        router = new CashEthSwapVMRouter(
+            address(aqua), WETH, owner, "CashETH SwapVM", "1.0.0", address(registry), address(kya), address(facility)
         );
         facility.setRouter(ISwapVM(address(router)));
 

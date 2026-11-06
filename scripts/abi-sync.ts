@@ -13,8 +13,16 @@ const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const OUT = `${ROOT}contracts/out`;
 const DEST = `${ROOT}packages/shared/src/abis`;
 
-/** Later tasks append names here (e.g. CreditFacility, RepaymentRouter). */
-const CONTRACTS = ["KYARegistry", "ReceivableRegistry"] as const;
+/** Later tasks append names here. */
+const CONTRACTS = [
+  "KYARegistry",
+  "ReceivableRegistry",
+  "ReceivableCreditNote",
+  "CreditFacility",
+  "RepaymentRouter",
+  "CashEthSwapVMRouter",
+  "CashEthOrderBuilder",
+] as const;
 
 mkdirSync(DEST, { recursive: true });
 const synced: string[] = [];

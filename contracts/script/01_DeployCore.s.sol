@@ -7,8 +7,8 @@ import { KYARegistry } from "../src/core/KYARegistry.sol";
 import { IKYARegistry } from "../src/core/interfaces/IKYARegistry.sol";
 import { ReceivableRegistry } from "../src/core/ReceivableRegistry.sol";
 
-/// @notice Core deployment: KYARegistry and ReceivableRegistry (Task 3.6 extends this with the facility,
-///         router and wiring). Nothing is wired here: both `wire` calls are one-time.
+/// @notice Core deployment: KYARegistry and ReceivableRegistry (`02_DeployFacility.s.sol` adds RCN, the facility,
+///         the repayment router and the registry wiring). Nothing is wired here: both `wire` calls are one-time.
 ///
 ///   cd contracts && forge script script/01_DeployCore.s.sol --rpc-url testnet \
 ///     --private-key $HEDERA_OPERATOR_KEY --broadcast --legacy --slow --skip-simulation \

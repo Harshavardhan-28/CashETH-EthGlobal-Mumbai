@@ -1,0 +1,107 @@
+{
+  "network": "testnet",
+  "chainId": 296,
+  "deployer": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+  "coordinator": "0x45fDF15ed9c6327DEb0E57db6B78f592b254aB68",
+  "kyaRegistry": "0xE51950be227c5A31B603e1343cD53e813C593f39",
+  "receivableRegistry": "0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b",
+  "usdc": "0x0000000000000000000000000000000000068cDa",
+  "rcn": {
+    "address": "0x54a665d52E2e79bA3Ec46b20f8c2cfE950C9A0ce",
+    "contractId": "0.0.11339718",
+    "tx": {
+      "hash": "0xfd0c433074a2a4a0eb877adc3b0cf978d9ea899d7a12f6b44549f68ec4306033",
+      "transactionId": "0.0.7314364@1793971488.122320980",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793971488.122320980"
+    },
+    "gas": {
+      "limit": 1123369,
+      "used": 808696,
+      "consumed": 808696
+    }
+  },
+  "creditFacility": {
+    "address": "0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640",
+    "contractId": "0.0.11339720",
+    "tx": {
+      "hash": "0x46d3fb3e2255655e066203474ae6ff48a2e50922370e4a490edc4e250005dcf7",
+      "transactionId": "0.0.7314364@1793971495.452167794",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793971495.452167794"
+    },
+    "gas": {
+      "limit": 5932573,
+      "used": 4226858,
+      "consumed": 4226858
+    }
+  },
+  "repaymentRouter": {
+    "address": "0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7",
+    "contractId": "0.0.11339725",
+    "tx": {
+      "hash": "0x31a99f75de768ebcf56280354b6a2d8a83ab78236b9a412f7fe73f46e5a64007",
+      "transactionId": "0.0.7314364@1793971507.280224870",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793971507.280224870"
+    },
+    "gas": {
+      "limit": 2557817,
+      "used": 1864935,
+      "consumed": 1864935
+    }
+  },
+  "funding": {
+    "label": "fund CreditFacility with 20 HBAR via receive()",
+    "hash": "0xda2284c281a95981fa13cdd783310db086d8726c574ff50fce41e87f861af647",
+    "transactionId": "0.0.7314364@1793971542.575088301",
+    "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793971542.575088301",
+    "gas": {
+      "limit": 62300,
+      "used": 21062,
+      "consumed": 21062
+    }
+  },
+  "wireRegistry": {
+    "label": "ReceivableRegistry.wire(facility, repaymentRouter)",
+    "hash": "0xc6e7da7d28464facb91f72fa9732d15ea9f0027e36491b6423beecd8eefd5e5f",
+    "transactionId": "0.0.7314364@1793971547.693584156",
+    "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793971547.693584156",
+    "gas": {
+      "limit": 150000,
+      "used": 68845,
+      "consumed": 68845
+    }
+  },
+  "wireKya": {
+    "label": "KYARegistry.wire(repaymentRouter, facility)",
+    "hash": "0x40f45da5ed9fe48a473b5c2aef04999ae513bb06acd00e9852b85709c9eb71fc",
+    "transactionId": "0.0.7314364@1793971571.194228108",
+    "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793971571.194228108",
+    "gas": {
+      "limit": 150000,
+      "used": 68743,
+      "consumed": 68743
+    }
+  },
+  "verified": {
+    "registry.facility()": "0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640",
+    "registry.repaymentRouter()": "0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7",
+    "kya.repaymentRouter()": "0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7",
+    "kya.facility()": "0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640",
+    "facility.REGISTRY()": "0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b",
+    "facility.KYA()": "0xE51950be227c5A31B603e1343cD53e813C593f39",
+    "facility.RCN()": "0x54a665d52E2e79bA3Ec46b20f8c2cfE950C9A0ce",
+    "facility.USDC()": "0x0000000000000000000000000000000000068cDa",
+    "facility.COORDINATOR()": "0x45fDF15ed9c6327DEb0E57db6B78f592b254aB68",
+    "facility.owner()": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+    "facility.swapRouter() (Task 4.3)": "0x0000000000000000000000000000000000000000",
+    "router.REGISTRY()": "0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b",
+    "router.KYA()": "0xE51950be227c5A31B603e1343cD53e813C593f39",
+    "router.FACILITY()": "0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640",
+    "router.RCN()": "0x54a665d52E2e79bA3Ec46b20f8c2cfE950C9A0ce",
+    "router.USDC()": "0x0000000000000000000000000000000000068cDa",
+    "rcn.owner()": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+    "rcn.facility() (Task 4.3)": "0x0000000000000000000000000000000000000000",
+    "facility HBAR": "20",
+    "facility USDC association": "0.0.11339720 <-> 0.0.429274",
+    "router USDC association": "0.0.11339725 <-> 0.0.429274"
+  }
+}

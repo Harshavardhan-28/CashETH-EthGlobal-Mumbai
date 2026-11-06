@@ -1,0 +1,602 @@
+[
+  {
+    "type": "function",
+    "name": "buildBaseYieldOrder",
+    "inputs": [
+      {
+        "name": "maker",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "usdc",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "tUsdt",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "feeBps",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "salt",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "order",
+        "type": "tuple",
+        "internalType": "struct ISwapVM.Order",
+        "components": [
+          {
+            "name": "maker",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "traits",
+            "type": "uint256",
+            "internalType": "MakerTraits"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "strategy",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "buildLenderOrder",
+    "inputs": [
+      {
+        "name": "maker",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "rcn",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "usdc",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "a",
+        "type": "tuple",
+        "internalType": "struct ReceivableCredit.Args",
+        "components": [
+          {
+            "name": "maxTenorDays",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "maxAdvanceBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "minBuyerOnTime",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "maxPerBuyer",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "aprBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "minSellerOnTime",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "maxSellerDefaults",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "minReserve",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "sellerSet",
+            "type": "address[]",
+            "internalType": "address[]"
+          }
+        ]
+      },
+      {
+        "name": "salt",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "order",
+        "type": "tuple",
+        "internalType": "struct ISwapVM.Order",
+        "components": [
+          {
+            "name": "maker",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "traits",
+            "type": "uint256",
+            "internalType": "MakerTraits"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "strategy",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "decodeBaseYieldOrder",
+    "inputs": [
+      {
+        "name": "order",
+        "type": "tuple",
+        "internalType": "struct ISwapVM.Order",
+        "components": [
+          {
+            "name": "maker",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "traits",
+            "type": "uint256",
+            "internalType": "MakerTraits"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "feeBps",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "salt",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "tokenA",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "tokenB",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "decodeLenderOrder",
+    "inputs": [
+      {
+        "name": "order",
+        "type": "tuple",
+        "internalType": "struct ISwapVM.Order",
+        "components": [
+          {
+            "name": "maker",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "traits",
+            "type": "uint256",
+            "internalType": "MakerTraits"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "a",
+        "type": "tuple",
+        "internalType": "struct ReceivableCredit.Args",
+        "components": [
+          {
+            "name": "maxTenorDays",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "maxAdvanceBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "minBuyerOnTime",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "maxPerBuyer",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "aprBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "minSellerOnTime",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "maxSellerDefaults",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "minReserve",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "sellerSet",
+            "type": "address[]",
+            "internalType": "address[]"
+          }
+        ]
+      },
+      {
+        "name": "salt",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "tokenA",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "tokenB",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "strategyHash",
+    "inputs": [
+      {
+        "name": "order",
+        "type": "tuple",
+        "internalType": "struct ISwapVM.Order",
+        "components": [
+          {
+            "name": "maker",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "traits",
+            "type": "uint256",
+            "internalType": "MakerTraits"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "takerData",
+    "inputs": [
+      {
+        "name": "facility",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "rcn",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "usdc",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "id",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "advanceBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "error",
+    "name": "FeeBpsOutOfRange",
+    "inputs": [
+      {
+        "name": "feeBps",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "FeeOutOfRange",
+    "inputs": [
+      {
+        "name": "feeBps",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InstructionBuilderArgsLengthExceeded",
+    "inputs": [
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidArgsLength",
+    "inputs": [
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MakerTraitsMissingHasPostTransferInFlag",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MakerTraitsMissingHasPostTransferOutFlag",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MakerTraitsMissingHasPreTransferInFlag",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MakerTraitsMissingHasPreTransferOutFlag",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MakerTraitsPermit2IsIncompatibleWithAqua",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MakerTraitsTokensNotSorted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MemoryPtrAllocTooMuch",
+    "inputs": [
+      {
+        "name": "size",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MemoryPtrBaseMismatch",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "MemoryPtr"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "MemoryPtr"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MemoryPtrSkipTooMuch",
+    "inputs": [
+      {
+        "name": "size",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MemoryPtrStrictResolveFailed",
+    "inputs": [
+      {
+        "name": "end",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "current",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MemoryPtrWriteOutOfBounds",
+    "inputs": [
+      {
+        "name": "end",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "current",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotBaseYieldOrder",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotLenderOrder",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeCastOverflowedUintDowncast",
+    "inputs": [
+      {
+        "name": "bits",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "value",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "TakerTraitsMissingHasPreTransferInFlag",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TakerTraitsMissingHasPreTransferOutFlag",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TakerTraitsThresholdLengthInvalid",
+    "inputs": [
+      {
+        "name": "threshold",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "TooManySellers",
+    "inputs": [
+      {
+        "name": "count",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  }
+]
