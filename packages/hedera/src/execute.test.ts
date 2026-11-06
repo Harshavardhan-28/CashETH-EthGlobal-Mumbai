@@ -37,6 +37,24 @@ describe("executeForReceipt", () => {
     expect(result.txId).toBe(txId.toString());
   });
 
+  it("throws naming the status when the duplicate-transaction fallback fetches a failed receipt", async () => {
+    const tx = {
+      execute: async () => {
+        throw precheck(Status.DuplicateTransaction);
+      },
+    };
+    const failed = { status: Status.InvalidTopicId, topicSequenceNumber: null };
+    await expect(executeForReceipt(client, tx as never, async () => failed as never)).rejects.toThrow(
+      /INVALID_TOPIC_ID/,
+    );
+  });
+
+  it("throws naming the status when the normal path's receipt is not SUCCESS", async () => {
+    const failed = { status: Status.TokenHasNoSupplyKey };
+    const tx = { execute: async () => ({ transactionId: txId, getReceipt: async () => failed }) };
+    await expect(executeForReceipt(client, tx as never)).rejects.toThrow(/TOKEN_HAS_NO_SUPPLY_KEY/);
+  });
+
   it("rethrows other precheck failures", async () => {
     const tx = {
       execute: async () => {

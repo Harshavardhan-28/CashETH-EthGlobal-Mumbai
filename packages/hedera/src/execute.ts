@@ -32,12 +32,26 @@ export async function executeForReceipt(
   tx: Executable,
   fetchReceipt: FetchReceipt = queryReceipt,
 ): Promise<{ receipt: TransactionReceipt; txId: string }> {
+  let result: { receipt: TransactionReceipt; txId: string };
   try {
     const response = await tx.execute(client);
-    return { receipt: await response.getReceipt(client), txId: response.transactionId.toString() };
+    result = { receipt: await response.getReceipt(client), txId: response.transactionId.toString() };
   } catch (error) {
     const txId = duplicateTxId(error);
     if (!txId) throw error;
-    return { receipt: await fetchReceipt(client, txId), txId: txId.toString() };
+    result = { receipt: await fetchReceipt(client, txId), txId: txId.toString() };
+  }
+  assertSuccess(result.receipt, result.txId);
+  return result;
+}
+
+/**
+ * Fails closed: callers read ids and sequence numbers off the receipt, and a Long zero is truthy,
+ * so a non-SUCCESS receipt must never get that far. Compared by name to tolerate two SDK copies.
+ */
+function assertSuccess(receipt: TransactionReceipt, txId: string): void {
+  const status = receipt.status?.toString();
+  if (status !== "SUCCESS") {
+    throw new Error(`Transaction ${txId} reached consensus with status ${status ?? "UNKNOWN"}, not SUCCESS`);
   }
 }
