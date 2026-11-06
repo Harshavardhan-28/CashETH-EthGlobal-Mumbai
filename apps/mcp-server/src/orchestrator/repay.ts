@@ -1,7 +1,7 @@
 /**
  * Buyer repayment: approve exactly `amount` USDC to the RepaymentRouter, then `repay(id, amount)`. Both
- * transactions are the buyer's; the server sends them only when it holds the buyer key (`AGENT_KEYS_IN_PROCESS`,
- * demo), otherwise it returns the two calldatas in order.
+ * transactions are the buyer's; the server sends them only when it holds the buyer key (`AGENT_KEYS_IN_PROCESS`
+ * `true` or naming `buyer`, demo), otherwise it returns the two calldatas in order for the buyer's wallet.
  */
 import { RepaymentRouterAbi } from "@casheth/shared";
 import { encodeFunctionData, erc20Abi } from "viem";

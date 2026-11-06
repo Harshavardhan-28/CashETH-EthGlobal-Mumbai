@@ -148,14 +148,23 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
       .join("");
     const action = escapeHtml(new URL("/authorize", this.deps.issuer).href);
     const agents = (await this.deps.kya.listAgents()).filter((a) => ROLE_NAMES[a.role] !== undefined).sort((x, y) => x.role - y.role);
-    const rows = agents
-      .map(
-        (a) =>
-          `<li><form method="post" action="${action}">${fields}<input type="hidden" name="agent" value="${a.address}">` +
-          `<button type="submit">Act as ${ROLE_NAMES[a.role]}</button> <code>${a.address}</code> (KYA level ${a.level}: ` +
-          `${escapeHtml(scopesForRole(a.role, a.level).join(" ") || "no scopes")})</form></li>`,
-      )
-      .join("");
+    // A client that pins its scopes (Claude Code `oauth.scopes`, one MCP server name per role) names its role through
+    // them: the agents that can hold every requested scope come first and the first one has the focus.
+    const requested = params.scopes ?? [];
+    const covers = (a: (typeof agents)[number]) => {
+      const allowed = scopesForRole(a.role, a.level);
+      return requested.length > 0 && requested.every((s) => allowed.includes(s));
+    };
+    const row = (a: (typeof agents)[number], focus: boolean) =>
+      `<li><form method="post" action="${action}">${fields}<input type="hidden" name="agent" value="${a.address}">` +
+      `<button type="submit"${focus ? " autofocus" : ""}>Act as ${ROLE_NAMES[a.role]}</button> <code>${a.address}</code> (KYA level ${a.level}: ` +
+      `${escapeHtml(scopesForRole(a.role, a.level).join(" ") || "no scopes")})</form></li>`;
+    const matching = agents.filter(covers);
+    const others = agents.filter((a) => !covers(a));
+    const rows = matching.length
+      ? `<li><strong>Matches the requested scopes</strong><ul>${matching.map((a, i) => row(a, i === 0)).join("")}</ul></li>` +
+        (others.length ? `<li>Other demo agents<ul>${others.map((a) => row(a, false)).join("")}</ul></li>` : "")
+      : agents.map((a) => row(a, false)).join("");
     res
       .status(200)
       .set({ "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'" })

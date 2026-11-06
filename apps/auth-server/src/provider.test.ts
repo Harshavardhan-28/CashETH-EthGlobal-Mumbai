@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { type AccessTokenClaims, signAgentAssertion } from "@casheth/shared";
+import { type AccessTokenClaims, scopesForRole, signAgentAssertion } from "@casheth/shared";
 import type { Application } from "express";
 import { createLocalJWKSet, jwtVerify, type JSONWebKeySet } from "jose";
 import request from "supertest";
@@ -156,6 +156,35 @@ describe("auth code + PKCE (demo grant page)", () => {
       expect(page.text).toContain(`Act as ${role}`);
       expect(page.text).toContain(agents[i]!.address);
     }
+  });
+
+  it("pre-selects the agents whose role covers the requested scopes (one MCP server name per role in Claude Code)", async () => {
+    const { app, kya } = await testApp(DEMO_GRANT);
+    const seller = newAgent(1, 2, {}, kya);
+    const buyer = newAgent(2, 3, {}, kya);
+    const clientId = await registerClient(app);
+
+    const buyerScopes = scopesForRole(2, 3).join(" ");
+    const page = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge, { scope: buyerScopes })).expect(200);
+    const buyerRow = page.text.indexOf(buyer.address);
+    expect(buyerRow).toBeGreaterThan(-1);
+    expect(buyerRow).toBeLessThan(page.text.indexOf(seller.address));
+    expect(page.text.match(/autofocus/g)).toHaveLength(1);
+    const autofocusAt = page.text.indexOf("autofocus");
+    expect(autofocusAt).toBeLessThan(page.text.indexOf(seller.address));
+    expect(page.text).toContain("Matches the requested scopes");
+    expect(page.text).toContain("Other demo agents");
+  });
+
+  it("lists every agent without a pre-selection when no scope is requested", async () => {
+    const { app, kya } = await testApp(DEMO_GRANT);
+    newAgent(1, 2, {}, kya);
+    newAgent(2, 3, {}, kya);
+    const clientId = await registerClient(app);
+
+    const page = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge)).expect(200);
+    expect(page.text).not.toContain("autofocus");
+    expect(page.text).not.toContain("Matches the requested scopes");
   });
 
   it("issues a rotating refresh token bound to the client, the agent and the granted scopes", async () => {

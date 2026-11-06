@@ -302,7 +302,7 @@ undrawn USDC left in the facility goes to the seller agent when the facility clo
 
 ### 4.5 Identity
 
-Every agent has an ECDSA key, a Hedera account, an HCS-14 UAID (published as `AgentRegistered` on the audit topic) and a `KYARegistry` entry (role, level, owner group, mandate hash). The MCP server is an OAuth 2.1 resource server: an agent proves itself to `apps/auth-server` with an ES256K-signed JWT (RFC 7523), the authorization server checks the registry, and issues a short-lived, audience-bound token whose scopes depend on role and level. Tokens are never passed through to other services. The assertion's UAID must be the one the registry holds for the agent's address. Details and all 20 tools: [docs/API.md](docs/API.md).
+Every agent has an ECDSA key, a Hedera account, an HCS-14 UAID (published as `AgentRegistered` on the audit topic) and a `KYARegistry` entry (role, level, owner group, mandate hash). The MCP server is an OAuth 2.1 resource server: an agent proves itself to `apps/auth-server` with an ES256K-signed JWT (RFC 7523), the authorization server checks the registry, and issues a short-lived, audience-bound token whose scopes depend on role and level. Tokens are never passed through to other services. The assertion's UAID must be the one the registry holds for the agent's address. Details and all 21 tools: [docs/API.md](docs/API.md).
 
 Configuration: the authorization and MCP servers bind to `HOST` (default `127.0.0.1`). `AUTH_DEMO_GRANT=true` adds a demo authorization-code + PKCE grant for human MCP clients such as Claude Code ([docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md)): a consent page where you pick a demo role (seller, buyer, worker, lender) and get that agent's scopes, never `agent:admin`. The demo grant exists for the judges' walkthrough and has no owner login, so anyone who reaches the page can act as any demo agent: it is off by default and must never be enabled on a public host. `agent:admin` (`register_agent`) is only granted through JWT-bearer to the configured KYA issuer (`KYA_ISSUER_EVM`).
 
@@ -326,7 +326,7 @@ Registered from an invoice PDF (PO-1003): [0.0.7314364@1793989261.174955397](htt
 | --- | --- | --- |
 | Scripted agents | `agents/` seller, buyer, worker, lender, trader and the demo runner (`pnpm demo`) | [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) |
 | LLM agents | A language model chooses the MCP tools; an agent wrapper enforces a client-side spend cap. Local Ollama by default (no API key), Claude optional. | [docs/LLM_AGENTS.md](docs/LLM_AGENTS.md) |
-| Claude Code as a client | Claude Code connects as a remote MCP client (`.mcp.json`, OAuth with PKCE through the demo grant) and buys the research report as the research worker | [docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md) |
+| Claude Code as the agent | Claude Code runs the whole lifecycle through MCP (`/casheth-demo`): one OAuth-authenticated server name per role (`casheth-seller`, `-buyer`, `-worker`) plus a local stdio wallet (`wallet-mcp/`) that signs as the buyer, so the confirmation and the repayment are non-custodial | [docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md) |
 
 All three use the same 20 MCP tools and the same on-chain checks. The model never approves credit: the score is deterministic and `explain_decision` only explains it.
 
@@ -396,6 +396,7 @@ Spike S1 evidence that Aqua and SwapVM run on Hedera with real HTS USDC: [ship](
 | `apps/auth-server` | OAuth 2.1 authorization server with KYA checks |
 | `apps/mcp-server` | MCP tools (20), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`) |
 | `agents/` | `AgentClient` and the seller, buyer, worker, lender and trader agents; Hedera Agent Kit wrapper; demo runner |
+| `wallet-mcp/` | Local stdio MCP wallet for Claude Code: buyer confirmation signing, allowlisted calldata sending ([docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md)) |
 | `scripts/` | Account setup, deploy and wiring drivers (`c2` to `c5`), spikes, sweep, ABI sync |
 | `deployments/testnet/` | Addresses and run records |
 | `docs/` | `EVIDENCE.md`, `API.md`, `DEMO_SCRIPT.md`, `LLM_AGENTS.md`, `CLAUDE_CODE_DEMO.md` |

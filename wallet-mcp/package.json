@@ -1,0 +1,29 @@
+{
+  "name": "@casheth/wallet-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local stdio MCP server that holds the demo agents' keys for Claude Code: signs the buyer's receivable confirmation and sends allowlisted CashETH calldata.",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@1inch/aqua-sdk": "0.4.0",
+    "@casheth/agents": "workspace:*",
+    "@casheth/hedera": "workspace:*",
+    "@casheth/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "viem": "^2.57.16",
+    "zod": "^4.6.7"
+  }
+}

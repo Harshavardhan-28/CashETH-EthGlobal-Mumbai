@@ -10,7 +10,7 @@ import { z } from "zod";
 import { callerFrom, InsufficientScopeError, requireRoleAndScope, type RoleName } from "./auth.js";
 import { registerAgent } from "./orchestrator/agents.js";
 import { jsonSafe } from "./orchestrator/audit.js";
-import { addr } from "./orchestrator/common.js";
+import { addr, ROLE_NAMES } from "./orchestrator/common.js";
 import { ToolError } from "./orchestrator/errors.js";
 import { explainDecision } from "./orchestrator/explain.js";
 import { getQuotes, openFacility, setBudgets } from "./orchestrator/facility.js";
@@ -351,6 +351,16 @@ export function registerTools(server: McpServer, o: Orchestrator): void {
     mutating: false,
     input: { address: address.optional() },
     run: (o, c, a) => o.stats.agentStats(a.address ? addr(a.address, "address") : c.agent),
+  });
+
+  add({
+    name: "whoami",
+    description: "Any role: the caller's own identity (address, role, KYA level, scopes) from its token. Instant: no chain reads, unlike get_agent_stats.",
+    roles: "any",
+    scope: "stats:read",
+    mutating: false,
+    input: {},
+    run: async (_o, c) => ({ address: c.agent, role: ROLE_NAMES[c.role as keyof typeof ROLE_NAMES] ?? "unknown", level: c.level, scopes: c.scopes }),
   });
 
   add({

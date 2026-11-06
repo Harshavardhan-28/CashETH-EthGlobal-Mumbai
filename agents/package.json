@@ -29,6 +29,10 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "hedera-agent-kit": "3.8.2",
     "jose": "^6.2.15",
+    "pdf-lib": "1.17.1",
     "viem": "^2.57.16"
+  },
+  "devDependencies": {
+    "pdf-parse": "2.4.5"
   }
 }

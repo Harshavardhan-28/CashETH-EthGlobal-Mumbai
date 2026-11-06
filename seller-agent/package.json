@@ -1,0 +1,26 @@
+{
+  "name": "@casheth/seller-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "start": "tsx src/bin.ts"
+  },
+  "dependencies": {
+    "@casheth/agents": "workspace:*",
+    "@casheth/hedera": "workspace:*",
+    "@casheth/shared": "workspace:*",
+    "@langchain/core": "1.3.4",
+    "@langchain/langgraph": "1.7.0",
+    "@langchain/ollama": "1.3.0",
+    "viem": "^2.57.16",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "pdf-parse": "2.4.5"
+  }
+}

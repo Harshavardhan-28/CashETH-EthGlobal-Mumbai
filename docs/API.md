@@ -59,7 +59,7 @@ Tools also check that the caller is the right party (the seller of the receivabl
 
 ### Demo authorization-code grant (human MCP clients)
 
-`AUTH_DEMO_GRANT=true` makes the authorization server also serve the OAuth 2.1 authorization-code + PKCE (S256) grant for human-operated MCP clients such as Claude Code (walkthrough: [CLAUDE_CODE_DEMO.md](CLAUDE_CODE_DEMO.md)): dynamic client registration (`POST /register`), `GET|POST /authorize` with a consent page, the code exchange and rotating refresh tokens (8 h) at `/token`, and `authorization_endpoint` / `registration_endpoint` / `refresh_token` in the metadata. The consent page has one "Act as <role>" choice per registered demo agent (seller, buyer, worker, lender); the token carries that agent's scopes for its role and current KYA level (re-checked at every exchange and refresh), filtered to the requested ones, and never `agent:admin`. **The demo grant exists for the judges' walkthrough: there is no owner login, so anyone who can reach the page can act as any demo agent. It is off by default and must never be enabled on a public host.** With the flag off, `/register` and `/authorize` answer 404, `/token` accepts only the JWT-bearer grant (`unsupported_grant_type` otherwise) and the metadata advertises only that grant. Both servers bind to `HOST` (default `127.0.0.1`).
+`AUTH_DEMO_GRANT=true` makes the authorization server also serve the OAuth 2.1 authorization-code + PKCE (S256) grant for human-operated MCP clients such as Claude Code (walkthrough: [CLAUDE_CODE_DEMO.md](CLAUDE_CODE_DEMO.md)): dynamic client registration (`POST /register`), `GET|POST /authorize` with a consent page, the code exchange and rotating refresh tokens (8 h) at `/token`, and `authorization_endpoint` / `registration_endpoint` / `refresh_token` in the metadata. The consent page has one "Act as <role>" choice per registered demo agent (seller, buyer, worker, lender), and lists first, with the focus, the agents whose role covers every requested scope (the role-pinned `casheth-seller` / `-buyer` / `-worker` entries of `.mcp.json`); the token carries that agent's scopes for its role and current KYA level (re-checked at every exchange and refresh), filtered to the requested ones, and never `agent:admin`. **The demo grant exists for the judges' walkthrough: there is no owner login, so anyone who can reach the page can act as any demo agent. It is off by default and must never be enabled on a public host.** With the flag off, `/register` and `/authorize` answer 404, `/token` accepts only the JWT-bearer grant (`unsupported_grant_type` otherwise) and the metadata advertises only that grant. Both servers bind to `HOST` (default `127.0.0.1`).
 
 ---
 
@@ -100,7 +100,7 @@ Every mutating tool requires `idempotencyKey` (8–128 chars). The first success
 | `get_lender_yield` | lender | `stats:read` | no | – |
 | `close_strategy` | lender | `lend:write` | yes | Aqua `dock` (lender key) or calldata, `StrategyDocked` |
 
-**Who signs.** The server holds the coordinator, co-signer and KYA-issuer keys (`.env.accounts`). Agent keys stay with the agents: `set_budgets`, `repay_receivable`, `fund_agents` and `close_strategy` return `{ mode: "calldata", calls: [{ to, data, description }] }` for the agent to sign and send in order. Only for the demo, `AGENT_KEYS_IN_PROCESS=true` (seller, buyer, workers) and `LENDER_KEYS_IN_PROCESS=true` (lenders) let the server sign with the demo keys and return `{ mode: "sent" | "shipped", txHash, hashscan }`. `pay_x402` needs the worker's half of the 2-of-2 spend-wallet key, so it requires `AGENT_KEYS_IN_PROCESS=true` (else `KEY_NOT_HELD`).
+**Who signs.** The server holds the coordinator, co-signer and KYA-issuer keys (`.env.accounts`). Agent keys stay with the agents: `set_budgets`, `repay_receivable`, `fund_agents` and `close_strategy` return `{ mode: "calldata", calls: [{ to, data, description }] }` for the agent to sign and send in order. Only for the demo, `AGENT_KEYS_IN_PROCESS=true` (seller, buyer, workers) and `LENDER_KEYS_IN_PROCESS=true` (lenders) let the server sign with the demo keys and return `{ mode: "sent" | "shipped", txHash, hashscan }`; `AGENT_KEYS_IN_PROCESS` also takes a role list such as `seller,worker`, and a role left out gets calldata (the Claude Code walkthrough keeps the buyer non-custodial this way: it signs and repays through the local wallet MCP server, `wallet-mcp/`). `pay_x402` needs the worker's half of the 2-of-2 spend-wallet key, so it requires the `worker` role in `AGENT_KEYS_IN_PROCESS` (else `KEY_NOT_HELD`).
 
 Inputs below omit `idempotencyKey`, which every mutating tool also takes. `hex32` = `0x` + 64 hex chars; `units` = USDC base-unit decimal string.
 
@@ -169,6 +169,9 @@ Out: `{ id, mode: "calldata", calls: [approve(router, amount), repay(id, amount)
 
 ### `explain_decision`
 In: `{ id }`. Out: `{ id, decision, decisionSource: "event"|"recomputed", explanation, source: "anthropic"|"template", model? }`. With `ANTHROPIC_API_KEY` the explanation comes from `claude-haiku-5-5` given the decision JSON and the rule list with the system instruction "explain, never change"; otherwise (or on a model error/refusal) a templated explanation with `source: "template"`. The returned `decision` is always the engine's.
+
+### `whoami`
+Any role, scope `stats:read`. In: `{}`. Out: `{ address, role, level, scopes }` from the caller's token; no chain reads, so it answers instantly (use it to learn which account a connection acts as).
 
 ### `list_agents`, `get_agent_stats`
 In: `{}` / `{ address?: address }` (defaults to the caller). Out: `AgentStats[]` / `AgentStats` (section 4).
@@ -345,7 +348,7 @@ Authorization server (`apps/auth-server`): `AUTH_PORT` (`4020`), `AUTH_ISSUER` (
 | `HFS_ENABLED` | `false` | also store invoice documents on the Hedera File Service (operator pays; one create plus one append per 4 KB) |
 | `CASHETH_LLM_PROVIDER` | – (probe) | `ollama` forces the local model for invoice field extraction, any other value turns it off; unset uses it only if Ollama answers `GET /api/tags` |
 | `OLLAMA_BASE_URL`, `CASHETH_LLM_MODEL` | `http://localhost:11434`, `qwen2.5:7b` | Ollama OpenAI-compatible endpoint (`/v1/chat/completions`, JSON mode) |
-| `AGENT_KEYS_IN_PROCESS` | `false` | demo: sign as seller/buyer/workers |
+| `AGENT_KEYS_IN_PROCESS` | `false` | demo: sign as seller/buyer/workers (`true`), or only the listed roles (`seller,worker`); an unknown role stops the server at boot |
 | `LENDER_KEYS_IN_PROCESS` | `false` | demo: sign as lenders |
 | `AQUA_FROM_BLOCK` | swap router creation block | first block for Aqua log discovery |
 | `MERCHANT_ORIGINS` | – | extra `accountId=origin` pairs, comma-separated, on top of the demo merchant (`MERCHANT_ACCOUNT_ID=http://localhost:${MERCHANT_PORT:-3003}`, always admitted): the only origins `pay_x402` fetches, see [External x402 merchants](#external-x402-merchants) |

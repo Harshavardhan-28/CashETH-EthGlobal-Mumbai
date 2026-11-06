@@ -2,8 +2,8 @@ import { tierArgs } from "@casheth/aqua";
 import { AquaRouterAbi, CreditFacilityAbi, RepaymentRouterAbi, type Env } from "@casheth/shared";
 import { BaseError, decodeFunctionData, encodeErrorResult, erc20Abi, getAddress, keccak256, maxUint256, RawContractError, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
-import { merchantOrigins } from "./config.js";
-import { exactApprovalCall, fundCalldata, toToolError } from "./live.js";
+import { merchantOrigins, type AgentKeyRole, type McpConfig } from "./config.js";
+import { exactApprovalCall, fundCalldata, inProcessAllowed, toToolError } from "./live.js";
 import { enqueue } from "./orchestrator/queue.js";
 
 const CALL = { to: getAddress("0x00000000000000000000000000000000000000a3"), data: "0x" as Hex, description: "CreditFacility.reserve(...)" };
@@ -155,5 +155,22 @@ describe("fundCalldata (fund_agents without the lender key)", () => {
     expect(result.calls).toHaveLength(2);
     expect(decodeFunctionData({ abi: erc20Abi, data: result.calls[0]!.data }).args).toEqual([addrs.aqua, 5_000_000n]);
     expect(result.base).toBeUndefined();
+  });
+});
+
+describe("inProcessAllowed (which demo keys the server signs with)", () => {
+  const cfg = (agentKeyRoles: AgentKeyRole[], lenderKeysInProcess = false) => ({ agentKeyRoles, lenderKeysInProcess }) as unknown as McpConfig;
+
+  it("signs for a role only when AGENT_KEYS_IN_PROCESS names it", () => {
+    const sellerAndWorker = cfg(["seller", "worker"]);
+    expect(inProcessAllowed("SELLER", sellerAndWorker)).toBe(true);
+    expect(inProcessAllowed("WORKER_RESEARCH", sellerAndWorker)).toBe(true);
+    expect(inProcessAllowed("BUYER", sellerAndWorker)).toBe(false);
+  });
+
+  it("keeps lenders behind LENDER_KEYS_IN_PROCESS and never signs as server accounts", () => {
+    expect(inProcessAllowed("LENDER_A", cfg(["seller", "buyer", "worker"]))).toBe(false);
+    expect(inProcessAllowed("LENDER_A", cfg([], true))).toBe(true);
+    expect(inProcessAllowed("COORDINATOR", cfg(["seller", "buyer", "worker"], true))).toBe(false);
   });
 });

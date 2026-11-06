@@ -1,38 +1,38 @@
 /**
- * Generates `agents/fixtures/invoice-PO-1003.pdf`, the demo invoice the seller agent uploads. The PDF prints the
- * fields in `agents/src/fixtures.ts`. Run: `pnpm tsx scripts/make-invoice-fixture.ts`.
+ * Demo invoice PDFs.
+ *
+ *   pnpm tsx scripts/make-invoice-fixture.ts
+ *     regenerates `agents/fixtures/invoice-PO-1003.pdf`, the committed demo invoice (fields in `agents/src/fixtures.ts`).
+ *
+ *   pnpm -s tsx scripts/make-invoice-fixture.ts --buyer-ref PO-2001 [--amount 2.00] [--due YYYY-MM-DD] [--out file]
+ *     writes a fresh invoice (default `agents/data/invoices/invoice-<ref>.pdf`, gitignored; due in 30 days by default)
+ *     and prints JSON: the `upload_invoice_document` arguments (base64 content and `expected` terms) and the
+ *     `upload_receivable` terms that must match them (add `buyer` and the returned `documentKeccak`).
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { PDFDocument, StandardFonts } from "pdf-lib";
-import { INVOICE_PO_1003 as inv, INVOICE_PO_1003_PDF } from "../agents/src/fixtures.js";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
+import { INVOICE_PO_1003, INVOICE_PO_1003_PDF } from "../agents/src/fixtures.js";
+import { invoiceTerms, renderInvoicePdf, uploadArguments } from "./lib/invoice.js";
 
-const pdf = await PDFDocument.create();
-// Fixed dates keep the file reproducible.
-const EPOCH = new Date(Date.UTC(2026, 10, 6));
-pdf.setCreationDate(EPOCH);
-pdf.setModificationDate(EPOCH);
-pdf.setTitle(`Invoice ${inv.invoiceNumber}`);
-pdf.setProducer("CashETH demo fixture");
+const { values } = parseArgs({
+  options: { "buyer-ref": { type: "string" }, amount: { type: "string", default: "2.00" }, due: { type: "string" }, out: { type: "string" } },
+});
 
-const regular = await pdf.embedFont(StandardFonts.Helvetica);
-const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-const page = pdf.addPage([595, 842]);
+function write(file: string, bytes: Uint8Array): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, bytes);
+}
 
-page.drawText("INVOICE", { x: 56, y: 770, size: 26, font: bold });
-const lines = [
-  `Invoice No: ${inv.invoiceNumber}`,
-  `Seller: ${inv.sellerName}`,
-  `Buyer: ${inv.buyerName}`,
-  `Buyer PO Reference: ${inv.buyerRef}`,
-  `Currency: ${inv.currency}`,
-  `Amount Due: ${inv.currency} ${inv.amountPrinted}`,
-  `Due Date: ${inv.dueDate}`,
-  "Description: Research API credits (demo)",
-];
-lines.forEach((line, i) => page.drawText(line, { x: 56, y: 710 - i * 26, size: 13, font: regular }));
-page.drawText("Payable on Hedera testnet through the CashETH RepaymentRouter.", { x: 56, y: 470, size: 10, font: regular });
-
-mkdirSync(dirname(INVOICE_PO_1003_PDF), { recursive: true });
-writeFileSync(INVOICE_PO_1003_PDF, await pdf.save({ useObjectStreams: false }));
-console.log(`wrote ${INVOICE_PO_1003_PDF}`);
+const buyerRef = values["buyer-ref"];
+if (!buyerRef) {
+  write(INVOICE_PO_1003_PDF, await renderInvoicePdf(INVOICE_PO_1003));
+  console.log(`wrote ${INVOICE_PO_1003_PDF}`);
+} else {
+  const terms = invoiceTerms({ buyerRef, amount: values.amount, ...(values.due ? { due: values.due } : {}) });
+  const file = values.out ?? fileURLToPath(new URL(`../agents/data/invoices/invoice-${buyerRef}.pdf`, import.meta.url));
+  const pdf = await renderInvoicePdf(terms);
+  write(file, pdf);
+  console.log(JSON.stringify({ file, dueDate: terms.dueDate, ...uploadArguments(terms, pdf) }, null, 2));
+}
