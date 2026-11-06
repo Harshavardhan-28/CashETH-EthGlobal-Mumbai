@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Reveal } from "./Reveal";
 import styles from "./Sections.module.css";
 
+const FEEDBACK_URL = "https://github.com/Harshavardhan-28/CashETH-EthGlobal-Mumbai/issues/new?template=feedback.yml";
+
 export function Footer() {
   return (
     <footer className={styles.footer}>
@@ -33,6 +35,9 @@ export function Footer() {
             <img src="/CashETH.png" alt="" width={22} height={22} className={styles.logoLight} />
             CashETH
           </span>
+          <a href={FEEDBACK_URL} target="_blank" rel="noopener noreferrer" className={styles.feedback}>
+            Tried it? Give feedback →
+          </a>
           <span>Hedera testnet demo · not production credit</span>
         </div>
       </div>

@@ -121,6 +121,17 @@ describe("Footer", () => {
     expect(screen.getByRole("link", { name: /npm run demo/ })).toHaveAttribute("href", "/docs#quickstart");
   });
 
+  it("invites visitors to try it and send feedback through the issue form", () => {
+    render(<Footer />);
+    const link = screen.getByRole("link", { name: /Give feedback/ });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://github.com/Harshavardhan-28/CashETH-EthGlobal-Mumbai/issues/new?template=feedback.yml",
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+  });
+
   it("is honest that this is a testnet demo", () => {
     render(<Footer />);
     expect(screen.getByText("Hedera testnet demo · not production credit")).toBeInTheDocument();
