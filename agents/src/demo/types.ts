@@ -74,6 +74,8 @@ export interface DemoContext {
   resolveTx(ref: string): Promise<string>;
   /** Runs `scripts/c9-invoice-verify.ts` for the receivable against the running server; resolves with its output. */
   verifyInvoiceDocument(id: Hex): Promise<string>;
+  /** Unix seconds now. */
+  nowSeconds(): number;
   poll: PollOptions;
   /** What earlier steps produced for later ones. */
   state: { upload?: UploadResult };

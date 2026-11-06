@@ -115,6 +115,7 @@ export async function buildContext(env: Env, root: string, log: Log = consoleLog
         throw error;
       }
     },
+    nowSeconds: () => Math.floor(Date.now() / 1000),
     poll: { attempts: 8, delayMs: 3000 },
     state: {},
   };

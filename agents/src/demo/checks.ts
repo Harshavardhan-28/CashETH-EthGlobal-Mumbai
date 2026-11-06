@@ -3,7 +3,7 @@ import type { LenderStrategy } from "@casheth/aqua";
 import { formatUnits, type Address } from "viem";
 import type { Quotes } from "../seller.js";
 import { EXPECTED_FILLS } from "./plan.js";
-import type { AgentStats, LenderYield } from "./readApi.js";
+import type { AgentStats, AuditEvent, LenderYield } from "./readApi.js";
 import type { LenderKey } from "./types.js";
 
 export const formatUsdc = (units: bigint): string => formatUnits(units, 6);
@@ -80,6 +80,17 @@ export function checkQuotePlan(quotes: Quotes, makers: Record<LenderKey, Address
     throw new Error(`expected lender D skipped with SELLER_NOT_FUNDED_BY_LENDER, got ${reasonsD.join(", ")}`);
   }
   return `fills ${wanted} = ${formatUnits(BigInt(total), 6)}; C skipped (${reasonsC.join(", ")}); D skipped (${reasonsD.join(", ")})`;
+}
+
+/**
+ * The worker's latest reservation when it is expired and neither committed nor released: it still holds the spend
+ * wallet (`WALLET_BUSY`), and the worker may release it. Reads the server's events.
+ */
+export function expiredReservation(events: AuditEvent[], worker: string, nowSeconds: number): AuditEvent | undefined {
+  const reserved = [...events].reverse().find((e) => e.type === "SpendReserved" && e.worker?.toLowerCase() === worker.toLowerCase());
+  if (!reserved) return undefined;
+  const closed = events.some((e) => (e.type === "SpendCommitted" || e.type === "SpendReleased") && e.spendId === reserved.spendId);
+  return !closed && Number(reserved.expiry) <= nowSeconds ? reserved : undefined;
 }
 
 /** A plain-text table with left-aligned columns. */

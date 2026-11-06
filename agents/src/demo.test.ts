@@ -5,7 +5,7 @@ import type { Env } from "@casheth/shared";
 import { describe, expect, it } from "vitest";
 import { LENDER_TIERS, type LenderStrategy } from "@casheth/aqua";
 import { keccak256, toHex, type Address } from "viem";
-import { checkQuotePlan, findShippedStrategy, formatTable, formatUsdc, topUpShortfall } from "./demo/checks.js";
+import { checkQuotePlan, expiredReservation, findShippedStrategy, formatTable, formatUsdc, topUpShortfall } from "./demo/checks.js";
 import { appendEvidence, formatEvidenceSection, formatStepLine } from "./demo/evidence.js";
 import { loadIdentity } from "./demo/identity.js";
 import { appendEnvVar, ensureNotesTopic } from "./demo/notesTopic.js";
@@ -253,6 +253,23 @@ describe("findShippedStrategy", () => {
     expect(findShippedStrategy([openStrategy("A", seller, { kind: "base" })], planned)).toBeUndefined();
     const smallerCap = openStrategy("A", seller);
     expect(findShippedStrategy([{ ...smallerCap, args: { ...smallerCap.args!, maxPerBuyer: smallerCap.args!.maxPerBuyer - 1n } }], { ...planned, maxPerBuyer: smallerCap.args!.maxPerBuyer })).toBeUndefined();
+  });
+});
+
+describe("expiredReservation", () => {
+  const worker = "0x00000000000000000000000000000000000000E1";
+  const reserved = (spendId: string, expiry: string): AuditEvent => ({ type: "SpendReserved", seq: 1, worker: worker.toLowerCase(), spendId, expiry });
+
+  it("finds the worker's latest reservation when it expired without being committed or released", () => {
+    expect(expiredReservation([reserved("0x1", "100"), reserved("0x2", "200")], worker, 300)?.spendId).toBe("0x2");
+  });
+
+  it("ignores reservations that are still payable, committed, released or another worker's", () => {
+    expect(expiredReservation([reserved("0x1", "400")], worker, 300)).toBeUndefined();
+    expect(expiredReservation([reserved("0x1", "100"), { type: "SpendCommitted", seq: 2, spendId: "0x1" }], worker, 300)).toBeUndefined();
+    expect(expiredReservation([reserved("0x1", "100"), { type: "SpendReleased", seq: 2, spendId: "0x1" }], worker, 300)).toBeUndefined();
+    expect(expiredReservation([reserved("0x1", "100")], "0x00000000000000000000000000000000000000e2", 300)).toBeUndefined();
+    expect(expiredReservation([], worker, 300)).toBeUndefined();
   });
 });
 
@@ -523,6 +540,7 @@ function fakeContext() {
       spendWallet: researchAddress,
       kit: { note },
       agent: {
+        release: async (spendId: string) => (calls.push(`release ${spendId}`), { txHash: "0xrelease" }),
         buy: async (request: { amount?: bigint }) => {
           if (request.amount) return rejects(researchAddress)(request);
           calls.push("buy-research");
@@ -557,6 +575,7 @@ function fakeContext() {
       return "0.0.1@8.8";
     },
     resolveTx: async (ref: string) => `0.0.1@${ref}`,
+    nowSeconds: () => 2_000_000_000,
     verifyInvoiceDocument: async () => `receivable x\nVERIFIED: the file is exactly what the buyer signed\n`,
     poll: { attempts: 2, delayMs: 0, sleep: noSleep },
     state: {},
@@ -569,7 +588,7 @@ describe("the eight lifecycle steps against fake agents", () => {
     const { ctx, calls } = fakeContext();
     const results = await runSteps(STEPS, ctx);
 
-    expect(results.map((r) => r.label.split(".")[0])).toEqual(["1", "1", "1", "1", "2", "2", "2", "2", "2", "2", "3", "4", "5", "6", "7", "7", "7", "7", "8", "8", "9", "10"]);
+    expect(results.map((r) => r.label.split(".")[0])).toEqual(["1", "1", "1", "1", "2", "2", "2", "2", "2", "2", "3", "4", "5", "6", "7", "7", "7", "7", "7", "8", "8", "9", "10"]);
     expect(results.filter((r) => r.error)).toEqual([]);
     expect(exitCode(results)).toBe(0);
     expect(calls.filter((c) => !c.startsWith("top-up") && c !== "note")).toEqual(["ship-A", "ship-B", "upload", "upload-duplicate", "open", "budgets", "buy-research", "repay"]);
@@ -665,6 +684,19 @@ describe("the eight lifecycle steps against fake agents", () => {
     }) as never;
     const results = await runSteps(STEPS, ctx);
     expect(results.find((r) => r.label.startsWith("4."))).toMatchObject({ txId: "0.0.1@0xfund", note: expect.stringContaining("earlier run") });
+    expect(exitCode(results)).toBe(0);
+  });
+
+  it("releases the research worker's expired, unpaid reservation before buying, and skips when there is none", async () => {
+    const clean = fakeContext();
+    const cleanResults = await runSteps(STEPS, clean.ctx);
+    expect(cleanResults.find((r) => r.label.includes("releases an expired"))).toMatchObject({ skipped: true });
+
+    const { ctx, calls, events } = fakeContext();
+    events.push({ type: "SpendReserved", seq: 50, worker: ctx.research.address, spendId: "0xstale", expiry: "1000" });
+    const results = await runSteps(STEPS, ctx);
+    expect(calls.filter((c) => c.startsWith("release"))).toEqual(["release 0xstale"]);
+    expect(results.find((r) => r.label.includes("releases an expired"))).toMatchObject({ txId: "0.0.1@0xrelease" });
     expect(exitCode(results)).toBe(0);
   });
 

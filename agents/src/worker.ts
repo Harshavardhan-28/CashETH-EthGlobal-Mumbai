@@ -89,6 +89,11 @@ export function createWorkerAgent({ client, worker, spendWallet, catalogUrls, fe
   }
 
   return {
+    /** `release_spend`: returns an expired, unpaid reservation to the facility and frees the spend wallet; resolves with the transaction hash. */
+    async release(spendId: Hex): Promise<{ txHash: Hex }> {
+      return client.call<{ txHash: Hex }>("release_spend", { spendId, idempotencyKey: idempotencyKey("release", spendId) });
+    },
+
     async buy({ id, service, budgetHint, purchaseId, query = "", payUrl, amount }: PurchaseRequest): Promise<PurchaseOutcome> {
       const offer = await pickOffer(catalogUrls, service, fetchImpl);
       // `pay_x402` fetches with GET only: refuse before reserving anything.

@@ -8,7 +8,7 @@ import { keccak256, toHex, type Address, type Hex } from "viem";
 import { idempotencyKey as stableKey, ToolCallError } from "../mcpClient.js";
 import type { ShipOutcome } from "../lender.js";
 import type { PurchaseOutcome } from "../worker.js";
-import { checkQuotePlan, findShippedStrategy, formatAgentTable, formatLenderTable, formatUsdc, topUpShortfall } from "./checks.js";
+import { checkQuotePlan, expiredReservation, findShippedStrategy, formatAgentTable, formatLenderTable, formatUsdc, topUpShortfall } from "./checks.js";
 import { ADVANCE_BPS, BUDGETS, EXPECTED_PAYOUTS, EXPECTED_SELLER_PAYOUT, FRESH_LENDERS, INVOICE, PURCHASE_ATTEMPT, SPEND } from "./plan.js";
 import { poll } from "./poll.js";
 import { findEvent, type AuditEvent } from "./readApi.js";
@@ -248,6 +248,16 @@ const traderStep: Step = {
 
 // ---------------------------------------------------------------------------------------------------- 7. spend
 
+const releaseStaleReservationStep: Step = {
+  label: "7. research worker releases an expired, unpaid reservation (release_spend)",
+  async run(ctx) {
+    const stale = expiredReservation(await ctx.read.events(), ctx.research.address, ctx.nowSeconds());
+    if (!stale) return { skipped: true, note: "the spend wallet holds no expired reservation" };
+    const { txHash } = await ctx.research.agent.release(stale.spendId as Hex);
+    return { ...(await proofOfEvmTx(ctx, txHash)), note: `an earlier run reserved ${String(stale.spendId)} and never paid it; its USDC returned to the facility and the spend wallet is free` };
+  },
+};
+
 const researchPurchaseStep: Step = {
   label: `7. research worker buys /research for ${formatUsdc(SPEND.researchPrice)} USDC (reserve, x402, commit)`,
   async run(ctx) {
@@ -371,6 +381,7 @@ export const STEPS: Step[] = [
   openFacilityStep,
   budgetsStep,
   traderStep,
+  releaseStaleReservationStep,
   researchPurchaseStep,
   workerNoteStep,
   researchOverLimitStep,
