@@ -13,7 +13,7 @@ const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const OUT = `${ROOT}contracts/out`;
 const DEST = `${ROOT}packages/shared/src/abis`;
 
-/** Later tasks append names here. */
+/** Later tasks append names here (e.g. CreditFacility, RepaymentRouter). */
 const CONTRACTS = [
   "KYARegistry",
   "ReceivableRegistry",
@@ -22,6 +22,8 @@ const CONTRACTS = [
   "RepaymentRouter",
   "CashEthSwapVMRouter",
   "CashEthOrderBuilder",
+  // From the aqua submodule (lib/aqua/contracts/AquaRouter.sol), compiled into the same out/ tree.
+  "AquaRouter",
 ] as const;
 
 mkdirSync(DEST, { recursive: true });

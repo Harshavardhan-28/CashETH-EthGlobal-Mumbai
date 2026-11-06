@@ -4,6 +4,7 @@ export { ERROR_CODES, isErrorCode } from "./errors.js";
 export type { ErrorCode } from "./errors.js";
 export { hashscan } from "./hashscan.js";
 export {
+  AquaRouterAbi,
   CashEthOrderBuilderAbi,
   CashEthSwapVMRouterAbi,
   CreditFacilityAbi,

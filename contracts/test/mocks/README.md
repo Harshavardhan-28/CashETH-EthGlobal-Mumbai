@@ -1,6 +1,6 @@
 # Test mocks
 
-Local stand-ins used only by Foundry tests; none of them is deployed.
+Local stand-ins used by Foundry tests and, on a local anvil node only, by `script/LocalStack.s.sol` (MockUSDC as USDC and tUSDT, MockHSS copied to `0x16b`); none of them is deployed to a real network.
 
 - `MockUSDC.sol`: permissive 6-decimal USDC with open `mint`. Its HTS facade is a no-op: `associate()` returns 22 (SUCCESS) and `isAssociated()` returns true. Use it for protocol tests (facility, routers).
 - `MockHtsUsdc.sol`: USDC that enforces HTS association. Transfers to an account that has not called `associate()` revert, and `associate()`'s response code is configurable. Use it when the test is about association itself (spikes, `AssocProbe`).

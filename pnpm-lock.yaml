@@ -96,7 +96,17 @@ importers:
         specifier: ^7.3.1
         version: 7.3.1
 
-  packages/aqua: {}
+  packages/aqua:
+    dependencies:
+      '@1inch/aqua-sdk':
+        specifier: 0.4.0
+        version: 0.4.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7)
+      '@casheth/shared':
+        specifier: workspace:*
+        version: link:../shared
+      viem:
+        specifier: ^2.57.16
+        version: 2.57.16(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7)
 
   packages/engine:
     dependencies:
@@ -147,6 +157,26 @@ importers:
         version: 4.6.7
 
 packages:
+
+  '@1inch/aqua-sdk@0.4.0':
+    resolution: {integrity: sha512-lsanLzLH9y6hAb/AHIq6WeMvtaDQQ8+y9E0Keq7nb8mT2M/U2YYBd9ZUWwSgergpeyI1GRvGGY2jyquYg3oNpA==}
+
+  '@1inch/byte-utils@3.1.9':
+    resolution: {integrity: sha512-IedsEDTt7wY411R0cgwoMelsHaDyoyBrrIT6YDl0jgHpXnDKadruy0p71xwHGxG4ZELVAKeow8pQ9YM5KQ/i4A==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      assert: ^2.0.0
+    peerDependenciesMeta:
+      assert:
+        optional: true
+
+  '@1inch/sdk-core@0.2.0':
+    resolution: {integrity: sha512-ObRYy6dWQFa/SBv2kJ4fUbJkEVW/oHbfEXf5qshnNP/60fRW223Rv4Gxpxd/LKlr8sNIQv5J4G9MpEmXShtVrA==}
+    peerDependencies:
+      assert: '*'
+    peerDependenciesMeta:
+      assert:
+        optional: true
 
   '@adraffy/ens-normalize@1.10.1':
     resolution: {integrity: sha512-96Z2IP3mYmF1Xg2cDm8f1gWGf/HUVedQ3FMifV4kG/PQ4yEP51xDtRAEfhVNt5f/uzpNkZHwWQuUcu6D6K+Ekw==}
@@ -4419,6 +4449,33 @@ packages:
 
 snapshots:
 
+  '@1inch/aqua-sdk@0.4.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7)':
+    dependencies:
+      '@1inch/sdk-core': 0.2.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7)
+      tslib: 2.9.1
+      viem: 2.57.16(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7)
+    transitivePeerDependencies:
+      - assert
+      - bufferutil
+      - mppx
+      - typescript
+      - utf-8-validate
+      - zod
+
+  '@1inch/byte-utils@3.1.9': {}
+
+  '@1inch/sdk-core@0.2.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7)':
+    dependencies:
+      '@1inch/byte-utils': 3.1.9
+      tslib: 2.9.1
+      viem: 2.57.16(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7)
+    transitivePeerDependencies:
+      - bufferutil
+      - mppx
+      - typescript
+      - utf-8-validate
+      - zod
+
   '@adraffy/ens-normalize@1.10.1': {}
 
   '@adraffy/ens-normalize@1.11.1': {}
@@ -6698,7 +6755,7 @@ snapshots:
 
   '@scure/bip32@1.7.0':
     dependencies:
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
 

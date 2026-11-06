@@ -10,3 +10,5 @@ export type {
 export { EventStore } from "./events.js";
 export type { AuditEvent, AuditEventInput, AuditType } from "./events.js";
 export { IdempotencyLedger } from "./idempotency.js";
+export { scoreReceivable } from "./score.js";
+export type { BuyerReputation, Decision, ScoreInput } from "./score.js";
