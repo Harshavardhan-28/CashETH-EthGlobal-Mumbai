@@ -25,6 +25,6 @@ export async function POST(request: Request) {
   }
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(SESSION_COOKIE, sessionToken(), sessionCookieOptions(SESSION_MAX_AGE));
+  res.cookies.set(SESSION_COOKIE, sessionToken(), sessionCookieOptions(SESSION_MAX_AGE, request));
   return res;
 }

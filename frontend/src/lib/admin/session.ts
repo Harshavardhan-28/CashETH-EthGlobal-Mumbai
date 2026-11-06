@@ -27,12 +27,23 @@ export function isValidSession(value: string | undefined): boolean {
   return safeEqual(value, sessionToken());
 }
 
-/** Options shared by the login (set) and logout (clear) cookie writes. */
-export function sessionCookieOptions(maxAge: number) {
+/** True when the request came in over https, directly or via a proxy. */
+function isHttps(request: Request): boolean {
+  if (new URL(request.url).protocol === "https:") return true;
+  const forwarded = request.headers.get("x-forwarded-proto");
+  return forwarded?.split(",")[0].trim().toLowerCase() === "https";
+}
+
+/**
+ * Options shared by the login (set) and logout (clear) cookie writes. `secure`
+ * follows the request protocol, not NODE_ENV: the demo runs over plain http, where
+ * browsers drop Secure cookies.
+ */
+export function sessionCookieOptions(maxAge: number, request: Request) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    secure: isHttps(request),
     path: "/",
     maxAge,
   };
