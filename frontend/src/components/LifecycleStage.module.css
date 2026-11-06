@@ -12,21 +12,10 @@
   font-size: 11.5px;
   color: var(--muted);
 }
-.title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.title b {
-  font-weight: 400;
-  color: var(--ink);
-}
-.live {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: tr-pulse 1.6s ease-in-out infinite;
+.status {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 .controls {
   display: flex;
@@ -67,7 +56,6 @@
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
-  overflow: hidden;
 }
 .plane {
   position: absolute;
@@ -171,38 +159,6 @@
   white-space: nowrap;
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 16%, transparent);
 }
-.hint {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 12px;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  color: var(--faint);
-  pointer-events: none;
-}
-.platform {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.hbar {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #111;
-  color: #fff;
-  border: 1px solid rgb(var(--ink-rgb) / 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  letter-spacing: 0;
-}
 
 .caption {
   padding: 8px 0 0;
@@ -236,10 +192,6 @@
   flex-direction: column;
   gap: 8px;
   font-family: var(--font-sans);
-}
-.stepNo {
-  font-size: 12.5px;
-  color: var(--faint);
 }
 .stepTitle {
   font-family: var(--font-serif);

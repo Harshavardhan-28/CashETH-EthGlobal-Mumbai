@@ -19,7 +19,8 @@ import styles from "./LifecycleStage.module.css";
 
 const STEP_MS = 4400;
 const REDUCED_MOTION_STEP = 6;
-const REFERENCE_WIDTH = 560;
+// Rotated board is ~610px across; scale so it never clips.
+const REFERENCE_WIDTH = 640;
 const START_ROTATION = -40;
 
 const AGENT_VIEW: Record<AgentKey, { name: string; Art: () => React.JSX.Element }> = {
@@ -139,10 +140,8 @@ export function LifecycleStage() {
   return (
     <div className={styles.root}>
       <div className={styles.bar}>
-        <span className={styles.title}>
-          <span className={styles.live} />
-          <b>LIFECYCLE</b>
-          <span>INV-2207 · $10,000 · Net 30</span>
+        <span className={styles.status} data-testid="step-status">
+          Step {step} of {STEP_COUNT} · {cur.actor}
         </span>
         <span className={styles.controls}>
           <button type="button" className={styles.round} aria-label="Previous step" onClick={() => go(prevStep)}>
@@ -236,12 +235,6 @@ export function LifecycleStage() {
           </div>
         </div>
 
-        <div className={styles.hint}>
-          <span>DRAG TO ROTATE · CLICK A NODE</span>
-          <span className={styles.platform}>
-            <span className={styles.hbar}>ℏ</span>PLATFORM = HEDERA TESTNET · EVM 296
-          </span>
-        </div>
       </div>
 
       <div className={styles.caption}>
@@ -265,9 +258,6 @@ export function LifecycleStage() {
           ))}
         </div>
         <div className={styles.copy} aria-live="polite">
-          <span className={styles.stepNo} data-testid="step-status">
-            Step {step} of {STEP_COUNT} · {cur.actor}
-          </span>
           <span className={styles.stepTitle}>{cur.title}</span>
           <span className={styles.stepBody}>{cur.body}</span>
         </div>

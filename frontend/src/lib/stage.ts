@@ -217,12 +217,7 @@ function slab(
   }
 }
 
-const MODULES: ReadonlyArray<readonly [NodeKey, string]> = [
-  ["registry", "REGISTRY"],
-  ["facility", "FACILITY"],
-  ["router", "ROUTER"],
-  ["aqua", "AQUA"],
-];
+const MODULES: ReadonlyArray<NodeKey> = ["registry", "facility", "router", "aqua"];
 
 const AGENTS: Record<AgentKey, readonly [number, number, string]> = {
   seller: [40, 8, "var(--seller)"],
@@ -274,7 +269,7 @@ export function buildScene(step: number, rot: number) {
   });
 
   // contract modules
-  for (const [k, label] of MODULES) {
+  for (const k of MODULES) {
     const on = active.has(k);
     slab(
       faces,
@@ -289,9 +284,6 @@ export function buildScene(step: number, rot: number) {
       {
         n: 9,
         node: k,
-        text: label,
-        fontSize: "7.5px",
-        color: "var(--muted)",
         ring: on ? "inset 0 0 0 1px color-mix(in oklch, var(--accent) 70%, transparent)" : RING,
       },
     );

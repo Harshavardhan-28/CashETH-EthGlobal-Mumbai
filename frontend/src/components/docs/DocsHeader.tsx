@@ -8,7 +8,7 @@ export function DocsHeader() {
     <header className={styles.header}>
       <div className={styles.headerInner}>
         <div className={styles.brand}>
-          <Logo size={23} />
+          <Logo size={28} />
           <span className={styles.ver}>docs · v0.1</span>
         </div>
         <nav className={styles.nav} aria-label="Docs">

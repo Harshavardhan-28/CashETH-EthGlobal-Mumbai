@@ -9,7 +9,7 @@ export function Hero() {
   return (
     <section className={styles.hero} aria-label="Hero">
       <div className={styles.grid} />
-      <PacketCanvas />
+      <PacketCanvas density={12} />
       <div className={styles.fade} />
 
       <header className={`container ${styles.header}`}>
@@ -48,12 +48,6 @@ export function Hero() {
             <Link href="/docs#quickstart" className={styles.secondary}>
               <span>$</span>npm run demo
             </Link>
-          </div>
-          <div className={styles.tags}>
-            <span>x402 payments</span>
-            <span>1inch Aqua + SwapVM</span>
-            <span>MCP · OAuth 2.1 + KYA</span>
-            <span>HCS audit</span>
           </div>
         </div>
 

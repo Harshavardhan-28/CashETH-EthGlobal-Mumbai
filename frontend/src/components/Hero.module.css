@@ -16,6 +16,7 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
+  opacity: 0.55;
   -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.35), #000 60%);
   mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.35), #000 60%);
 }
@@ -149,13 +150,4 @@
 }
 .secondary span {
   color: var(--faint);
-}
-.tags {
-  display: flex;
-  gap: 10px 22px;
-  flex-wrap: wrap;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--faint);
-  padding-top: 8px;
 }
