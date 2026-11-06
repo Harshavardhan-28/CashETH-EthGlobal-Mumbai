@@ -29,17 +29,21 @@ export interface Rejection {
   decoded: string;
 }
 
+export interface Deploy {
+  aqua: DeployedAt;
+  swapRouter: DeployedAt;
+  orderBuilder: DeployedAt;
+  tUsdt: DeployedAt;
+  taker: DeployedAt;
+}
+
 export interface C4State {
   network: "testnet";
   chainId: 296;
   operator: Address;
-  deploy?: {
-    aqua: DeployedAt;
-    swapRouter: DeployedAt;
-    orderBuilder: DeployedAt;
-    tUsdt: DeployedAt;
-    taker: DeployedAt;
-  };
+  /** Set by a redeploy (scripts/c4-redeploy-prepare.ts): the contracts of the earlier stack that `deploy` reuses. */
+  kept?: Pick<Deploy, "aqua" | "orderBuilder" | "tUsdt">;
+  deploy?: Deploy;
   wiring?: { rcn: Step; facility: Step };
   tUsdtMints?: Mint[];
   verified?: Record<string, string>;

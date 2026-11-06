@@ -13,7 +13,11 @@
  *                 the payee (nothing is wired, so no payTo can match), then two REAL transactions revert
  *                 on-chain: the signed confirmation (WRONG_PAYEE) and the same one with one byte of `r`
  *                 flipped (BAD_BUYER_SIG). Both revert reasons are decoded from the mirror node.
- *                 DUPLICATE_RECEIVABLE on testnet is proven after wiring (Task 4.3).
+ *                 DUPLICATE_RECEIVABLE on testnet is proven after wiring (Task 4.3). `--skip-rejections` leaves
+ *                 this step out (the redeploy after the schedule fix: the contract checks are unchanged).
+ *
+ * A redeploy (scripts/c4-redeploy-prepare.ts) leaves the kept contracts in addresses.json; step 1 adds the
+ * new registries to them instead of starting a new file.
  */
 import { existsSync } from "node:fs";
 import { contracts } from "@casheth/hedera";
@@ -106,6 +110,7 @@ const usdc = getAddress(env.USDC_EVM_ADDRESS);
 const issuerKey = need("KYA_ISSUER_KEY", env.KYA_ISSUER_KEY) as Hex;
 const buyerKey = need("BUYER_KEY", env.BUYER_KEY) as Hex;
 const submitterKey = need("COORDINATOR_KEY", env.COORDINATOR_KEY) as Hex;
+const SKIP_REJECTIONS = process.argv.includes("--skip-rejections");
 
 // ------------------------------------------------------------------ 1. deploy
 
@@ -118,7 +123,7 @@ async function deploy(): Promise<C2State> {
   if (!kyaRegistry || !receivableRegistry) throw new Error("01_DeployCore did not create both registries");
   const deployer = privateKeyToAccount(env.HEDERA_OPERATOR_KEY as Hex).address;
   const addresses: Addresses = {
-    chainId: 296,
+    ...(existsSync(ADDRESSES_FILE) ? loadAddresses() : { chainId: 296 }),
     kyaRegistry: kyaRegistry.address,
     receivableRegistry: receivableRegistry.address,
     usdc,
@@ -336,7 +341,9 @@ if (!state.agents) {
   console.log("2. agents: done");
 }
 
-if (!state.rejections) {
+if (SKIP_REJECTIONS) {
+  console.log("3. rejects: skipped (--skip-rejections)");
+} else if (!state.rejections) {
   state.rejections = await rejections(addresses);
   writeJson(STATE_FILE, state);
 } else {

@@ -8,7 +8,7 @@
  *   1. lender D - a fourth ECDSA lender account (20 HBAR) written to .env.accounts as LENDER_D_ID/_KEY/_EVM,
  *                 USDC associated, 1 USDC from the operator, registered in KYA by the issuer (role 4,
  *                 level 2, ownerGroup keccak("lender-d")) and 50 tUSDT minted to it.
- *   2. register - the buyer signs PO-1002 (10 USDC, due in 30 days, deadline +1 day, payTo = RepaymentRouter,
+ *   2. register - the buyer signs PO-1002 (6 USDC, due in 30 days, deadline +1 day, payTo = RepaymentRouter,
  *                 nonce = nonces(buyer)); the coordinator submits it. Checked: TS digest = on-chain
  *                 hashConfirmation, computeId, a dry run, then state(id) = Confirmed and the stored record.
  *   3. audit    - `ReceivableConfirmed` to the HCS audit topic, the receivable NFT minted with metadata
@@ -57,7 +57,7 @@ import { mintTo, readC4, TUSDT_UNIT, writeC4, type C4State } from "./c4-state.js
 
 const ENV_ACCOUNTS_PATH = `${ROOT}.env.accounts`;
 const DAY = 86_400n;
-const FACE = 10_000_000n; // 10 USDC
+const FACE = 6_000_000n; // 6 USDC: the lenders' real balances cap the demo at a 4.5 USDC advance
 const LENDER_D_USDC = 1_000_000n;
 
 function need(name: string, value: string | undefined): string {

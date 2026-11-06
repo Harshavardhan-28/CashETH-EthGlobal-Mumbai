@@ -32,6 +32,12 @@ async function send(wallet: LenderWallet, tx: { to: Address; data: Hex }): Promi
 }
 
 /**
+ * Gas for an `approve`. On an HTS token (USDC) it costs about 730k; the relay's estimate for lowering an
+ * allowance (to zero) is far too small and the transaction then fails with INSUFFICIENT_GAS.
+ */
+const APPROVE_GAS = 1_000_000n;
+
+/**
  * Sets the wallet's `token` allowance to Aqua to exactly `amount` (never "max": HTS rejects it). Aqua pulls
  * from the maker's wallet on fills, so the allowance must cover the virtual balances of every open strategy.
  */
@@ -44,6 +50,7 @@ export async function approveAquaExact(wallet: LenderWallet, token: Address, aqu
     abi: erc20Abi,
     functionName: "approve",
     args: [aqua, amount],
+    gas: APPROVE_GAS,
   });
   const receipt = await client.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error(`approve ${hash} reverted`);

@@ -9,7 +9,9 @@
  *   1. deploy - contracts/script/03_DeployAqua.s.sol through the Hashio relay (the S1 path, D-P10):
  *               AquaRouter(owner = operator), CashEthSwapVMRouter(aqua, WHBAR, operator, "CashETH SwapVM",
  *               "1.0.0", registry, kya, facility), CashEthOrderBuilder, TestStablecoin (tUSDT, owner =
- *               operator) and CashEthTaker(router, USDC, owner = operator), with each creation's block.
+ *               operator) and CashEthTaker(router, USDC, owner = operator), with each creation's block. After a
+ *               redeploy (`kept` in c4.json) Aqua, the order builder and tUSDT are reused: only the router and
+ *               the taker, which hold the facility address, are created.
  *   2. wire   - `rcn.wire(facility, repaymentRouter, swapRouter, aqua)` and
  *               `facility.wire(swapRouter, repaymentRouter)`, both one-time, sent from the operator.
  *   3. mint   - tUSDT: 50 to lenders A, B and C, 20 to the operator (the trader). Lender D's 50 are minted by
@@ -34,7 +36,7 @@ import { mirror } from "@casheth/hedera";
 import { getAddress, isAddressEqual, type Abi, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { env, forgeDeploy, mirrorGet, pub, ROOT, send, writeJson, type Deployed } from "./spikes/lib.js";
-import { mintTo, readC4, TUSDT_UNIT, writeC4, type C4State, type DeployedAt } from "./c4-state.js";
+import { mintTo, readC4, TUSDT_UNIT, writeC4, type C4State, type Deploy, type DeployedAt } from "./c4-state.js";
 
 const ADDRESSES_FILE = `${ROOT}deployments/testnet/addresses.json`;
 const WHBAR = getAddress("0xb1F616b8134F602c3Bb465fB5b5e6565cCAd37Ed");
@@ -65,32 +67,38 @@ async function withBlock(d: Deployed): Promise<DeployedAt> {
   return { ...d, block: Number(receipt.blockNumber) };
 }
 
-async function deploy(): Promise<NonNullable<C4State["deploy"]>> {
-  console.log("1. deploy: forge script 03_DeployAqua through the Hashio relay");
+/** The kept contracts as the deploy script's reuse variables. */
+function keptEnv(kept: NonNullable<C4State["kept"]>): Record<string, string> {
+  return { AQUA_ROUTER: kept.aqua.address, ORDER_BUILDER: kept.orderBuilder.address, TEST_STABLECOIN: kept.tUsdt.address };
+}
+
+async function deploy(kept: C4State["kept"]): Promise<Deploy> {
+  console.log(`1. deploy: forge script 03_DeployAqua through the Hashio relay${kept ? " (Aqua, order builder and tUSDT kept)" : ""}`);
   const { created, calls } = await forgeDeploy("03_DeployAqua.s.sol", {
     USDC_EVM_ADDRESS: usdc,
     RECEIVABLE_REGISTRY: receivableRegistry,
     KYA_REGISTRY: kyaRegistry,
     CREDIT_FACILITY: creditFacility,
+    ...(kept ? keptEnv(kept) : {}),
   });
-  const names = ["AquaRouter", "CashEthSwapVMRouter", "CashEthOrderBuilder", "TestStablecoin", "CashEthTaker"];
+  const names = kept ? ["CashEthSwapVMRouter", "CashEthTaker"] : ["AquaRouter", "CashEthSwapVMRouter", "CashEthOrderBuilder", "TestStablecoin", "CashEthTaker"];
   const missing = names.filter((n) => !created.has(n));
   if (missing.length > 0 || calls.length > 0) {
     throw new Error(`03_DeployAqua: missing ${missing.join(", ") || "none"}, unexpected calls ${calls.length}`);
   }
   const get = async (n: string) => withBlock(created.get(n)!);
   return {
-    aqua: await get("AquaRouter"),
+    aqua: kept?.aqua ?? (await get("AquaRouter")),
     swapRouter: await get("CashEthSwapVMRouter"),
-    orderBuilder: await get("CashEthOrderBuilder"),
-    tUsdt: await get("TestStablecoin"),
+    orderBuilder: kept?.orderBuilder ?? (await get("CashEthOrderBuilder")),
+    tUsdt: kept?.tUsdt ?? (await get("TestStablecoin")),
     taker: await get("CashEthTaker"),
   };
 }
 
 // ------------------------------------------------------------------ 2. wire
 
-async function wire(d: NonNullable<C4State["deploy"]>): Promise<NonNullable<C4State["wiring"]>> {
+async function wire(d: Deploy): Promise<NonNullable<C4State["wiring"]>> {
   console.log("2. wire: rcn.wire and facility.wire (one-time, from the operator)");
   const swapRouter = d.swapRouter.address;
   const aqua = d.aqua.address;
@@ -210,7 +218,7 @@ async function verify(s: C4State): Promise<Record<string, string>> {
 const state = readC4(operator);
 if (state.deploy) console.log(`1. deploy: done (aqua ${state.deploy.aqua.address}, router ${state.deploy.swapRouter.address})`);
 else {
-  state.deploy = await deploy();
+  state.deploy = await deploy(state.kept);
   writeC4(state);
 }
 if (state.wiring) console.log("2. wire: done");

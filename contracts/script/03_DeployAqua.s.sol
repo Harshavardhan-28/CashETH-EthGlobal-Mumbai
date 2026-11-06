@@ -20,7 +20,10 @@ import { IHRC719 } from "../src/hedera/IHRC719.sol";
 ///     --private-key $HEDERA_OPERATOR_KEY --broadcast --legacy --slow --skip-simulation \
 ///     --gas-estimate-multiplier 130
 ///
-/// Env: USDC_EVM_ADDRESS, RECEIVABLE_REGISTRY, KYA_REGISTRY, CREDIT_FACILITY (required).
+/// Env: USDC_EVM_ADDRESS, RECEIVABLE_REGISTRY, KYA_REGISTRY, CREDIT_FACILITY (required). AQUA_ROUTER,
+/// ORDER_BUILDER and TEST_STABLECOIN (optional) reuse an earlier deployment instead of creating that contract:
+/// the redeploy after the facility changed only needs a new SwapVM router and taker, since Aqua, the order
+/// builder (no address immutables) and tUSDT do not depend on the facility.
 ///
 /// Every contract is created from its standalone `out/` artifact (see `_create`).
 /// The taker's constructor associates with HTS USDC, so the on-chain simulation is skipped and the facade's
@@ -41,6 +44,15 @@ contract DeployAqua is Script {
         require(deployed != address(0), artifact);
     }
 
+    /// @dev The contract at env var `name` when it is set, else a fresh one created from `artifact`.
+    function _reuseOrCreate(string memory name, string memory artifact, bytes memory args)
+        internal
+        returns (address)
+    {
+        address existing = vm.envOr(name, address(0));
+        return existing != address(0) ? existing : _create(artifact, args);
+    }
+
     function run() external {
         address usdc = vm.envAddress("USDC_EVM_ADDRESS");
         address registry = vm.envAddress("RECEIVABLE_REGISTRY");
@@ -51,7 +63,9 @@ contract DeployAqua is Script {
 
         vm.startBroadcast();
         (, address operator,) = vm.readCallers();
-        AquaRouter aqua = AquaRouter(payable(_create("AquaRouter.sol:AquaRouter", abi.encode(operator))));
+        AquaRouter aqua = AquaRouter(
+            payable(_reuseOrCreate("AQUA_ROUTER", "AquaRouter.sol:AquaRouter", abi.encode(operator)))
+        );
         CashEthSwapVMRouter router = CashEthSwapVMRouter(
             payable(
                 _create(
@@ -60,8 +74,11 @@ contract DeployAqua is Script {
                 )
             )
         );
-        CashEthOrderBuilder builder = CashEthOrderBuilder(_create("CashEthOrderBuilder.sol:CashEthOrderBuilder", ""));
-        TestStablecoin tUsdt = TestStablecoin(_create("TestStablecoin.sol:TestStablecoin", abi.encode(operator)));
+        CashEthOrderBuilder builder =
+            CashEthOrderBuilder(_reuseOrCreate("ORDER_BUILDER", "CashEthOrderBuilder.sol:CashEthOrderBuilder", ""));
+        TestStablecoin tUsdt = TestStablecoin(
+            _reuseOrCreate("TEST_STABLECOIN", "TestStablecoin.sol:TestStablecoin", abi.encode(operator))
+        );
         CashEthTaker taker =
             CashEthTaker(_create("CashEthTaker.sol:CashEthTaker", abi.encode(address(router), usdc, operator)));
         vm.stopBroadcast();

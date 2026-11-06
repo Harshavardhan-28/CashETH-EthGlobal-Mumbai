@@ -66,8 +66,9 @@ async function latestSeq(topicId: string): Promise<number> {
 }
 
 /**
- * Publishes an audit event of `type` for `id` unless one is already on the topic (a crash between publishing
- * and saving must not publish twice). Returns where it is.
+ * Publishes an audit event of `type` for `id` unless one with the same fields is already on the topic (a crash
+ * between publishing and saving must not publish twice). A receivable id can repeat across redeployments, so
+ * the fields (transaction ids, serials) tell the earlier event from this one. Returns where it is.
  */
 export async function publishAuditOnce(
   client: Parameters<typeof publishAudit>[0],
@@ -76,8 +77,10 @@ export async function publishAuditOnce(
   id: string,
   fields: Record<string, unknown>,
 ): Promise<{ seq: number; txId: string; hashscan: string; prevSeq: number }> {
+  const sameFields = (message: AuditEvent) =>
+    Object.entries(fields).every(([k, v]) => JSON.stringify((message as Record<string, unknown>)[k]) === JSON.stringify(v));
   const prior = (await readAuditMessages(env, topicId, { limit: 100 })).find(
-    (m) => m.message.type === type && m.message.id === id,
+    (m) => m.message.type === type && m.message.id === id && sameFields(m.message),
   );
   if (prior) {
     const txId = prior.txId ?? prior.consensusTimestamp;

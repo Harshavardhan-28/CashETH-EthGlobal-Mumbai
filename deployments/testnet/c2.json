@@ -2,29 +2,29 @@
   "network": "testnet",
   "chainId": 296,
   "kyaRegistry": {
-    "address": "0xE51950be227c5A31B603e1343cD53e813C593f39",
-    "contractId": "0.0.11338820",
+    "address": "0x81d1935e41705DCD4c4499285c74c955626673dD",
+    "contractId": "0.0.11341323",
     "tx": {
-      "hash": "0x17d27c6e9611a6f330e591a6d507d18a6c8b30a216f7c0508fcfc685677ced21",
-      "transactionId": "0.0.7314364@1793966394.171576721",
-      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966394.171576721"
+      "hash": "0x01d1c7d0ca82c30d16db87ed0c22c32fd2bfedcfae7d5527462353af74b3d04a",
+      "transactionId": "0.0.7314364@1793978954.588950176",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793978954.588950176"
     },
     "gas": {
-      "limit": 998211,
-      "used": 712043,
-      "consumed": 712043
+      "limit": 1060174,
+      "used": 720907,
+      "consumed": 720907
     }
   },
   "receivableRegistry": {
-    "address": "0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b",
-    "contractId": "0.0.11338823",
+    "address": "0x0D118059D67cbe738aD86C4B8c25cdf06837791f",
+    "contractId": "0.0.11341326",
     "tx": {
-      "hash": "0x1069a0f061291083e4680a9c25182bd31202126bda7c79b8f50d85c4758487b5",
-      "transactionId": "0.0.7314364@1793966402.245288564",
-      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966402.245288564"
+      "hash": "0x14a6b7c9e8a89d9e98d26c866867235b676a3ea5feed6a810769915976b914e6",
+      "transactionId": "0.0.7314364@1793978957.638929669",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793978957.638929669"
     },
     "gas": {
-      "limit": 2055320,
+      "limit": 2158087,
       "used": 1475355,
       "consumed": 1475355
     }
@@ -38,11 +38,11 @@
       "ownerGroupLabel": "seller-co",
       "tx": {
         "label": "KYARegistry.register(seller)",
-        "hash": "0x98c355048f36d7d03263d66ebfa5137250a9dadb3330f0f78b96fedf6f6fcc14",
-        "transactionId": "0.0.7314364@1793966413.731996335",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966413.731996335",
+        "hash": "0xdb944fa4129134549005c0d3545f3a13bc180664ce02db9e286bbc16708e47e3",
+        "transactionId": "0.0.7314364@1793978969.206969469",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793978969.206969469",
         "gas": {
-          "limit": 159946,
+          "limit": 167944,
           "used": 115769,
           "consumed": 115769
         }
@@ -56,11 +56,11 @@
       "ownerGroupLabel": "buyer-co",
       "tx": {
         "label": "KYARegistry.register(buyer)",
-        "hash": "0x4b74384d3995eff65637d1264c5e3834a9212262a29da42d78b1dcb732170808",
-        "transactionId": "0.0.7314364@1793966426.623337776",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966426.623337776",
+        "hash": "0x31ac08a3e5f6deac36346e7bb819e7ae46abe121e6aa35c738e96f5fb7b5e0c8",
+        "transactionId": "0.0.7314364@1793979051.992267965",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979051.992267965",
         "gas": {
-          "limit": 159946,
+          "limit": 167944,
           "used": 115769,
           "consumed": 115769
         }
@@ -74,11 +74,11 @@
       "ownerGroupLabel": "seller-co",
       "tx": {
         "label": "KYARegistry.register(workerResearch)",
-        "hash": "0xd8f7acb3c7693db45331f4b694328a9c0cc9d0c1bce4447ed8022ade6611a53c",
-        "transactionId": "0.0.7314364@1793966440.862555880",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966440.862555880",
+        "hash": "0x231657c392e222603a3e21fa6ec3ae3a5b6d5d27a680f1341b0c47719666f0d8",
+        "transactionId": "0.0.7314364@1793979068.059888846",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979068.059888846",
         "gas": {
-          "limit": 159931,
+          "limit": 167928,
           "used": 115757,
           "consumed": 115757
         }
@@ -92,11 +92,11 @@
       "ownerGroupLabel": "seller-co",
       "tx": {
         "label": "KYARegistry.register(workerCompute)",
-        "hash": "0x618c4d6015769a198b32b94e9d8a7df82bf99c940a9ea2b3a1762a42a3714f60",
-        "transactionId": "0.0.7314364@1793966452.503597519",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966452.503597519",
+        "hash": "0xf59af609c7347db0805a5fdc3fa94227ceb63634718ac7d4e83579fab0d3e785",
+        "transactionId": "0.0.7314364@1793979111.064268848",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979111.064268848",
         "gas": {
-          "limit": 159946,
+          "limit": 167944,
           "used": 115769,
           "consumed": 115769
         }
@@ -110,11 +110,11 @@
       "ownerGroupLabel": "lender-a",
       "tx": {
         "label": "KYARegistry.register(lenderA)",
-        "hash": "0xc701c5d690adf73363f60ca834a5ea933f7a294682f2c7fb14bde9376587a3c9",
-        "transactionId": "0.0.7314364@1793966466.763342193",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966466.763342193",
+        "hash": "0x9f1ca91784dedee890ab7ff60c3855c11a5671ecf2fae36a2ddb5520b28608bf",
+        "transactionId": "0.0.7314364@1793979122.903942077",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979122.903942077",
         "gas": {
-          "limit": 159946,
+          "limit": 167944,
           "used": 115769,
           "consumed": 115769
         }
@@ -128,11 +128,11 @@
       "ownerGroupLabel": "lender-b",
       "tx": {
         "label": "KYARegistry.register(lenderB)",
-        "hash": "0x6f58b619e013dde30c2a3c508c1661e9937927720fea576d391232960eb2359f",
-        "transactionId": "0.0.7314364@1793966481.534382158",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966481.534382158",
+        "hash": "0x6e1efddaecdfc089992b02326ffe7d8c1e154b7e6f49ed28a52a8557463b3fec",
+        "transactionId": "0.0.7314364@1793979276.242368379",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979276.242368379",
         "gas": {
-          "limit": 159931,
+          "limit": 167928,
           "used": 115757,
           "consumed": 115757
         }
@@ -146,78 +146,15 @@
       "ownerGroupLabel": "lender-c",
       "tx": {
         "label": "KYARegistry.register(lenderC)",
-        "hash": "0x5c2f8729125102b5306378181848015276ad84cc62df4b527611fac5b491479f",
-        "transactionId": "0.0.7314364@1793966492.515648279",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966492.515648279",
+        "hash": "0x6904bb947525c045409ffebbac9d49243e075630bec10d98cc68d15db2390f79",
+        "transactionId": "0.0.7314364@1793979300.479479344",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979300.479479344",
         "gas": {
-          "limit": 159946,
+          "limit": 167944,
           "used": 115769,
           "consumed": 115769
         }
       }
     }
-  ],
-  "rejections": {
-    "confirmation": {
-      "seller": "0x164334EE48b6AB0c07514af2a84646b23f3dCF0f",
-      "buyer": "0xf5FFbCd1e9ca403Fec295127EAcE1A3674f949c9",
-      "currency": "0x0000000000000000000000000000000000068cDa",
-      "amount": "10000000",
-      "dueDate": "1796558499",
-      "buyerRef": "0x4bcd21d9e7d41d9900f02517cc86ee74a630d7feb11879b8d9977bf7f4d75f60",
-      "detailsCommitment": "0x04b100823d40c0f00d1a1271ad2def6e698183b98da93c0e8454faab3e64053d",
-      "payTo": "0x0000000000000000000000000000000000000001",
-      "nonce": "0",
-      "deadline": "1794052899"
-    },
-    "receivableId": "0xdc9091478f8a1d866c1c576f18099bb2c18b780ff161ee7ed283ec10950ff7e3",
-    "digest": "0x32180664405580d25ddfc7cafd2083500605d6056f42ebb8b2622713bb394337",
-    "onChainDigest": "0x32180664405580d25ddfc7cafd2083500605d6056f42ebb8b2622713bb394337",
-    "simulation": {
-      "result": "WRONG_PAYEE()",
-      "preconditions": {
-        "duplicate": "state(id) = 0 (None)",
-        "term": "dueDate - now = 30 days (1..120), deadline in 24 h",
-        "nonce": "nonces(buyer) = 0, confirmation nonce = 0",
-        "currency": "USDC() = 0x0000000000000000000000000000000000068cDa",
-        "kya": "level(buyer) = 3 (>= 3), level(seller) = 2 (>= 2)",
-        "ownerSeparation": "ownerGroup(buyer) != ownerGroup(seller): true",
-        "payee": "repaymentRouter() = 0x0000000000000000000000000000000000000000 (unwired), payTo = 0x0000000000000000000000000000000000000001"
-      }
-    },
-    "wrongPayee": {
-      "expected": "WRONG_PAYEE",
-      "tx": {
-        "label": "register(signed confirmation)",
-        "hash": "0xb2c8f29462ae60ee6618eaeaa71849df5b4ae540457a6fa8b920552b21d54f0c",
-        "transactionId": "0.0.7314364@1793966502.770050429",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966502.770050429",
-        "gas": {
-          "limit": 300000,
-          "used": 35395,
-          "consumed": 35395
-        }
-      },
-      "status": "CONTRACT_REVERT_EXECUTED",
-      "errorMessage": "0x9c0c203d",
-      "decoded": "WRONG_PAYEE()"
-    },
-    "badBuyerSig": {
-      "expected": "BAD_BUYER_SIG",
-      "tx": {
-        "label": "register(r byte flipped)",
-        "hash": "0xb8d790890ed318c69272749bcd8deb13092b5184831541f5780e1266779b91ff",
-        "transactionId": "0.0.7314364@1793966532.109597123",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793966532.109597123",
-        "gas": {
-          "limit": 300000,
-          "used": 33156,
-          "consumed": 33156
-        }
-      },
-      "status": "CONTRACT_REVERT_EXECUTED",
-      "errorMessage": "0x48fb71e5",
-      "decoded": "BAD_BUYER_SIG()"
-    }
-  }
+  ]
 }

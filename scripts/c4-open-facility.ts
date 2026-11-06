@@ -9,7 +9,9 @@
  *   1. fund   - `scoreReceivable`, `solve` over the open strategies, then `openAndFund(id, fills, advanceBps,
  *               limit)` from the coordinator.
  *   2. verify - facility USDC balance, each filled lender's RCN, registry state Financed, the `FacilityFunded`,
- *               `PositionOpened` and `Scheduled` events and both schedule entities on the mirror node.
+ *               `PositionOpened` and `Scheduled` events, and that the transaction created exactly one schedule
+ *               entity (markOverdue; Hedera allows one `scheduleCall` per transaction, `markOverdue` schedules
+ *               the default check later) and that it is pending on the mirror node.
  *   3. revert - `openAndFund` for an unregistered id (NOT_CONFIRMED) and from the seller (NOT_COORDINATOR):
  *               real transactions whose revert data is read back from the mirror node.
  *   4. audit  - `FacilityFunded` (id, fills, total) on the HCS audit topic.
@@ -26,11 +28,6 @@ import { env, mirrorGet, pub, readJson, ROOT, send, writeJson } from "./spikes/l
 
 const FACILITY_FILE = `${ROOT}deployments/testnet/facility.json`;
 const FINANCED = 2;
-/**
- * Explicit gas: the relay cannot estimate `openAndFund` (simulation cannot run the Schedule Service). Two
- * `scheduleCall`s cost about 1.5M gas each (spike S4), plus about 0.3M per fill.
- */
-const OPEN_AND_FUND_GAS = 5_500_000n;
 
 type FillRecord = { maker: Address; lender: string; amount: string; aprBps: number };
 type SkipRecord = { strategyHash: Hex; lender: string; kind: string; reason: string };
@@ -130,7 +127,6 @@ async function fund(): Promise<FacilityRecord> {
       abi: CreditFacilityAbi,
       functionName: "openAndFund",
       args: [receivableId, plan.fills, decision.advanceBps, decision.limit],
-      gas: OPEN_AND_FUND_GAS,
     },
     coordinator,
   );
@@ -152,18 +148,26 @@ const rcnBalance = (who: Address) =>
 /** Schedule entity ids are the long-zero form of the schedule's EVM address. */
 const scheduleId = (schedule: Address): string => `0.0.${BigInt(schedule)}`;
 
-async function checkSchedules(overdue: Address, defaulted: Address): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  for (const [name, address] of [["markOverdue", overdue], ["markDefaulted", defaulted]] as const) {
-    if (address === zeroAddress) throw new Error(`${name} schedule is the zero address`);
-    const id = scheduleId(address);
-    const s = await mirror.waitFor(() =>
-      mirrorGet<{ deleted: boolean; executed_timestamp: string | null; expiration_time: string | null }>(`/schedules/${id}`),
-    );
-    if (s.deleted || s.executed_timestamp) throw new Error(`schedule ${id} (${name}) is deleted or already executed`);
-    out[`schedule ${name}`] = `${id} expires ${s.expiration_time}`;
-  }
-  return out;
+/** The schedule entities a transaction created, from its child records on the mirror node. */
+async function createdSchedules(transactionId: string): Promise<string[]> {
+  const mirrorId = transactionId.replace("@", "-").replace(/\.(\d+)$/, "-$1");
+  const { transactions } = await mirror.waitFor(() =>
+    mirrorGet<{ transactions: { name: string; entity_id: string | null }[] }>(`/transactions/${mirrorId}`),
+  );
+  return transactions.filter((t) => t.name === "SCHEDULECREATE").map((t) => t.entity_id ?? "?");
+}
+
+async function checkSchedule(record: FacilityRecord, overdue: Address, defaulted: Address): Promise<Record<string, string>> {
+  if (overdue === zeroAddress) throw new Error("the markOverdue schedule is the zero address");
+  if (defaulted !== zeroAddress) throw new Error(`the funding scheduled markDefaulted (${defaulted}); markOverdue must do that`);
+  const id = scheduleId(overdue);
+  const created = await createdSchedules(record.fund.transactionId);
+  if (created.length !== 1 || created[0] !== id) throw new Error(`funding created schedules [${created.join(", ")}], expected only ${id}`);
+  const s = await mirror.waitFor(() =>
+    mirrorGet<{ deleted: boolean; executed_timestamp: string | null; expiration_time: string | null }>(`/schedules/${id}`),
+  );
+  if (s.deleted || s.executed_timestamp) throw new Error(`schedule ${id} (markOverdue) is deleted or already executed`);
+  return { "schedule markOverdue (the only one created)": `${id} expires ${s.expiration_time}` };
 }
 
 async function verify(record: FacilityRecord): Promise<Record<string, string>> {
@@ -201,7 +205,7 @@ async function verify(record: FacilityRecord): Promise<Record<string, string>> {
   const opened = named("PositionOpened").length;
   if (opened !== record.plan.fills.length) throw new Error(`${opened} PositionOpened events for ${record.plan.fills.length} fills`);
   verified.PositionOpened = `${opened} events`;
-  Object.assign(verified, await checkSchedules(scheduled.overdueSchedule, scheduled.defaultSchedule));
+  Object.assign(verified, await checkSchedule(record, scheduled.overdueSchedule, scheduled.defaultSchedule));
   for (const [k, v] of Object.entries(verified)) console.log(`  ${k}: ${v}`);
   return verified;
 }
