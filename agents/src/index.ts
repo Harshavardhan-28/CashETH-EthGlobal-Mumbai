@@ -11,7 +11,7 @@ export { createLenderAgent } from "./lender.js";
 export type { LenderAgent, LenderOptions, ShipOutcome, ShipParams } from "./lender.js";
 export { agentKitFromEnv, createAgentKit, kitTools } from "./kit.js";
 export type { AgentKit, AgentKitOptions } from "./kit.js";
-export { walletCallSender } from "./sendCalls.js";
+export { SendCallsError, sendInOrder, walletCallSender } from "./sendCalls.js";
 export type { AgentWallet, CallSender, Calldata } from "./sendCalls.js";
 export { baseStrategies, collectTrades, runTrader, serializeTrades, TradeError } from "./trader.js";
 export type { BaseStrategy, Direction, FailedLeg, TradeRecord, TradesFile, TraderChain, TraderOptions } from "./trader.js";
