@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { CONSOLE_EVENTS } from "@/lib/content";
 import { consoleStats, facilityState } from "@/lib/consoleState";
+import { latestReceivableId, liveStats, shorten, toConsoleEvents } from "@/lib/liveConsole";
+import { useLiveAudit } from "@/lib/useLiveAudit";
 import { usePrefersReducedMotion } from "@/lib/useInView";
 import styles from "./LiveConsole.module.css";
 
@@ -13,6 +15,7 @@ const TICK_MS = 1400;
 export function LiveConsole() {
   const reduce = usePrefersReducedMotion();
   const [r, setR] = useState(0);
+  const live = useLiveAudit();
 
   useEffect(() => {
     if (reduce) {
@@ -28,8 +31,12 @@ export function LiveConsole() {
     return () => clearInterval(id);
   }, [reduce]);
 
-  const stats = consoleStats(r);
-  const maxStep = r ? CONSOLE_EVENTS[r - 1].step : 0;
+  // Live read-API data when the backend answers; otherwise the scripted demo above.
+  const events = live ? toConsoleEvents(live.events) : CONSOLE_EVENTS;
+  const shownCount = live ? events.length : r;
+  const stats = live ? liveStats(live.receivable) : { state: facilityState(r), ...consoleStats(r) };
+  const receivableId = live ? latestReceivableId(live.events) : undefined;
+  const maxStep = Math.max(0, ...events.slice(0, shownCount).map((ev) => ev.step));
 
   return (
     <div className={styles.card}>
@@ -39,7 +46,7 @@ export function LiveConsole() {
           <span className={styles.liveLabel}>LIVE</span>
           <span>hcs audit · 0.0.48213</span>
         </span>
-        <span>receivable 0x7f3a…c21e</span>
+        <span>receivable {receivableId ? shorten(receivableId) : "0x7f3a…c21e"}</span>
       </div>
 
       <div className={styles.segs} aria-hidden="true">
@@ -58,8 +65,8 @@ export function LiveConsole() {
       </div>
 
       <div className={styles.events} role="log" aria-live="off">
-        {CONSOLE_EVENTS.map((ev, i) => {
-          const shown = i < r;
+        {events.map((ev, i) => {
+          const shown = i < shownCount;
           return (
             <div
               key={ev.seq}
@@ -82,7 +89,7 @@ export function LiveConsole() {
       </div>
 
       <div className={styles.stats}>
-        <Stat label="STATE" value={facilityState(r)} accent />
+        <Stat label="STATE" value={stats.state} accent />
         <Stat label="BORROWING BASE" value={stats.base} />
         <Stat label="FUNDED" value={stats.funded} />
         <Stat label="LENDERS OWED" value={stats.owed} last />

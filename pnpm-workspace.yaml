@@ -2,6 +2,7 @@ packages:
   - packages/*
   - apps/*
   - agents
+  - frontend
 allowBuilds:
   '@reown/appkit': false
   bufferutil: false
