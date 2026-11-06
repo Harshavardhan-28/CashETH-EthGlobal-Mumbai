@@ -3,7 +3,7 @@
  * (which talks to the MCP server) and returns the proof it produced; none of them sends a chain call itself.
  */
 import { hashscan } from "@casheth/shared";
-import type { Hex } from "viem";
+import type { Address, Hex } from "viem";
 import { ToolCallError } from "../mcpClient.js";
 import type { ShipOutcome } from "../lender.js";
 import type { PurchaseOutcome } from "../worker.js";
@@ -55,20 +55,25 @@ function repayTxHash(result: Record<string, unknown>): string {
 
 // ---------------------------------------------------------------------------------------------------- 1. lenders
 
-function topUpStep(key: "A" | "B"): Step {
+/** Tops an account up from the operator by exactly what it is short of `required`, or skips when it holds enough. */
+function topUpStep(label: string, account: (ctx: DemoContext) => { address: Address; accountId: string }, required: bigint, purpose: string): Step {
   return {
-    label: `1. lender ${key}: top up USDC from the operator`,
+    label,
     async run(ctx) {
-      const lender = ctx.lenders[key];
-      const required = FRESH_LENDERS[key].creditUsdc;
-      const balance = await ctx.usdcBalance(lender.address);
+      const { address, accountId } = account(ctx);
+      const balance = await ctx.usdcBalance(address);
       const shortfall = topUpShortfall(balance, required);
-      if (shortfall === 0n) return { skipped: true, note: `holds ${formatUsdc(balance)} USDC, enough for the ${formatUsdc(required)} it ships` };
-      const txId = await ctx.topUpFromOperator(lender.accountId, shortfall);
-      return { ...proofOfTx(txId), note: `operator sent exactly ${formatUsdc(shortfall)} USDC (held ${formatUsdc(balance)}, ships ${formatUsdc(required)})` };
+      if (shortfall === 0n) return { skipped: true, note: `holds ${formatUsdc(balance)} USDC, enough for the ${formatUsdc(required)} ${purpose}` };
+      const txId = await ctx.topUpFromOperator(accountId, shortfall);
+      return { ...proofOfTx(txId), note: `operator sent exactly ${formatUsdc(shortfall)} USDC (held ${formatUsdc(balance)}, ${purpose} ${formatUsdc(required)})` };
     },
   };
 }
+
+const lenderTopUpStep = (key: "A" | "B"): Step =>
+  topUpStep(`1. lender ${key}: top up USDC from the operator`, (ctx) => ctx.lenders[key], FRESH_LENDERS[key].creditUsdc, "it ships");
+
+const buyerTopUpStep: Step = topUpStep("8. buyer: top up USDC from the operator", (ctx) => ctx.buyer, INVOICE.amount, "it repays");
 
 function shipStep(key: "A" | "B"): Step {
   const { tier, creditUsdc } = FRESH_LENDERS[key];
@@ -286,9 +291,9 @@ const yieldStep: Step = {
 
 /** The steps of one demo run, in order. */
 export const STEPS: Step[] = [
-  topUpStep("A"),
+  lenderTopUpStep("A"),
   shipStep("A"),
-  topUpStep("B"),
+  lenderTopUpStep("B"),
   shipStep("B"),
   uploadStep,
   sellerNoteStep,
@@ -303,6 +308,7 @@ export const STEPS: Step[] = [
   workerNoteStep,
   researchOverLimitStep,
   computeOverBudgetStep,
+  buyerTopUpStep,
   repayStep,
   yieldStep,
 ];

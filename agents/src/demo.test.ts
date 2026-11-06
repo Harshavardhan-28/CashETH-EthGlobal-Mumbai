@@ -415,7 +415,7 @@ function fakeContext() {
   const events: AuditEvent[] = [];
   const calls: string[] = [];
   // Lender A holds half of what it ships (so it is topped up); lender B holds exactly what it ships.
-  const balances = new Map<Address, bigint>([[makers.A, FRESH_LENDERS.A.creditUsdc / 2n], [makers.B, FRESH_LENDERS.B.creditUsdc], [sellerAddress, 0n]]);
+  const balances = new Map<Address, bigint>([[makers.A, FRESH_LENDERS.A.creditUsdc / 2n], [makers.B, FRESH_LENDERS.B.creditUsdc], [sellerAddress, 0n], [buyerAddress, INVOICE.amount]]);
   let repaid = false;
   const record = (event: { type: string; [field: string]: unknown }) => events.push({ ...event, seq: events.length + 1 });
   const note = async () => (calls.push("note"), "0.0.9@5.5");
@@ -449,6 +449,7 @@ function fakeContext() {
     },
     buyer: {
       address: buyerAddress,
+      accountId: "0.0.12",
       agent: {
         confirm: async () => {
           record({ type: "ReceivableConfirmed", id, hcsSeq: 30, hcsTxId: "0.0.7@2.2" });
@@ -514,7 +515,7 @@ describe("the eight lifecycle steps against fake agents", () => {
     const { ctx, calls } = fakeContext();
     const results = await runSteps(STEPS, ctx);
 
-    expect(results.map((r) => r.label.split(".")[0])).toEqual(["1", "1", "1", "1", "2", "2", "2", "2", "2", "3", "4", "5", "6", "7", "7", "7", "7", "8", "9"]);
+    expect(results.map((r) => r.label.split(".")[0])).toEqual(["1", "1", "1", "1", "2", "2", "2", "2", "2", "3", "4", "5", "6", "7", "7", "7", "7", "8", "8", "9"]);
     expect(results.filter((r) => r.error)).toEqual([]);
     expect(exitCode(results)).toBe(0);
     expect(calls.filter((c) => !c.startsWith("top-up") && c !== "note")).toEqual(["ship-A", "ship-B", "upload", "upload-duplicate", "open", "budgets", "buy-research", "repay"]);
@@ -526,6 +527,14 @@ describe("the eight lifecycle steps against fake agents", () => {
     expect(calls.filter((c) => c.startsWith("top-up"))).toEqual([`top-up 0.0.65 ${FRESH_LENDERS.A.creditUsdc - FRESH_LENDERS.A.creditUsdc / 2n}`]);
     expect(results[0]).toMatchObject({ txId: "0.0.1@8.8" });
     expect(results[2]).toMatchObject({ skipped: true });
+  });
+
+  it("tops up the buyer by the repayment it is short of", async () => {
+    const { ctx, calls, balances } = fakeContext();
+    balances.set(ctx.buyer.address, INVOICE.amount - 1n);
+    const results = await runSteps(STEPS, ctx);
+    expect(calls).toContain("top-up 0.0.12 1");
+    expect(results.find((r) => r.label.startsWith("8. buyer: top up"))).toMatchObject({ txId: "0.0.1@8.8" });
   });
 
   it("takes the rejections' proof from the HCS events the server recorded", async () => {

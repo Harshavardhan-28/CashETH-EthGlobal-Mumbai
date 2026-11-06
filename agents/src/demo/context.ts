@@ -75,7 +75,7 @@ export async function buildContext(env: Env, root: string, log: Log = consoleLog
       detailsCommitment: keccak256(toHex(`${INVOICE.buyerRef}-details`)),
     },
     seller: { address: seller.identity.address, accountId: seller.identity.accountId, agent: createSellerAgent(seller.client, sender(seller.identity)), kit: agentKitFromEnv(env, "SELLER") },
-    buyer: { address: buyer.identity.address, agent: createBuyerAgent({ client: buyer.client, account: privateKeyToAccount(buyer.identity.key), send: sender(buyer.identity) }) },
+    buyer: { address: buyer.identity.address, accountId: buyer.identity.accountId, agent: createBuyerAgent({ client: buyer.client, account: privateKeyToAccount(buyer.identity.key), send: sender(buyer.identity) }) },
     research: worker(workerResearch, spendWallets.research, "WORKER_RESEARCH"),
     compute: worker(workerCompute, spendWallets.compute, "WORKER_COMPUTE"),
     lenders: { A: lender(lenderA), B: lender(lenderB) },

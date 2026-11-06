@@ -53,7 +53,7 @@ export interface DemoContext {
   log: Log;
   invoice: Invoice;
   seller: { address: Address; accountId: string; agent: SellerAgent; kit: AgentKit };
-  buyer: { address: Address; agent: BuyerAgent };
+  buyer: { address: Address; accountId: string; agent: BuyerAgent };
   research: DemoWorker;
   compute: DemoWorker;
   lenders: { A: ShippingLender; B: ShippingLender };
