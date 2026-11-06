@@ -63,7 +63,11 @@ importers:
 
   packages/aqua: {}
 
-  packages/engine: {}
+  packages/engine:
+    dependencies:
+      '@casheth/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/hedera:
     dependencies:
