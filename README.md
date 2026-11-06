@@ -467,7 +467,7 @@ The agent-driven run on PO-1003 (registered from the invoice PDF, section 4.7) i
 
 ### Frontend
 
-`frontend/` is a standalone Next.js app (npm, not part of the pnpm workspace): the landing page, the docs page, and an admin console that polls the read API (`GET /health`, `/events`, `/agents`, `/lenders`; types in [docs/API.md](docs/API.md)). Point it at the MCP server with `NEXT_PUBLIC_API_URL`; the server allows the frontend's origin through `CORS_ORIGINS`.
+`frontend/` is a standalone Next.js app (npm, not part of the pnpm workspace): the landing page, the docs page, a public `/dashboard` that follows one agent (live mirror-node balances, its MCP activity log with HashScan proofs, and seller, buyer, lender and worker views; see [frontend/README.md](frontend/README.md)), and an admin console. Both poll the read API (`GET /health`, `/events`, `/agents`, `/lenders`; types in [docs/API.md](docs/API.md)). Point it at the MCP server with `NEXT_PUBLIC_API_URL`; the server allows the frontend's origin through `CORS_ORIGINS`.
 
 ```
 cd frontend && npm ci && npm run dev        # http://localhost:3000
