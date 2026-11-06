@@ -92,9 +92,7 @@ contract MockHSS is IHederaScheduleService {
         require(s.scheduler != address(0), UnknownSchedule(scheduleAddress));
         require(!s.deleted && !s.executed, ScheduleNotPending(scheduleAddress));
         s.executed = true;
-        // The scheduler funds `value`; the mock forwards it under a prank as the scheduler.
-        _VM.deal(s.scheduler, s.scheduler.balance - s.value);
-        _VM.deal(address(this), address(this).balance + s.value);
+        // A pranked call sends `value` from the pranked sender, so the scheduler pays it exactly once.
         _VM.prank(s.scheduler);
         (bool ok, bytes memory ret) = s.to.call{ value: s.value }(s.callData);
         require(ok, ScheduledCallFailed(ret));
