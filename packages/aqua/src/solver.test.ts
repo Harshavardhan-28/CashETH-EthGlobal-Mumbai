@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BaseError, type Address, type Hex } from "viem";
-import { planFills, preCheck, simulationReachedScheduling, strategyCapacity } from "./solver.js";
+import type { Address, Hex } from "viem";
+import { planFills, preCheck, strategyCapacity } from "./solver.js";
 import { tierArgs, type CreditArgs, type LenderStrategy, type Tier } from "./types.js";
 
 const USDC = "0x00000000000000000000000000000000000a11ce" as Address;
@@ -162,19 +162,5 @@ describe("preCheck", () => {
     expect(preCheck(a, { receivable: { dueDate: NOW }, advanceBps: 7500, now: NOW })).toBe("PAST_DUE");
     expect(preCheck({ ...a, kind: "base" }, { receivable, advanceBps: 7500, now: NOW })).toBe("NOT_CREDIT");
     expect(preCheck(a, { receivable, advanceBps: 8000, now: NOW })).toBeUndefined();
-  });
-});
-
-describe("simulationReachedScheduling", () => {
-  // Hedera's simulation cannot run the Schedule Service: a call that gets that far has passed every other check.
-  it("recognises the relay's scheduling refusal, however deep the error is wrapped", () => {
-    const cause = new BaseError("rpc", { details: "[Request ID: 1] Error occurred during transaction simulation: NO_SCHEDULING_ALLOWED_AFTER_SCHEDULED_RECURSION" });
-    expect(simulationReachedScheduling(new BaseError("outer", { cause }))).toBe(true);
-  });
-
-  it("does not mistake other failures for it", () => {
-    expect(simulationReachedScheduling(new BaseError("outer", { details: "execution reverted" }))).toBe(false);
-    expect(simulationReachedScheduling(new Error("NO_SCHEDULING_ALLOWED_AFTER_SCHEDULED_RECURSION"))).toBe(false);
-    expect(simulationReachedScheduling("nope")).toBe(false);
   });
 });

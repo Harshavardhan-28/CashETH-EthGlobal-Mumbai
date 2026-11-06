@@ -334,11 +334,10 @@ contract RepaymentRouterTest is CreditFacilityBase {
         _fund(id);
         ICreditFacility.FacilityInfo memory info = facility.facilityInfo(id);
         assertTrue(info.overdueSchedule != address(0));
-        assertTrue(info.defaultSchedule != address(0));
+        assertEq(info.defaultSchedule, address(0));
 
         vm.expectCall(address(facility), abi.encodeCall(ICreditFacility.closeFacility, (id)));
         vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.overdueSchedule)));
-        vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.defaultSchedule)));
         vm.expectEmit(true, true, true, true, address(usdc));
         emit IERC20.Transfer(address(facility), seller, FUNDED);
         vm.expectEmit(true, false, false, true, address(facility));
@@ -346,7 +345,6 @@ contract RepaymentRouterTest is CreditFacilityBase {
         _pay(id, AMOUNT);
 
         assertTrue(hss.getSchedule(info.overdueSchedule).deleted);
-        assertTrue(hss.getSchedule(info.defaultSchedule).deleted);
         assertEq(usdc.balanceOf(address(facility)), 0);
         assertEq(facility.available(id), 0);
         assertEq(usdc.balanceOf(seller), AMOUNT - LENDERS_DUE + FUNDED);

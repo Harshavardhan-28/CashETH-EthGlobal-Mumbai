@@ -532,7 +532,7 @@ contract CashEthSwapVMRouterTest is Test {
         ICreditFacility.FacilityInfo memory info = facility.facilityInfo(id);
         assertEq(info.funded, SHIP_A + SHIP_B);
         assertEq(info.status, facility.STATUS_ACTIVE());
-        assertEq(MockHSS(HSS).n(), 2, "overdue and default checks scheduled");
+        assertEq(MockHSS(HSS).n(), 1, "only the overdue check is scheduled at funding");
     }
 
     function test_endToEnd_revertsWhenIdNotConfirmed() public {

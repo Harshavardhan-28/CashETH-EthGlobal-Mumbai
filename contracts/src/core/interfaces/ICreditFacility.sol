@@ -4,8 +4,9 @@ pragma solidity 0.8.30;
 import { ISwapVM } from "@1inch/swap-vm/contracts/interfaces/ISwapVM.sol";
 
 /// @notice Credit facility for one Confirmed receivable: funds it atomically through lender SwapVM fills
-///         (RCN for USDC), records lender positions, self-schedules the overdue and default checks through
-///         the Hedera Schedule Service, and (Task 3.4) meters spending through per-worker budgets.
+///         (RCN for USDC), records lender positions, self-schedules the overdue check (which schedules the
+///         default check) through the Hedera Schedule Service, and (Task 3.4) meters spending through
+///         per-worker budgets.
 /// @dev Facility status: 0 None, 1 Active, 2 Frozen, 3 Closed. Reservation status: 0 None, 1 Open,
 ///      2 Committed, 3 Released.
 interface ICreditFacility {
@@ -71,6 +72,8 @@ interface ICreditFacility {
     event Defaulted(bytes32 indexed id);
     event Disputed(bytes32 indexed id);
     event FacilityClosed(bytes32 indexed id, uint256 undrawnToSeller);
+    /// @notice Emitted at funding with `defaultSchedule == 0` (Hedera allows one schedule per transaction) and
+    ///         again by `markOverdue` once it has scheduled the default check.
     event Scheduled(bytes32 indexed id, address overdueSchedule, address defaultSchedule);
     /// @notice The default check `markOverdue` tried to schedule was refused with HSS response `code`
     ///         (-1 if the call reverted); the overdue transition still happened.
@@ -119,7 +122,7 @@ interface ICreditFacility {
 
     /// @notice Funds the Confirmed receivable `id` by selling RCN for USDC through `fills`, cheapest first, in
     ///         one transaction; any failed fill reverts everything. Marks the receivable Financed and schedules
-    ///         the overdue and default checks.
+    ///         the overdue check; `markOverdue` schedules the default check (one HSS schedule per transaction).
     function openAndFund(bytes32 id, Fill[] calldata fills, uint16 advanceBps, uint256 limit) external;
 
     /// @notice Credit callback from the SwapVM router while `openAndFund(id, ...)` is executing.

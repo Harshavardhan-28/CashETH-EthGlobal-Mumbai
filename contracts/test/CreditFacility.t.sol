@@ -257,7 +257,7 @@ contract CreditFacilityTest is CreditFacilityBase {
         vm.expectEmit(true, false, false, true, address(facility));
         emit ICreditFacility.FacilityFunded(id, FILL_A + FILL_B, ADVANCE_BPS, expectedMakers);
         vm.expectEmit(true, false, false, true, address(facility));
-        emit ICreditFacility.Scheduled(id, address(1), address(2));
+        emit ICreditFacility.Scheduled(id, address(1), address(0));
 
         vm.prank(coordinator);
         facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
@@ -292,16 +292,16 @@ contract CreditFacilityTest is CreditFacilityBase {
         assertEq(info.reserved, 0);
         assertEq(info.status, STATUS_ACTIVE);
         assertEq(info.overdueSchedule, address(1));
-        assertEq(info.defaultSchedule, address(2));
+        assertEq(info.defaultSchedule, address(0));
         assertEq(facility.available(id), FILL_A + FILL_B);
 
-        // Schedules recorded by the HSS: self-calls, 400k gas, no value, R5 slack past each threshold.
-        assertEq(hss.n(), 2);
+        // Schedule recorded by the HSS: a self-call, nested-schedule gas, no value, R5 slack past the threshold.
+        assertEq(hss.n(), 1);
         _assertSchedule(
-            address(1), uint256(dueDate) + 7 days + SLACK, GAS, abi.encodeCall(ICreditFacility.markOverdue, (id))
-        );
-        _assertSchedule(
-            address(2), uint256(dueDate) + 30 days + SLACK, GAS, abi.encodeCall(ICreditFacility.markDefaulted, (id))
+            address(1),
+            uint256(dueDate) + 7 days + SLACK,
+            GAS_NESTED,
+            abi.encodeCall(ICreditFacility.markOverdue, (id))
         );
     }
 
@@ -459,13 +459,15 @@ contract CreditFacilityTest is CreditFacilityBase {
         emit IReceivableRegistry.StateChanged(id, IReceivableRegistry.State.Financed, IReceivableRegistry.State.Overdue);
         vm.expectEmit(true, false, false, true, address(facility));
         emit ICreditFacility.Overdue(id);
+        vm.expectEmit(true, false, false, true, address(facility));
+        emit ICreditFacility.Scheduled(id, address(1), address(2));
         vm.prank(stranger);
         facility.markOverdue(id);
 
         assertEq(uint8(registry.state(id)), uint8(IReceivableRegistry.State.Overdue));
         ICreditFacility.FacilityInfo memory info = facility.facilityInfo(id);
         assertEq(info.status, STATUS_FROZEN);
-        // The default check was already scheduled at funding, so nothing new is scheduled.
+        // The overdue check is where the default check gets scheduled (one HSS schedule per transaction).
         assertEq(info.defaultSchedule, address(2));
         assertEq(hss.n(), 2);
         (,, uint32 defaults) = kya.reputation(buyer);
@@ -504,8 +506,8 @@ contract CreditFacilityTest is CreditFacilityBase {
     }
 
     /// @dev The brief's "dueDate 100 days out" cannot schedule even the overdue check (dueDate + 7 days is past
-    ///      the 62-day horizon), so the overdue-only case uses a 40-day receivable: overdue at day 47 is inside
-    ///      the horizon, default at day 70 is not. The 100-day receivable schedules neither.
+    ///      the 62-day horizon), so it schedules nothing. A 40-day receivable (overdue at day 47) is inside the
+    ///      horizon, and its default check (day 70, outside it) is scheduled by `markOverdue` once it fits.
     function test_schedule_skippedBeyondHorizon() public {
         swapRouter.fund(address(usdc), 2 * (FILL_A + FILL_B));
 
@@ -613,25 +615,20 @@ contract CreditFacilityTest is CreditFacilityBase {
 
     // ------------------------------------------------------------------ fix round 1: schedules (R17, R18)
 
-    function test_openAndFund_overdueGas_400k_whenBothScheduled() public {
-        _fundBoth();
-        assertEq(hss.n(), 2);
-        assertEq(hss.getSchedule(address(1)).gasLimit, GAS);
-        assertEq(hss.getSchedule(address(2)).gasLimit, GAS);
-    }
-
-    function test_openAndFund_overdueGas_1_8M_whenDefaultSkipped() public {
+    /// @dev Hedera allows one `scheduleCall` per transaction (HIP-1215 recursion protection; a second one fails
+    ///      the whole transaction with `NO_SCHEDULING_ALLOWED_AFTER_SCHEDULED_RECURSION`, which no try/catch
+    ///      absorbs). Funding schedules `markOverdue` with enough gas for its nested default schedule, and only it.
+    function test_openAndFund_makesOneScheduleCall_markOverdueWithNestedGas() public {
         swapRouter.fund(address(usdc), FILL_A + FILL_B);
-        uint64 due40 = uint64(block.timestamp + 40 days);
-        bytes32 id40 = _registerReceivable(keccak256("PO-40"), due40);
+        ICreditFacility.Fill[] memory fills = _fillsBoth();
+
+        vm.expectCall(HSS, abi.encodeWithSelector(IHederaScheduleService.scheduleCall.selector), 1);
         vm.prank(coordinator);
-        facility.openAndFund(id40, _fillsBoth(), ADVANCE_BPS, LIMIT);
+        facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
 
         assertEq(hss.n(), 1);
-        assertEq(facility.facilityInfo(id40).defaultSchedule, address(0));
-        _assertSchedule(
-            address(1), uint256(due40) + 7 days + SLACK, GAS_NESTED, abi.encodeCall(ICreditFacility.markOverdue, (id40))
-        );
+        assertEq(hss.getSchedule(address(1)).gasLimit, GAS_NESTED);
+        assertEq(facility.facilityInfo(id).defaultSchedule, address(0));
     }
 
     function test_openAndFund_revertsScheduleFailed() public {
@@ -833,10 +830,11 @@ contract CreditFacilityTest is CreditFacilityBase {
             facility.closeFacility(id);
         }
 
-        // Happy path: both pending schedules deleted, undrawn USDC to the seller.
+        // Happy path: the pending overdue schedule is deleted (no default schedule exists yet), undrawn USDC to
+        // the seller.
         ICreditFacility.FacilityInfo memory info = facility.facilityInfo(id);
+        assertEq(info.defaultSchedule, address(0));
         vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.overdueSchedule)));
-        vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.defaultSchedule)));
         vm.expectEmit(true, false, false, true, address(facility));
         emit ICreditFacility.FacilityClosed(id, funded);
         vm.prank(repaymentRouter);
@@ -846,17 +844,19 @@ contract CreditFacilityTest is CreditFacilityBase {
         assertEq(usdc.balanceOf(address(facility)), 2 * funded);
         assertEq(facility.facilityInfo(id).status, STATUS_CLOSED);
         assertTrue(hss.getSchedule(info.overdueSchedule).deleted);
-        assertTrue(hss.getSchedule(info.defaultSchedule).deleted);
 
         vm.prank(repaymentRouter);
         vm.expectRevert(ICreditFacility.FACILITY_NOT_ACTIVE.selector);
         facility.closeFacility(id);
 
-        // A delete that reverts (the overdue schedule already executed) does not block the close.
+        // A delete that reverts (the overdue schedule already executed) does not block the close; the default
+        // schedule that execution created is still deleted.
         info = facility.facilityInfo(idFired);
         vm.warp(hss.getSchedule(info.overdueSchedule).expirySecond - 1);
         hss.fire(info.overdueSchedule);
         assertEq(uint8(registry.state(idFired)), uint8(IReceivableRegistry.State.Overdue));
+        info = facility.facilityInfo(idFired);
+        assertTrue(info.defaultSchedule != address(0));
         vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.overdueSchedule)));
         vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.defaultSchedule)));
         vm.prank(repaymentRouter);
@@ -870,12 +870,10 @@ contract CreditFacilityTest is CreditFacilityBase {
         hss.setDeleteResponseCode(21);
         info = facility.facilityInfo(idRefused);
         vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.overdueSchedule)));
-        vm.expectCall(HSS, abi.encodeCall(IHederaScheduleService.deleteSchedule, (info.defaultSchedule)));
         vm.prank(repaymentRouter);
         facility.closeFacility(idRefused);
         assertEq(facility.facilityInfo(idRefused).status, STATUS_CLOSED);
         assertFalse(hss.getSchedule(info.overdueSchedule).deleted);
-        assertFalse(hss.getSchedule(info.defaultSchedule).deleted);
         assertEq(usdc.balanceOf(seller), 3 * funded);
         assertEq(usdc.balanceOf(address(facility)), 0);
     }

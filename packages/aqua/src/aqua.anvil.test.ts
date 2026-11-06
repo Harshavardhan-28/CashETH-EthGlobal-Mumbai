@@ -322,12 +322,20 @@ describe("solve", () => {
     const baseA = after.find((s) => s.strategyHash === base.A!.strategyHash)!;
     expect(baseA.virtual).toEqual({ [addrs.usdc]: USD(2), [addrs.tUsdt]: USD(2) });
 
-    // Both schedules went to the MockHSS code installed at 0x16b.
-    const n = await pub.readContract({
-      address: getAddress("0x000000000000000000000000000000000000016b"),
-      abi: parseAbi(["function n() view returns (uint256)"]),
-      functionName: "n",
-    });
-    expect(n).toBe(2n);
+    // Hedera allows one schedule per transaction: funding scheduled only markOverdue (MockHSS at 0x16b).
+    const scheduleCount = () =>
+      pub.readContract({
+        address: getAddress("0x000000000000000000000000000000000000016b"),
+        abi: parseAbi(["function n() view returns (uint256)"]),
+        functionName: "n",
+      });
+    expect(await scheduleCount()).toBe(1n);
+
+    // Once overdue, markOverdue schedules the default check.
+    await pub.request({ method: "evm_setNextBlockTimestamp" as never, params: [Number(receivable.dueDate + 7n * 86_400n)] as never });
+    // Explicit gas: the best-effort schedule sits in a try/catch, which gas estimation would starve.
+    const hash = await coordinator.writeContract({ address: stack.creditFacility, abi: CreditFacilityAbi, functionName: "markOverdue", args: [receivable.id], gas: 1_800_000n });
+    expect((await pub.waitForTransactionReceipt({ hash })).status).toBe("success");
+    expect(await scheduleCount()).toBe(2n);
   });
 });

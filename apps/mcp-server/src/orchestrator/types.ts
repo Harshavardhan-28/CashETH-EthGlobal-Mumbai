@@ -132,7 +132,8 @@ export type FundResult =
 export interface AquaPort {
   addresses(): AquaAddresses;
   discover(): Promise<{ strategies: LenderStrategy[]; skipped: { maker: Address; strategyHash: Hex; reason: string }[] }>;
-  solve(input: SolveInput): Promise<Plan>;
+  /** The live port dry-runs the fills from the coordinator, so callers do not pass it. */
+  solve(input: Omit<SolveInput, "coordinator">): Promise<Plan>;
   /** Ships with the lender's in-process key when `inProcess`, else returns the approve + ship calldatas. */
   fund(lender: Address, plan: FundPlan, inProcess: boolean): Promise<FundResult>;
   /** Docks with the lender's in-process key when `inProcess`, else returns the dock calldata. */

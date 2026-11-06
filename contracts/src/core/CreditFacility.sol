@@ -20,15 +20,20 @@ import { HederaResponseCodes } from "../hedera/HederaResponseCodes.sol";
 ///         mints RCN to itself, lets the SwapVM router pull it into the lender's Aqua order and receives the
 ///         same amount of USDC; the router reports each fill through `onCreditFill`, which records the lender
 ///         position. Any failed fill reverts the whole funding. After funding it schedules its own overdue
-///         and default checks through the Hedera Schedule Service; both checks are also permissionless.
+///         check through the Hedera Schedule Service, and the overdue check schedules the default check; both
+///         checks are also permissionless.
 /// @dev The facility pays for its schedules in HBAR, so it is funded through `receive()` after deployment.
+///      Hedera's recursion protection (HIP-1215) allows one `scheduleCall` per transaction: a second one fails
+///      the whole transaction with the network status `NO_SCHEDULING_ALLOWED_AFTER_SCHEDULED_RECURSION`, which
+///      is not a Solidity revert and so cannot be caught. Funding therefore schedules `markOverdue` only. A
+///      scheduled call runs as its own transaction, so `markOverdue` can schedule `markDefaulted`.
 contract CreditFacility is ICreditFacility, Ownable, Pausable {
     using SafeERC20 for IERC20;
 
     address private constant _HSS = address(0x16b);
     uint256 private constant _SCHEDULE_GAS = 400_000;
-    /// @dev Gas for a scheduled `markOverdue` that must itself schedule the default check (Ruling R17):
-    ///      a nested `scheduleCall` costs about 1.45M gas on testnet.
+    /// @dev Gas for the scheduled `markOverdue`, which itself schedules the default check (Ruling R17): a
+    ///      nested `scheduleCall` costs about 1.45M gas on testnet.
     uint256 private constant _SCHEDULE_GAS_WITH_NESTED = 1_800_000;
     /// @dev HSS refuses expiries more than 62 days out; keep an hour of margin.
     uint256 private constant _SCHEDULE_HORIZON = 62 days - 1 hours;
@@ -132,7 +137,8 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     // ------------------------------------------------------------------ funding
 
     /// @notice Check order: Confirmed, cheapest first (an empty fill also reverts `NOT_CHEAPEST_FIRST`),
-    ///         borrowing base (including `advanceBps <= 10_000`); then fills, Financed, schedules.
+    ///         borrowing base (including `advanceBps <= 10_000`); then fills, Financed, the overdue schedule.
+    ///         The default schedule stays unset until `markOverdue` creates it (one HSS schedule per transaction).
     function openAndFund(bytes32 id, Fill[] calldata fills, uint16 advanceBps, uint256 limit)
         external
         onlyCoordinator
@@ -171,20 +177,15 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
 
         REGISTRY.markFinanced(id);
 
-        uint256 defaultExpiry = _defaultExpiry(r.dueDate);
-        bool defaultInHorizon = defaultExpiry <= block.timestamp + _SCHEDULE_HORIZON;
         address overdueSchedule = _schedule(
             uint256(r.dueDate) + _OVERDUE_AFTER + _SCHEDULE_SLACK,
-            defaultInHorizon ? _SCHEDULE_GAS : _SCHEDULE_GAS_WITH_NESTED,
+            _SCHEDULE_GAS_WITH_NESTED,
             abi.encodeCall(ICreditFacility.markOverdue, (id))
         );
-        address defaultSchedule =
-            _schedule(defaultExpiry, _SCHEDULE_GAS, abi.encodeCall(ICreditFacility.markDefaulted, (id)));
         info.overdueSchedule = overdueSchedule;
-        info.defaultSchedule = defaultSchedule;
 
         emit FacilityFunded(id, total, advanceBps, _makers[id]);
-        emit Scheduled(id, overdueSchedule, defaultSchedule);
+        emit Scheduled(id, overdueSchedule, address(0));
     }
 
     /// @notice Records the lender position for a fill of the receivable currently being funded.
@@ -207,9 +208,9 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
     // ------------------------------------------------------------------ overdue, default, dispute
 
     /// @notice From `dueDate + 7 days`, anyone: Financed -> Overdue and the facility freezes. Schedules the
-    ///         default check if it was beyond the horizon at funding, best-effort (Ruling R18): skipped when
-    ///         its expiry is already past or beyond the horizon, and a failed schedule emits `ScheduleSkipped`
-    ///         instead of reverting, so the overdue transition can never be blocked.
+    ///         default check, best-effort (Ruling R18): skipped when its expiry is already past or beyond the
+    ///         horizon, and a failed schedule emits `ScheduleSkipped` instead of reverting, so the overdue
+    ///         transition can never be blocked.
     function markOverdue(bytes32 id) external {
         FacilityInfo storage info = _info[id];
         _checkOpen(info);
@@ -519,8 +520,8 @@ contract CreditFacility is ICreditFacility, Ownable, Pausable {
         return uint256(dueDate) + _DEFAULT_AFTER + _SCHEDULE_SLACK;
     }
 
-    /// @dev Funding-time schedule: skipped (`address(0)`) beyond the HSS horizon; a non-SUCCESS response
-    ///      reverts `SCHEDULE_FAILED`.
+    /// @dev Funding-time schedule (the only `scheduleCall` of the transaction): skipped (`address(0)`) beyond
+    ///      the HSS horizon; a non-SUCCESS response reverts `SCHEDULE_FAILED`.
     function _schedule(uint256 expiry, uint256 gasLimit, bytes memory callData) private returns (address schedule) {
         if (expiry > block.timestamp + _SCHEDULE_HORIZON) return address(0);
         int64 rc;

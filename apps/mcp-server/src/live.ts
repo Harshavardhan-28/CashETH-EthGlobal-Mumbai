@@ -463,7 +463,7 @@ export function createLiveAqua(env: Env, cfg: McpConfig, keys: AgentKey[]): Aqua
       return discoverStrategies(pub as PublicClient, addrs, { fromBlock: await fromBlock.block });
     },
     solve(input) {
-      return solve(pub as PublicClient, addresses(), input);
+      return solve(pub as PublicClient, addresses(), { ...input, coordinator: privateKeyToAccount(cfg.coordinatorKey).address });
     },
     async fund(lender: Address, plan: FundPlan, inProcess: boolean): Promise<FundResult> {
       const addrs = addresses();

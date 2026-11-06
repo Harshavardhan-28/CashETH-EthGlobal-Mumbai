@@ -149,18 +149,6 @@ const SIMULATION_ABI = [
   ),
 ] as Abi;
 
-/** What the Hedera relay answers when a simulated call reaches the Schedule Service, which it cannot run. */
-const SCHEDULING_REFUSED = "NO_SCHEDULING_ALLOWED_AFTER_SCHEDULED_RECURSION";
-
-/**
- * Whether a failed `openAndFund` dry run died only at the Schedule Service. `openAndFund` schedules its
- * `markOverdue` / `markDefaulted` calls last, after the fills and `markFinanced`, so on Hedera (where eth_call
- * cannot schedule) this error means every credit rule passed.
- */
-export function simulationReachedScheduling(err: unknown): boolean {
-  return err instanceof BaseError && err.walk((e) => e instanceof BaseError && !!e.details?.includes(SCHEDULING_REFUSED)) !== null;
-}
-
 /** The custom error name a failed call reverted with, or a generic label. */
 export function revertReason(err: unknown): string {
   if (err instanceof BaseError) {
@@ -227,10 +215,8 @@ export async function solve(
           account: input.coordinator,
         });
       } catch (err) {
-        if (!simulationReachedScheduling(err)) {
-          skipped.push({ strategyHash: s.strategyHash, reason: revertReason(err) });
-          continue;
-        }
+        skipped.push({ strategyHash: s.strategyHash, reason: revertReason(err) });
+        continue;
       }
     }
     eligible.push(s);
