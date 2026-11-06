@@ -10,4 +10,4 @@ export async function assertModelAvailable(baseUrl: string, model: string, fetch
 }
 
 /** Deterministic and without the thinking phase: a tool-calling run needs answers, not essays. */
-export const ollamaChatModel = (baseUrl: string, model: string) => new ChatOllama({ baseUrl, model, temperature: 0, think: false });
+export const ollamaChatModel = (baseUrl: string, model: string, numCtx: number) => new ChatOllama({ baseUrl, model, numCtx, temperature: 0, think: false });

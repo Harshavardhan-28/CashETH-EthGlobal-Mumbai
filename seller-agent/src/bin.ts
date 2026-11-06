@@ -40,7 +40,7 @@ async function main(): Promise<number> {
     console.log(`seller agent run ${runId}: ${config.model} at ${config.ollamaBaseUrl}, MCP ${mcpUrl}, invoice ${invoice.buyerRef}, wants ${config.paidApiUrl}`);
 
     const result = await runSellerAgent({
-      model: ollamaChatModel(config.ollamaBaseUrl, config.model),
+      model: ollamaChatModel(config.ollamaBaseUrl, config.model, config.numCtx),
       seller: clients.seller,
       worker: clients.worker,
       buyer: createBuyerAgent({

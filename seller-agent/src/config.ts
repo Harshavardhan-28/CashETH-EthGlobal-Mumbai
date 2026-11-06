@@ -6,6 +6,11 @@ export const LIVE_PAID_API = "https://casheth-paid-apis-177290233934.asia-southe
 export interface SellerAgentConfig {
   ollamaBaseUrl: string;
   model: string;
+  /**
+   * Ollama context window in tokens. Ollama's default (4096) silently drops the start of a long prompt, the system
+   * prompt first; the full run (tool schemas, quotes, a dozen tool results) needs more.
+   */
+  numCtx: number;
   /** The paid resource the agent wants. */
   paidApiUrl: string;
   maxSteps: number;
@@ -43,6 +48,7 @@ export function configFrom(env: EnvLike, argv: string[]): SellerAgentConfig {
   return {
     ollamaBaseUrl: pick(env, "OLLAMA_BASE_URL", "http://localhost:11434"),
     model: values.model ?? pick(env, "CASHETH_LLM_MODEL", "qwen3:8b"),
+    numCtx: Number(pick(env, "SELLER_AGENT_NUM_CTX", "16384")),
     paidApiUrl: values["paid-url"] ?? pick(env, "SELLER_AGENT_PAID_URL", `${LIVE_PAID_API}/price-feed?symbols=HBAR`),
     maxSteps: positiveInt(values["max-steps"] ?? pick(env, "SELLER_AGENT_MAX_STEPS", "30")),
     spendCap: BigInt(pick(env, "SELLER_AGENT_SPEND_CAP", "1000000")),

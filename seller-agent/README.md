@@ -83,6 +83,7 @@ Options (flags win over the environment):
 | `--max-steps` | `SELLER_AGENT_MAX_STEPS` | `30` |
 | | `SELLER_AGENT_SPEND_CAP` | `1000000` (1 USDC in units) |
 | | `SELLER_AGENT_INVOICE_USDC` | `2.00` |
+| | `SELLER_AGENT_NUM_CTX` | `16384` (Ollama's 4096 default would silently drop the start of the prompt) |
 | `--start-servers` | | off |
 
 `CASHETH_LLM_MODEL` is also read by the MCP server for invoice field extraction; leave it unset unless you want both to use the same model.
