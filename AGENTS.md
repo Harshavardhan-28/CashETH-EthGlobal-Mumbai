@@ -34,6 +34,7 @@ Lenders are a **shared liquidity** story (never say "pool"): one wallet backs a 
 | `casheth-paid-apis/` | (not a workspace package) | Teammate's standalone x402 merchant (Express, plain JS, own `package-lock.json`), live on Cloud Run: `/price-feed`, `/web-scrape`, `/llm-summary`, and a rogue-payee `/premium-data`. Do not edit it; the worker buys from it as an external merchant (`docs/API.md` section 6). |
 | `agents/` | `@casheth/agents` | `AgentClient` (discovers auth, gets a token, connects MCP), seller / buyer / worker / lender / trader agents, `pnpm -F @casheth/agents buy` (worker CLI, ours or external merchants), Hedera Agent Kit wrapper (`kit.ts`), demo runner (`demo.ts`, `pnpm demo`; being finished on a branch). |
 | `seller-agent/` | `@casheth/seller-agent` | Ollama (`qwen3:8b`) LangGraph agent that plays the whole story as the seller account: paid-API 402 → MCP credit → x402 purchase by its research worker → buyer repayment. Code guardrails (spend cap, reservation and origin checks, wrapper-owned idempotency keys). `pnpm seller-agent [--start-servers]`; see `seller-agent/README.md`. |
+| `wallet-mcp/` | `@casheth/wallet-mcp` | Local stdio MCP server Claude Code launches as `casheth-wallet` (`.mcp.json`): holds the buyer's (and optionally seller / lender) key, signs the EIP-712 confirmation, sends allowlisted calldata with capped exact approvals. With `casheth-seller` / `-buyer` / `-worker`, `/casheth-demo` and the `casheth-operator` subagent (`.claude/`) it runs the full flow from Claude Code: `docs/CLAUDE_CODE_DEMO.md`. |
 | `scripts/` | one-off testnet scripts per checkpoint (`c2-*`, `c3-*`, `c4-*`, `c5-*`), `abi-sync.ts`, `verify-evidence.ts` (being merged). **Never run `setup-accounts.ts` again**: it rewrites `.env.accounts` destructively. |
 | `deployments/testnet/` | `addresses.json` (the live contract addresses; everything reads this at runtime), `strategies.json`, `facility.json`, `spend-wallets.json`, per-checkpoint records, `archive-2026-11-06-redeploy.json` (first deployment). |
 | `docs/` | `EVIDENCE.md` (every HashScan link per checkpoint), `API.md` (MCP + read API contract), `DEMO.md` / `DEMO_SCRIPT.md`, `VERIFICATION.md`, `superpowers/plans/*` (the build plan with rulings). |
@@ -49,7 +50,7 @@ pnpm -r build
 pnpm -r test                       # TS suites; the aqua anvil project needs FOUNDRY_BIN=<dir with forge/anvil>
 cd contracts && forge test         # 181 tests
 pnpm -F @casheth/auth start        # :4020  (AUTH_DEMO_GRANT=true adds the Claude Code sign-in, docs/CLAUDE_CODE_DEMO.md)
-pnpm -F @casheth/mcp start         # :4030  (AGENT_KEYS_IN_PROCESS=true lets the server sign for demo agents)
+pnpm -F @casheth/mcp start         # :4030  (AGENT_KEYS_IN_PROCESS=true, or a role list such as seller,worker, lets the server sign for demo agents)
 pnpm -F @casheth/merchant start    # :3003
 pnpm demo                          # full lifecycle on testnet, appends to docs/EVIDENCE.md
 ```

@@ -326,7 +326,7 @@ Registered from an invoice PDF (PO-1003): [0.0.7314364@1793989261.174955397](htt
 | --- | --- | --- |
 | Scripted agents | `agents/` seller, buyer, worker, lender, trader and the demo runner (`pnpm demo`) | [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) |
 | LLM agents | A language model chooses the MCP tools; an agent wrapper enforces a client-side spend cap. Local Ollama by default (no API key), Claude optional. | [docs/LLM_AGENTS.md](docs/LLM_AGENTS.md) |
-| Claude Code as a client | Claude Code connects as a remote MCP client (`.mcp.json`, OAuth with PKCE through the demo grant) and buys the research report as the research worker | [docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md) |
+| Claude Code as the agent | Claude Code runs the whole lifecycle through MCP (`/casheth-demo`): one OAuth-authenticated server name per role (`casheth-seller`, `-buyer`, `-worker`) plus a local stdio wallet (`wallet-mcp/`) that signs as the buyer, so the confirmation and the repayment are non-custodial | [docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md) |
 
 All three use the same 20 MCP tools and the same on-chain checks. The model never approves credit: the score is deterministic and `explain_decision` only explains it.
 
@@ -396,6 +396,7 @@ Spike S1 evidence that Aqua and SwapVM run on Hedera with real HTS USDC: [ship](
 | `apps/auth-server` | OAuth 2.1 authorization server with KYA checks |
 | `apps/mcp-server` | MCP tools (20), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`) |
 | `agents/` | `AgentClient` and the seller, buyer, worker, lender and trader agents; Hedera Agent Kit wrapper; demo runner |
+| `wallet-mcp/` | Local stdio MCP wallet for Claude Code: buyer confirmation signing, allowlisted calldata sending ([docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md)) |
 | `scripts/` | Account setup, deploy and wiring drivers (`c2` to `c5`), spikes, sweep, ABI sync |
 | `deployments/testnet/` | Addresses and run records |
 | `docs/` | `EVIDENCE.md`, `API.md`, `DEMO_SCRIPT.md`, `LLM_AGENTS.md`, `CLAUDE_CODE_DEMO.md` |
