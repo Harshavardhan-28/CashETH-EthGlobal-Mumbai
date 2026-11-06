@@ -63,3 +63,14 @@ describe("the seller agent graph", () => {
     expect(calls[0]!.args).toMatchObject({ worker: WORKER.address, spendWallet: SPEND_WALLET, amount: "500000" });
   });
 });
+
+describe("http_get refusals", () => {
+  it("reach the model as an error with its code and are audited as errors", async () => {
+    const model = new ScriptedChatModel([callTool("http_get", { url: "https://evil.example/" }), new AIMessage("stop")]);
+    const { options } = setupRun(model);
+
+    const result = await runSellerAgent(options);
+
+    expect(result.audit[0]).toMatchObject({ tool: "http_get", outcome: "error", code: "ORIGIN_NOT_ALLOWED" });
+  });
+});

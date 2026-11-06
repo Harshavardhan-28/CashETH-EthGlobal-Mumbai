@@ -32,9 +32,7 @@ describe("http_get", () => {
     const { calls, impl } = fakeFetch(() => new Response("secret"));
     const get = createHttpGet({ allowedOrigins: [PAID], fetch: impl });
 
-    const result = await get({ url: "https://evil.example/price-feed" });
-
-    expect(result).toMatchObject({ code: "ORIGIN_NOT_ALLOWED" });
+    await expect(get({ url: "https://evil.example/price-feed" })).rejects.toMatchObject({ code: "ORIGIN_NOT_ALLOWED" });
     expect(calls).toHaveLength(0);
   });
 

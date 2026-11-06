@@ -5,13 +5,22 @@
  */
 
 export interface HttpGetResult {
-  status?: number;
-  headers?: Record<string, string>;
-  body?: string;
+  status: number;
+  headers: Record<string, string>;
+  body: string;
   truncated?: boolean;
   paymentRequired?: unknown;
-  code?: string;
-  message?: string;
+}
+
+/** A URL `http_get` will not fetch; `code` reaches the model. */
+export class HttpGetRefused extends Error {
+  constructor(
+    readonly code: "BAD_INPUT" | "ORIGIN_NOT_ALLOWED",
+    message: string,
+  ) {
+    super(message);
+    this.name = "HttpGetRefused";
+  }
 }
 
 export interface HttpGetOptions {
@@ -39,10 +48,10 @@ export function createHttpGet({ allowedOrigins, fetch: fetchImpl = fetch, maxByt
     try {
       target = new URL(url);
     } catch {
-      return { code: "BAD_INPUT", message: `not a URL: ${url}` };
+      throw new HttpGetRefused("BAD_INPUT", `not a URL: ${url}`);
     }
     if (!allowed.has(target.origin)) {
-      return { code: "ORIGIN_NOT_ALLOWED", message: `http_get only fetches ${[...allowed].join(", ")}` };
+      throw new HttpGetRefused("ORIGIN_NOT_ALLOWED", `http_get only fetches ${[...allowed].join(", ")}`);
     }
     const res = await fetchImpl(target, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(20_000) });
     const bytes = new Uint8Array(await res.arrayBuffer());
