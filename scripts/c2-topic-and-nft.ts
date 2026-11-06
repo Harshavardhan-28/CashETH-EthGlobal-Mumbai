@@ -1,6 +1,6 @@
 /**
  * Checkpoint C2 (Hedera-native half): creates the HCS audit topic and the receivable NFT
- * collection, builds an HCS-14 UAID for each of the ten demo agents and publishes an
+ * collection, builds an HCS-14 UAID for each demo agent and publishes an
  * `AgentRegistered` profile for each to the topic. No NFT is minted here (the first mint needs a
  * registered receivable and happens in Task 4.3).
  *
@@ -39,6 +39,7 @@ const AGENTS: Record<DemoAccount, { name: string; role: AgentRole }> = {
   COORDINATOR: { name: "CashETH Coordinator", role: "coordinator" },
   COSIGNER: { name: "CashETH Co-signer", role: "cosigner" },
   KYA_ISSUER: { name: "CashETH KYA Issuer", role: "issuer" },
+  LENDER_D: { name: "CashETH Lender D", role: "lender" },
 };
 
 interface PartialIds {

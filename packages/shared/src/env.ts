@@ -17,6 +17,8 @@ export const DEMO_ACCOUNTS = [
   "COORDINATOR",
   "COSIGNER",
   "KYA_ISSUER",
+  /** Addendum A: the fourth lender (low tier, `sellerSet = [workerResearch]`), created by scripts/c4-register.ts. */
+  "LENDER_D",
 ] as const;
 
 export type DemoAccount = (typeof DEMO_ACCOUNTS)[number];

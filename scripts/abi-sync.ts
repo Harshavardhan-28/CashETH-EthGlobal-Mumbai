@@ -22,6 +22,8 @@ const CONTRACTS = [
   "RepaymentRouter",
   "CashEthSwapVMRouter",
   "CashEthOrderBuilder",
+  "TestStablecoin",
+  "CashEthTaker",
   // From the aqua submodule (lib/aqua/contracts/AquaRouter.sol), compiled into the same out/ tree.
   "AquaRouter",
 ] as const;

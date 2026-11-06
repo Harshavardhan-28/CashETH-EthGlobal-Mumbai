@@ -41,7 +41,8 @@ export function evmClients(
   privateKey?: Hex,
 ): { public: PublicClient; wallet?: WalletClient; chain: Chain } {
   const chain = hederaTestnet;
-  const transport = http(env.HEDERA_JSON_RPC_URL);
+  // Hashio regularly takes longer than viem's 10 s default to answer eth_sendRawTransaction.
+  const transport = http(env.HEDERA_JSON_RPC_URL, { timeout: 60_000 });
   return {
     public: createPublicClient({ chain, transport }),
     wallet: privateKey

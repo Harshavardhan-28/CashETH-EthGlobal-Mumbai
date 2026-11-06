@@ -18,6 +18,7 @@ Demo agent accounts created by `scripts/setup-accounts.ts`: ECDSA keys with EVM-
 | coordinator | [0.0.11337994](https://hashscan.io/testnet/account/0.0.11337994) | `0x45fdf15ed9c6327deb0e57db6b78f592b254ab68` |
 | cosigner | [0.0.11337995](https://hashscan.io/testnet/account/0.0.11337995) | `0xdd479f3ca489d481374d04a409d7f0e7a972c9e4` |
 | kyaIssuer | [0.0.11337996](https://hashscan.io/testnet/account/0.0.11337996) | `0x8918f395c2e80066901a01d2cbe134ca9d31f582` |
+| lenderD (C4, `scripts/c4-register.ts`; 1 USDC) | [0.0.11340117](https://hashscan.io/testnet/account/0.0.11340117) | `0x9a81f51aaca1bf584d21f44c40be9ddb12ef5690` |
 
 ## Spike S1: Aqua + SwapVM on Hedera
 
@@ -373,3 +374,122 @@ To show the invariants catch real faults, each of the following deliberate sourc
 - `release` forgets to decrement `info.reserved`.
 - `openAndFund` drops the borrowing-base check.
 - `closeFacility` keeps the undrawn USDC.
+
+## C4: modified SwapVM router, wiring, first registration
+
+Deployed on 2026-11-06 by `contracts/script/03_DeployAqua.s.sol` through the Hashio relay from the operator (`0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e`), driven by `scripts/c4-deploy-and-wire.ts`. The wiring, the tUSDT mints and the registration were sent from TypeScript (`scripts/c4-deploy-and-wire.ts`, `scripts/c4-register.ts`), and each transaction is recorded below. Addresses are in `deployments/testnet/addresses.json` (`aqua`, `swapRouter`, `orderBuilder`, `tUsdt`, `taker`, plus `deployedBlock` = 42741303, the Aqua creation block, where Aqua log discovery should start). The full run record is in `deployments/testnet/c4.json`. Spike S1's Aqua registry (`deployments/testnet/spike-aqua.json`) is untouched. This is CashETH's own registry.
+
+### Contracts
+
+| Contract | Address | Contract id | Block | Deploy tx | Gas used |
+| --- | --- | --- | --- | --- | --- |
+| AquaRouter (owner = operator) | `0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c` | [0.0.11339989](https://hashscan.io/testnet/contract/0.0.11339989) | 42741303 | [0.0.7314364@1793973211.309180764](https://hashscan.io/testnet/transaction/0.0.7314364@1793973211.309180764) | 887,121 |
+| CashEthSwapVMRouter (aqua, WHBAR `0xb1F6…37Ed`, owner = operator, "CashETH SwapVM", "1.0.0", registry, kya, facility) | `0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562` | [0.0.11339992](https://hashscan.io/testnet/contract/0.0.11339992) | 42741315 | [0.0.7314364@1793973238.198619187](https://hashscan.io/testnet/transaction/0.0.7314364@1793973238.198619187) | 5,236,940 |
+| CashEthOrderBuilder | `0x4125108453A1E9c333b100a917F630b84F3413Fb` | [0.0.11339998](https://hashscan.io/testnet/contract/0.0.11339998) | 42741322 | [0.0.7314364@1793973249.483160364](https://hashscan.io/testnet/transaction/0.0.7314364@1793973249.483160364) | 1,955,808 |
+| TestStablecoin (tUSDT, 6 decimals, owner = operator) | `0x65C25Cc145f0836C8fFAb83Bf9676e98a8a2648a` | [0.0.11340006](https://hashscan.io/testnet/contract/0.0.11340006) | 42741343 | [0.0.7314364@1793973289.919591005](https://hashscan.io/testnet/transaction/0.0.7314364@1793973289.919591005) | 577,577 |
+| CashEthTaker (router, USDC, owner = operator; associates USDC in its constructor) | `0x506646D702C00A19854eE1f28eF3F396E32a3838` | [0.0.11340016](https://hashscan.io/testnet/contract/0.0.11340016) | 42741358 | [0.0.7314364@1793973323.248921375](https://hashscan.io/testnet/transaction/0.0.7314364@1793973323.248921375) | 1,271,960 |
+
+The ~25.4 KB router initcode was accepted by the relay as an ordinary EVM creation, so the `ContractCreateFlow` fallback (D-P10) was not needed. The script creates every contract from its standalone `out/` artifact (`vm.getCode` plus `create`) rather than with `new`. Under via-IR, the router compiled as a sub-object of the script came out 285 B longer than the standalone artifact, and forge 1.5.1 then failed to decode its constructor arguments (`type check failed for "offset (usize)"`). The deployed runtime code of all five contracts was read from the mirror node and compared with `out/` with immutables masked. All five match byte for byte, and the router's is 23,759 B.
+
+`forge build --sizes` for the router (solc 0.8.30, via-IR, 600 runs):
+
+```
+| CashEthSwapVMRouter | 23,759 | 25,445 | 817 | 23,707 |
+```
+
+| Contract | Runtime (B) | Initcode (B) | Runtime margin (B) |
+| --- | --- | --- | --- |
+| CashEthSwapVMRouter | 23,759 | 25,445 | 817 |
+| AquaRouter | 3,730 | 3,938 | 20,846 |
+| CashEthOrderBuilder | 8,807 | 8,833 | 15,769 |
+| TestStablecoin | 2,035 | 2,987 | 22,541 |
+| CashEthTaker | 2,205 | 2,682 | 22,371 |
+
+### Wiring (one-time, from the operator)
+
+| Step | Tx | Gas limit | Gas used |
+| --- | --- | --- | --- |
+| `ReceivableCreditNote.wire(facility, repaymentRouter, swapRouter, aqua)` | [0.0.7314364@1793973375.185154979](https://hashscan.io/testnet/transaction/0.0.7314364@1793973375.185154979) | 157,534 | 113,912 |
+| `CreditFacility.wire(swapRouter, repaymentRouter)` | [0.0.7314364@1793973384.629786380](https://hashscan.io/testnet/transaction/0.0.7314364@1793973384.629786380) | 94,790 | 69,271 |
+
+`registry.wire` and `kya.wire` were done in C3. The script then read these values back from the chain:
+
+- `rcn.facility()` = `0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640`, `rcn.repaymentRouter()` = `0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7`, `rcn.swapRouter()` = `0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562`, `rcn.aqua()` = `0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c`.
+- `facility.swapRouter()` = the router and `facility.repaymentRouter()` = the repayment router.
+- `swapRouter.AQUA/REGISTRY/KYA/FACILITY()` match the deployed aqua, registry, KYA and facility. `swapRouter.owner()` and `aqua.owner()` are the operator. `swapRouter.eip712Domain()` = ("CashETH SwapVM", "1.0.0", 296).
+- `tUsdt.symbol()` = tUSDT, `decimals()` = 6 and `owner()` = the operator.
+- `taker.owner()` is the operator, `taker.ROUTER()` is the router and `taker.USDC()` is the USDC facade. The mirror node lists 0.0.11340016 as associated with USDC 0.0.429274.
+
+### tUSDT mints (Addendum A)
+
+| Recipient | Units (6 dec.) | Tx |
+| --- | --- | --- |
+| lenderA `0xc502…a096` | 50,000,000 | [0.0.7314364@1793973410.629230189](https://hashscan.io/testnet/transaction/0.0.7314364@1793973410.629230189) |
+| lenderB `0x502e…d238` | 50,000,000 | [0.0.7314364@1793973436.669979525](https://hashscan.io/testnet/transaction/0.0.7314364@1793973436.669979525) |
+| lenderC `0xeaAB…2377` | 50,000,000 | [0.0.7314364@1793973647.416551032](https://hashscan.io/testnet/transaction/0.0.7314364@1793973647.416551032) |
+| lenderD `0x9a81…5690` | 50,000,000 | [0.0.7314364@1793973830.022297535](https://hashscan.io/testnet/transaction/0.0.7314364@1793973830.022297535) |
+| operator / trader `0x8Ac6…E97e` | 20,000,000 | [0.0.7314364@1793973710.046026486](https://hashscan.io/testnet/transaction/0.0.7314364@1793973710.046026486) |
+
+### Lender D
+
+| Step | Tx |
+| --- | --- |
+| create 0.0.11340117 (ECDSA, EVM alias `0x9a81f51AACA1BF584D21f44c40Be9DdB12ef5690`, 20 HBAR) | [0.0.11333252@1793973749.307616004](https://hashscan.io/testnet/transaction/0.0.11333252@1793973749.307616004) |
+| associate USDC 0.0.429274 | [0.0.11333252@1793973758.885360940](https://hashscan.io/testnet/transaction/0.0.11333252@1793973758.885360940) |
+| 1 USDC from the operator | [0.0.11333252@1793973758.144836264](https://hashscan.io/testnet/transaction/0.0.11333252@1793973758.144836264) |
+| `KYARegistry.register(lenderD)` by the KYA issuer: role 4 (Lender), level 2, ownerGroup `keccak256("lender-d")`, uaidHash `keccak256(address)` placeholder, mandateHash `keccak256("mandate-v1-lenderD")` | [0.0.7314364@1793973776.590586610](https://hashscan.io/testnet/transaction/0.0.7314364@1793973776.590586610) |
+
+The mirror node shows 20 HBAR and 1,000,000 USDC units on 0.0.11340117. `LENDER_D_ID/_KEY/_EVM` are in `.env.accounts`, and `LENDER_D` was added to `DEMO_ACCOUNTS`.
+
+### First registration: PO-1002, payee = RepaymentRouter
+
+The buyer signed the `ReceivableConfirmation` below. The coordinator (0.0.11337994) submitted it.
+
+- Amounts and dates: amount 10000000 (10 USDC), dueDate 1796565842 (now + 30 days), deadline 1794060242 (now + 1 day).
+- `buyerRef = keccak256("PO-1002")` = `0x9928d28ec7aa4286690d97ba1a7149d2ac12ab0fd6b185d8a2460f44e8aaf4f6`; `detailsCommitment = keccak256("demo-invoice-1002")`.
+- `payTo = 0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7` (the RepaymentRouter); nonce 0 (= `nonces(buyer)`).
+
+The TypeScript digest `0x902bb9cb638c78456026e30a9578c1b24e1aa28069a3b1783d077faba82d4c02` equals the registry's `hashConfirmation`.
+
+**Receivable id `0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c`** (= `computeId(buyer, buyerRef)`).
+
+| Step | Tx | Mirror result | Gas used |
+| --- | --- | --- | --- |
+| `ReceivableRegistry.register(PO-1002)` | [0.0.7314364@1793973922.254969725](https://hashscan.io/testnet/transaction/0.0.7314364@1793973922.254969725) | SUCCESS | 233,024 |
+
+The script read the receivable back with `state(id)` and `get(id)`. It reads 1 (Confirmed) with seller, buyer, currency, amount, dueDate and detailsCommitment equal to the confirmation, `registeredAt` 1793973926, and `nonces(buyer)` is now 1.
+
+### HCS audit events and receivable NFT
+
+| Item | Value | Tx |
+| --- | --- | --- |
+| `ReceivableConfirmed` on topic [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927) | seq **30** (prevSeq 28) | [0.0.11333252@1793973943.240502909](https://hashscan.io/testnet/transaction/0.0.11333252@1793973943.240502909) |
+| NFT [0.0.11338934](https://hashscan.io/testnet/token/0.0.11338934) mint | serial **1**, metadata `{"id":"0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c","seq":30}` | [0.0.11333252@1793973947.419241023](https://hashscan.io/testnet/transaction/0.0.11333252@1793973947.419241023) |
+| `NftMinted` | seq **31** (prevSeq 30) | [0.0.11333252@1793973947.577011440](https://hashscan.io/testnet/transaction/0.0.11333252@1793973947.577011440) |
+
+The mirror node read-back confirms all three:
+
+- `/topics/0.0.11338927/messages/30` and `/31` decode to these events with this id.
+- `/tokens/0.0.11338934/nfts/1` carries exactly this metadata and is held by the treasury (the operator 0.0.11333252).
+- The NFT's `seq` is the `ReceivableConfirmed` sequence number.
+
+Seq 29 is a `test: true` `AgentRegistered` message published concurrently by the `@casheth/hedera` live tests. It landed between our mirror read of the latest sequence (28) and our submit, which is why `ReceivableConfirmed` carries prevSeq 28.
+
+### DUPLICATE_RECEIVABLE proven on-chain
+
+The same obligation (same buyer and `buyerRef`, so the same id) was signed again with the next nonce (1) and a fresh deadline (1794060354). All other fields were unchanged.
+
+- **Dry run** (`simulateContract`): the duplicate reverts `DUPLICATE_RECEIVABLE()`.
+- **Control dry run:** the identical confirmation with `buyerRef = keccak256("PO-1002-control")` passes every check (returns id `0x8ae1754f…4995f`). Only the duplication blocks it. This control was a dry run only and nothing was registered.
+- **Real transaction:** the coordinator submitted the duplicate with an explicit gas limit of 300,000:
+
+| Submission | Tx | Mirror result | error_message | Decoded |
+| --- | --- | --- | --- | --- |
+| PO-1002 again, nonce 1 | [0.0.7314364@1793973975.081244937](https://hashscan.io/testnet/transaction/0.0.7314364@1793973975.081244937) | CONTRACT_REVERT_EXECUTED | `0x55e1137b` | `DUPLICATE_RECEIVABLE()` |
+
+`0x55e1137b` = `bytes4(keccak256("DUPLICATE_RECEIVABLE()"))`. It is read from mirror `GET /contracts/results/{hash}` → `error_message` and decoded with the synced `ReceivableRegistry` ABI.
+
+### Tests
+
+`forge test`: 182 passed, 0 failed. That is the earlier 167 plus 11 for `CashEthTaker`: both directions, exact-in and exact-out (approves the router's own quote), threshold, owner-only, sweep, constructor association including `TOKEN_ALREADY_ASSOCIATED`. Another 4 cover `TestStablecoin`.
+

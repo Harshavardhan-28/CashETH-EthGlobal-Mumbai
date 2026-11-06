@@ -23,6 +23,8 @@ export const AddressesSchema = z.looseObject({
   aqua: address.optional(),
   tUsdt: address.optional(),
   taker: address.optional(),
+  /** Block of the C4 Aqua registry creation (the swap router follows it); Aqua log discovery starts here. */
+  deployedBlock: z.number().int().nonnegative().optional(),
   usdc: address.optional(),
   deployer: address.optional(),
   deployedAt: z.string().optional(),

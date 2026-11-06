@@ -1,0 +1,332 @@
+{
+  "network": "testnet",
+  "chainId": 296,
+  "operator": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+  "deploy": {
+    "aqua": {
+      "address": "0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c",
+      "contractId": "0.0.11339989",
+      "tx": {
+        "hash": "0x53246e13886803cbfc56606fc47e73808aafddcaa1ea0ac84522006f1601feb2",
+        "transactionId": "0.0.7314364@1793973211.309180764",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973211.309180764"
+      },
+      "gas": {
+        "limit": 1224923,
+        "used": 887121,
+        "consumed": 887121
+      },
+      "block": 42741303
+    },
+    "swapRouter": {
+      "address": "0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562",
+      "contractId": "0.0.11339992",
+      "tx": {
+        "hash": "0x961e638c0f3c912da79152c3391500e4ef6c9c383faa82d42942772bdd526c5f",
+        "transactionId": "0.0.7314364@1793973238.198619187",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973238.198619187"
+      },
+      "gas": {
+        "limit": 7204645,
+        "used": 5236940,
+        "consumed": 5236940
+      },
+      "block": 42741315
+    },
+    "orderBuilder": {
+      "address": "0x4125108453A1E9c333b100a917F630b84F3413Fb",
+      "contractId": "0.0.11339998",
+      "tx": {
+        "hash": "0x0416f387d7fd908a9f61a3895a7f9ecc327baeceeede2ffc6cccc689ea5d91f1",
+        "transactionId": "0.0.7314364@1793973249.483160364",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973249.483160364"
+      },
+      "gas": {
+        "limit": 2675029,
+        "used": 1955808,
+        "consumed": 1955808
+      },
+      "block": 42741322
+    },
+    "tUsdt": {
+      "address": "0x65C25Cc145f0836C8fFAb83Bf9676e98a8a2648a",
+      "contractId": "0.0.11340006",
+      "tx": {
+        "hash": "0x8eef1a8452d66fd298b75fb96fc1c16f9cdf51cc523423876717880685bdcecd",
+        "transactionId": "0.0.7314364@1793973289.919591005",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973289.919591005"
+      },
+      "gas": {
+        "limit": 824088,
+        "used": 577577,
+        "consumed": 577577
+      },
+      "block": 42741343
+    },
+    "taker": {
+      "address": "0x506646D702C00A19854eE1f28eF3F396E32a3838",
+      "contractId": "0.0.11340016",
+      "tx": {
+        "hash": "0x97a7d93a1a0c439727a6eede31e9ffb4e26dcd4961a64d74da2743f82d387b4d",
+        "transactionId": "0.0.7314364@1793973323.248921375",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973323.248921375"
+      },
+      "gas": {
+        "limit": 1792973,
+        "used": 1271960,
+        "consumed": 1271960
+      },
+      "block": 42741358
+    }
+  },
+  "wiring": {
+    "rcn": {
+      "label": "ReceivableCreditNote.wire(facility, repaymentRouter, swapRouter, aqua)",
+      "hash": "0x24ed3ebbf69a077fa646d18e73bcedebe129bde415a8108edfe6cce992785d1b",
+      "transactionId": "0.0.7314364@1793973375.185154979",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973375.185154979",
+      "gas": {
+        "limit": 157534,
+        "used": 113912,
+        "consumed": 113912
+      }
+    },
+    "facility": {
+      "label": "CreditFacility.wire(swapRouter, repaymentRouter)",
+      "hash": "0x3cb3919586f9c5d26a5f4aa8986bd65284b9967da822d8940213bf5232ad341c",
+      "transactionId": "0.0.7314364@1793973384.629786380",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973384.629786380",
+      "gas": {
+        "limit": 94790,
+        "used": 69271,
+        "consumed": 69271
+      }
+    }
+  },
+  "tUsdtMints": [
+    {
+      "label": "LENDER_A",
+      "to": "0xc502fe381481aBD2E56921Dc58DFC3ca3776a096",
+      "units": "50000000",
+      "tx": {
+        "label": "TestStablecoin.mint(LENDER_A, 50000000)",
+        "hash": "0x7628b0c5f4c1511627857c479a385267b37275dad03a14d5e271373d347992f1",
+        "transactionId": "0.0.7314364@1793973410.629230189",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973410.629230189",
+        "gas": {
+          "limit": 96051,
+          "used": 70242,
+          "consumed": 70242
+        }
+      }
+    },
+    {
+      "label": "LENDER_B",
+      "to": "0x502ea0745ddd16128B8f649394cd0C8c93FEd238",
+      "units": "50000000",
+      "tx": {
+        "label": "TestStablecoin.mint(LENDER_B, 50000000)",
+        "hash": "0x24eed9313375d99b23fe6824e88cb03e7bcb3cfc00b6b58343821c861f438f7b",
+        "transactionId": "0.0.7314364@1793973436.669979525",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973436.669979525",
+        "gas": {
+          "limit": 73828,
+          "used": 53142,
+          "consumed": 53142
+        }
+      }
+    },
+    {
+      "label": "LENDER_C",
+      "to": "0xeaABAEF2DF2BD6c1e13207573B233d1D33042377",
+      "units": "50000000",
+      "tx": {
+        "label": "TestStablecoin.mint(LENDER_C, 50000000)",
+        "hash": "0xc978c247c16f67d73a60bb0c81ce4b3fc6f76998e1d2dc44c3915db1a6e16abc",
+        "transactionId": "0.0.7314364@1793973647.416551032",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973647.416551032",
+        "gas": {
+          "limit": 73828,
+          "used": 53142,
+          "consumed": 53142
+        }
+      }
+    },
+    {
+      "label": "operator (trader)",
+      "to": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+      "units": "20000000",
+      "tx": {
+        "label": "TestStablecoin.mint(operator (trader), 20000000)",
+        "hash": "0x3bfe27650680a7e7004c84e687b6e8cee9d7d6225cf87061e4acbfc90fc2ba92",
+        "transactionId": "0.0.7314364@1793973710.046026486",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973710.046026486",
+        "gas": {
+          "limit": 73812,
+          "used": 53130,
+          "consumed": 53130
+        }
+      }
+    }
+  ],
+  "verified": {
+    "rcn.facility()": "0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640",
+    "rcn.repaymentRouter()": "0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7",
+    "rcn.swapRouter()": "0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562",
+    "rcn.aqua()": "0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c",
+    "facility.swapRouter()": "0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562",
+    "facility.repaymentRouter()": "0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7",
+    "aqua.owner()": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+    "swapRouter.AQUA()": "0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c",
+    "swapRouter.REGISTRY()": "0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b",
+    "swapRouter.KYA()": "0xE51950be227c5A31B603e1343cD53e813C593f39",
+    "swapRouter.FACILITY()": "0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640",
+    "swapRouter.owner()": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+    "swapRouter.eip712Domain().name": "CashETH SwapVM",
+    "swapRouter.eip712Domain().version": "1.0.0",
+    "swapRouter.eip712Domain().chainId": "296",
+    "swapRouter weth (constructor arg)": "0xb1F616b8134F602c3Bb465fB5b5e6565cCAd37Ed",
+    "tUsdt.symbol()": "tUSDT",
+    "tUsdt.decimals()": "6",
+    "tUsdt.owner()": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+    "tUsdt.balanceOf(LENDER_A)": "50000000",
+    "tUsdt.balanceOf(LENDER_B)": "50000000",
+    "tUsdt.balanceOf(LENDER_C)": "50000000",
+    "tUsdt.balanceOf(operator (trader))": "20000000",
+    "taker.owner()": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+    "taker.ROUTER()": "0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562",
+    "taker.USDC()": "0x0000000000000000000000000000000000068cDa",
+    "taker USDC association": "0.0.11340016 <-> 0.0.429274"
+  },
+  "lenderD": {
+    "accountId": "0.0.11340117",
+    "evm": "0x9a81f51AACA1BF584D21f44c40Be9DdB12ef5690",
+    "created": "0.0.11333252@1793973749.307616004",
+    "usdcAssociation": "0.0.11333252@1793973758.885360940",
+    "usdcFunding": "0.0.11333252@1793973758.144836264",
+    "kya": {
+      "label": "KYARegistry.register(lenderD)",
+      "hash": "0xd5b3b4c524ad750abd509286d27cdf38f18decabaf90c2b694a3bbf280792c0d",
+      "transactionId": "0.0.7314364@1793973776.590586610",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973776.590586610",
+      "gas": {
+        "limit": 159946,
+        "used": 115769,
+        "consumed": 115769
+      }
+    },
+    "tUsdtMint": {
+      "label": "LENDER_D",
+      "to": "0x9a81f51AACA1BF584D21f44c40Be9DdB12ef5690",
+      "units": "50000000",
+      "tx": {
+        "label": "TestStablecoin.mint(LENDER_D, 50000000)",
+        "hash": "0xac4d176c5b120b119af82bbe1daa05f8f1c1f68bfc59f15e646a92a61838fbc3",
+        "transactionId": "0.0.7314364@1793973830.022297535",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973830.022297535",
+        "gas": {
+          "limit": 73828,
+          "used": 53142,
+          "consumed": 53142
+        }
+      }
+    }
+  },
+  "registration": {
+    "confirmation": {
+      "seller": "0x164334EE48b6AB0c07514af2a84646b23f3dCF0f",
+      "buyer": "0xf5FFbCd1e9ca403Fec295127EAcE1A3674f949c9",
+      "currency": "0x0000000000000000000000000000000000068cDa",
+      "amount": "10000000",
+      "dueDate": "1796565842",
+      "buyerRef": "0x9928d28ec7aa4286690d97ba1a7149d2ac12ab0fd6b185d8a2460f44e8aaf4f6",
+      "detailsCommitment": "0x878be6ef5388ff7fa03442f24ac85a3e026dd7ca058493a49a1b2ebd64118fb9",
+      "payTo": "0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7",
+      "nonce": "0",
+      "deadline": "1794060242"
+    },
+    "signature": "0xfa039a56d73c61e706fc3c240a917e754004be62fe1f7cf7e6485a41a639e04372a8e7e766abbd184f31d5080b326e628f6dcdb41be0f0fd4e4ff8a22228313d1b",
+    "digest": "0x902bb9cb638c78456026e30a9578c1b24e1aa28069a3b1783d077faba82d4c02",
+    "receivableId": "0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c",
+    "submitter": "0x45fDF15ed9c6327DEb0E57db6B78f592b254aB68",
+    "tx": {
+      "label": "ReceivableRegistry.register(PO-1002)",
+      "hash": "0x6cf629c79abb6df2e268f367bfc91ac9df72438a3f4329e3095332aef86baef5",
+      "transactionId": "0.0.7314364@1793973922.254969725",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973922.254969725",
+      "gas": {
+        "limit": 321677,
+        "used": 233024,
+        "consumed": 233024
+      }
+    },
+    "onChain": {
+      "state(id)": "1 (Confirmed)",
+      "seller": "0x164334EE48b6AB0c07514af2a84646b23f3dCF0f",
+      "buyer": "0xf5FFbCd1e9ca403Fec295127EAcE1A3674f949c9",
+      "currency": "0x0000000000000000000000000000000000068cDa",
+      "amount": "10000000",
+      "dueDate": "1796565842",
+      "registeredAt": "1793973926",
+      "detailsCommitment": "0x878be6ef5388ff7fa03442f24ac85a3e026dd7ca058493a49a1b2ebd64118fb9",
+      "nonces(buyer) after": "1"
+    }
+  },
+  "audit": {
+    "receivableConfirmed": {
+      "seq": 30,
+      "txId": "0.0.11333252@1793973943.240502909",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793973943.240502909",
+      "prevSeq": 28
+    },
+    "nftMinted": {
+      "seq": 31,
+      "txId": "0.0.11333252@1793973947.577011440",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793973947.577011440",
+      "prevSeq": 30
+    }
+  },
+  "nft": {
+    "tokenId": "0.0.11338934",
+    "serial": 1,
+    "metadata": "{\"id\":\"0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c\",\"seq\":30}",
+    "txId": "0.0.11333252@1793973947.419241023",
+    "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793973947.419241023"
+  },
+  "duplicate": {
+    "confirmation": {
+      "seller": "0x164334EE48b6AB0c07514af2a84646b23f3dCF0f",
+      "buyer": "0xf5FFbCd1e9ca403Fec295127EAcE1A3674f949c9",
+      "currency": "0x0000000000000000000000000000000000068cDa",
+      "amount": "10000000",
+      "dueDate": "1796565842",
+      "buyerRef": "0x9928d28ec7aa4286690d97ba1a7149d2ac12ab0fd6b185d8a2460f44e8aaf4f6",
+      "detailsCommitment": "0x878be6ef5388ff7fa03442f24ac85a3e026dd7ca058493a49a1b2ebd64118fb9",
+      "payTo": "0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7",
+      "nonce": "1",
+      "deadline": "1794060354"
+    },
+    "simulation": {
+      "duplicate": "DUPLICATE_RECEIVABLE()",
+      "freshRefControl": "passes, returns id 0x8ae1754f42de15d37741d6b574db715cbbef69222ae86b5c3addc0fcf7b4995f"
+    },
+    "rejection": {
+      "expected": "DUPLICATE_RECEIVABLE",
+      "tx": {
+        "label": "register(PO-1002 again, next nonce)",
+        "hash": "0xb9a15f202ed2be42e7a0e6b75ad5deb9071e7ce50993ef2d608ecc3414bac9d6",
+        "transactionId": "0.0.7314364@1793973975.081244937",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793973975.081244937",
+        "gas": {
+          "limit": 300000,
+          "used": 32170,
+          "consumed": 32170
+        }
+      },
+      "status": "CONTRACT_REVERT_EXECUTED",
+      "errorMessage": "0x55e1137b",
+      "selector": "0x55e1137b",
+      "decoded": "DUPLICATE_RECEIVABLE()"
+    }
+  }
+}

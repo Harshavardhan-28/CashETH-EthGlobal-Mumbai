@@ -1,5 +1,5 @@
 /**
- * Creates the ten CashETH demo accounts on Hedera testnet, associates USDC and funds the lenders
+ * Creates the CashETH demo accounts on Hedera testnet, associates USDC and funds the lenders
  * and the buyer. Idempotent: accounts already in `.env.accounts` are reused, and association and
  * funding are skipped when the mirror node shows them done.
  *
@@ -30,6 +30,7 @@ const USDC_FUNDING: Partial<Record<DemoAccount, Funding>> = {
   LENDER_A: { units: 4_000_000n, source: "operator" },
   LENDER_B: { units: 2_000_000n, source: "operator" },
   LENDER_C: { units: 1_000_000n, source: "operator" },
+  LENDER_D: { units: 1_000_000n, source: "operator" },
   BUYER: { units: 10_000_000n, source: "merchant" },
 };
 

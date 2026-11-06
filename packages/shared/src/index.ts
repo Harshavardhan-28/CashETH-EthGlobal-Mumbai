@@ -7,11 +7,13 @@ export {
   AquaRouterAbi,
   CashEthOrderBuilderAbi,
   CashEthSwapVMRouterAbi,
+  CashEthTakerAbi,
   CreditFacilityAbi,
   KYARegistryAbi,
   ReceivableCreditNoteAbi,
   ReceivableRegistryAbi,
   RepaymentRouterAbi,
+  TestStablecoinAbi,
 } from "./abis/index.js";
 export { ADDRESSES_PATH, AddressesSchema, loadAddresses } from "./addresses.js";
 export type { Addresses } from "./addresses.js";
