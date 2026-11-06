@@ -12,6 +12,7 @@ import {
   createEcdsaAccount,
   hieroClient,
   mirror,
+  pickUsdcSource,
   transferUsdc,
 } from "@casheth/hedera";
 import { DEMO_ACCOUNTS, hashscan, loadEnv, type DemoAccount } from "@casheth/shared";
@@ -91,11 +92,16 @@ for (const [prefix, r] of records) {
   console.log(`${label(prefix)}: associated USDC ${hashscan.tx(txId)}`);
 }
 
-// 3. USDC funding, topped up to the target.
+// 3. USDC funding, topped up to the target. The source is chosen at run time: the configured one
+// if it holds enough, otherwise the operator (e.g. after sweep-usdc.ts emptied the merchant).
 const sources = {
-  operator: { id: env.HEDERA_OPERATOR_ID, key: env.HEDERA_OPERATOR_KEY },
-  merchant: { id: env.MERCHANT_ACCOUNT_ID, key: env.MERCHANT_KEY },
+  operator: { name: "operator", id: env.HEDERA_OPERATOR_ID, key: env.HEDERA_OPERATOR_KEY },
+  merchant: { name: "merchant", id: env.MERCHANT_ACCOUNT_ID, key: env.MERCHANT_KEY },
 };
+const sourceWithBalance = async (s: { name: string; id: string; key: string }) => ({
+  ...s,
+  balance: await mirror.tokenBalance(env, s.id, usdc),
+});
 for (const [prefix, funding] of Object.entries(USDC_FUNDING) as [DemoAccount, Funding][]) {
   const r = records.get(prefix)!;
   const balance = await mirror.tokenBalance(env, r.id, usdc);
@@ -103,17 +109,25 @@ for (const [prefix, funding] of Object.entries(USDC_FUNDING) as [DemoAccount, Fu
     console.log(`${label(prefix)}: already holds ${balance} USDC units`);
     continue;
   }
-  const source = sources[funding.source];
+  const needed = funding.units - balance;
+  const source = pickUsdcSource(
+    needed,
+    await sourceWithBalance(sources[funding.source]),
+    await sourceWithBalance(sources.operator),
+  );
   const txId = await transferUsdc(client, {
     tokenId: usdc,
     from: source.id,
     fromKey: source.key,
     to: r.id,
-    units: funding.units - balance,
+    units: needed,
   });
-  console.log(
-    `${label(prefix)}: funded ${funding.units - balance} USDC units from ${funding.source} ${hashscan.tx(txId)}`,
-  );
+  console.log(`${label(prefix)}: funded ${needed} USDC units from ${source.name} ${hashscan.tx(txId)}`);
+  // Let the mirror node catch up so the next source-balance read is not stale.
+  await mirror.waitFor(async () => (await mirror.tokenBalance(env, r.id, usdc)) >= funding.units, {
+    attempts: 15,
+    delayMs: 2000,
+  });
 }
 
 // 4. Verify on the mirror node (lags consensus by a few seconds).

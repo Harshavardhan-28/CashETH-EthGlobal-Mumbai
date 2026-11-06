@@ -184,3 +184,27 @@ Paid response body (part B), with `paidWith.transactionId` taken from the settle
   }
 }
 ```
+
+## Funding
+
+USDC (HTS `0.0.429274`, 6 decimals) balances read live from the mirror node on 2026-11-06, after spikes S1 to S4:
+
+| Label | Account | USDC units |
+| --- | --- | --- |
+| operator | 0.0.11333252 | 2,400,000 |
+| merchant | 0.0.11333304 | 500,000 |
+| buyer | 0.0.11337988 | 10,000,000 |
+| lenderA | 0.0.11337991 | 3,909,091 |
+| lenderB | 0.0.11337992 | 2,000,000 |
+| lenderC | 0.0.11337993 | 1,000,000 |
+| workerResearch | 0.0.11337989 | 50,000 |
+| spike spend wallet (2-of-2) | 0.0.11338499 | 50,000 |
+| SpikeTaker contract | 0.0.11338095 | 90,909 |
+| seller, workerCompute, coordinator, cosigner, kyaIssuer | | 0 |
+| **Total** | | **20,000,000** |
+
+**Demo need:** lenders A 4,000,000 + B 2,000,000 + C 1,000,000 (C is never filled), buyer 10,000,000 for repayment, worker spend wallets 0 (the facility funds them just in time), plus about 500,000 slack = **17,500,000**.
+
+**Verdict: funds suffice, no faucet request needed.** 20,000,000 on hand against 17,500,000 needed. The only gap is that lender A is 90,909 below its 4,000,000 target (that amount sits in `SpikeTaker` after the S1 fill); lenders B, C and the buyer are already at target. To top lender A up, either run `SpikeTaker.sweep(usdc, operator)` as the contract owner (the operator) to recover the 90,909, or let the next `pnpm setup:accounts` run fund lender A's 90,909 shortfall from the operator (it falls back to the operator when the merchant is short). After either, the operator holds about 2.3 to 2.4 USDC of slack, plus the merchant's 0.5 and about 0.1 stranded in the two spike wallets (recoverable with `scripts/sweep-usdc.ts`).
+
+If a later run does need more, the fallback is: open `https://faucet.circle.com`, select Hedera Testnet, paste the operator account id `0.0.11333252` (associated with USDC), and request 10 USDC per request. Assumption: the faucet gives 10 USDC per request and is rate-limited to a few requests per day. One request would let `pnpm setup:accounts` fund everything from the operator (lenders 7, buyer 10 when the merchant is empty) with margin; `setup-accounts.ts` throws a clear shortfall error naming both sources if neither can cover a top-up.
