@@ -58,9 +58,30 @@ const INFERRED: Record<string, { name: string; role: Exclude<ActorRole, "mcp"> }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/** Lender addresses of a FacilityFunded event (`makers`, else `fills[].maker`), lowercased, deduplicated. */
+function makersOf(e: AuditEvent): string[] {
+  const fromMakers = Array.isArray(e.makers) ? e.makers : [];
+  const fromFills = Array.isArray(e.fills) ? e.fills.map((f) => (typeof f === "object" && f !== null ? (f as { maker?: unknown }).maker : undefined)) : [];
+  const all = (fromMakers.length ? fromMakers : fromFills).map(lower).filter((m): m is string => !!m);
+  return [...new Set(all)];
+}
+
 export function resolveActor(e: AuditEvent, agents: AgentStats[]): Actor {
   const byAddress = (addr: string | undefined) => (addr ? agents.find((a) => a.address.toLowerCase() === addr) : undefined);
   const byUaid = (uaid: string | undefined) => (uaid ? agents.find((a) => a.uaid === uaid) : undefined);
+
+  // The seller calls open_facility, so `agent` is the seller; the money comes from the lenders whose strategies filled.
+  if (e.type === "FacilityFunded") {
+    const lenders = makersOf(e)
+      .map(byAddress)
+      .filter((a): a is AgentStats => !!a);
+    if (lenders.length === 1) return fromAgent(lenders[0]);
+    if (lenders.length > 1) {
+      const names = lenders.map((a) => a.label || shortAddress(a.address));
+      return makeActor(`${names.slice(0, -1).join(", ")} & ${names[names.length - 1]}`, "lender", lenders[0].address);
+    }
+    return makeActor("Lenders", "lender");
+  }
 
   const matched = byAddress(lower(e.agent)) ?? byUaid(str(e.agentUaid));
   if (matched) return fromAgent(matched);

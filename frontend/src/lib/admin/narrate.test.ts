@@ -83,7 +83,7 @@ describe("narrate: one row per event type", () => {
     { name: "StrategyDocked", event: ev("StrategyDocked", { agent: LENDER }), sentence: "withdrew its lending offer", actor: "Prime Lender", tone: "info", detail: "Capital returned to the lender" },
     {
       name: "FacilityFunded",
-      event: ev("FacilityFunded", { agent: LENDER, id: "INV-1", amount: "640000000" }),
+      event: ev("FacilityFunded", { agent: SELLER, makers: [LENDER], id: "INV-1", amount: "640000000" }),
       sentence: "lent $640.00 against invoice INV-1",
       actor: "Prime Lender",
       tone: "ok",
@@ -183,6 +183,24 @@ describe("resolveActor", () => {
     expect(resolveActor(ev("FacilityFunded"), [])).toMatchObject({ name: "Lenders", role: "lender" });
   });
 
+  it("credits FacilityFunded to the lenders that filled, never the seller who called open_facility", () => {
+    const LENDER_B = "0xFfff00000000000000000000000000000000Ffff";
+    const agents = [...AGENTS, agent(LENDER_B, "lender", "Second Lender")];
+    expect(resolveActor(ev("FacilityFunded", { agent: SELLER, makers: [LENDER.toUpperCase().replace("0X", "0x")] }), agents)).toMatchObject({
+      name: "Prime Lender",
+      role: "lender",
+      key: LENDER.toLowerCase(),
+    });
+    expect(resolveActor(ev("FacilityFunded", { agent: SELLER, fills: [{ maker: LENDER }, { maker: LENDER_B }, { maker: LENDER }] }), agents)).toMatchObject({
+      name: "Prime Lender & Second Lender",
+      role: "lender",
+      key: LENDER.toLowerCase(),
+    });
+    const unknownMakers = resolveActor(ev("FacilityFunded", { agent: SELLER, makers: ["0x9999000000000000000000000000000000009999"] }), agents);
+    expect(unknownMakers).toMatchObject({ name: "Lenders", role: "lender" });
+    expect(unknownMakers.key).not.toBe(SELLER.toLowerCase());
+  });
+
   it("falls back to CashETH MCP for unknown events with no agent", () => {
     expect(resolveActor(ev("SomethingNew"), [])).toMatchObject({ name: "CashETH MCP", role: "mcp", key: "mcp:CashETH MCP" });
   });
@@ -209,7 +227,7 @@ describe("narrate: degrading gracefully", () => {
   it("drops the amount and uses a generic invoice when fields are missing", () => {
     expect(run(ev("ReceivableUploaded", { agent: SELLER })).sentence).toBe("uploaded an invoice");
     expect(run(ev("ReceivableConfirmed", { agent: BUYER })).sentence).toBe("confirmed it owes money on an invoice");
-    expect(run(ev("FacilityFunded", { agent: LENDER })).sentence).toBe("lent money against an invoice");
+    expect(run(ev("FacilityFunded", { agent: SELLER })).sentence).toBe("lent money against an invoice");
     expect(run(ev("Overdue")).sentence).toBe("flagged an invoice as overdue");
     expect(run(ev("SpendReleased", { agent: WORKER })).sentence).toBe("cancelled a reservation");
     expect(run(ev("SpendRejected", { agent: WORKER })).sentence).toBe("was blocked from spending money");
@@ -292,7 +310,7 @@ describe("narrateAll: PO labels from invoice documents", () => {
   const stored = (extra: Record<string, unknown> = {}) => ev("InvoiceDocumentStored", { agent: SELLER, receivableRef: "PO-1003", keccak256: KECCAK, ...extra });
 
   it("joins an Uploaded + DocumentStored pair via the document hash", () => {
-    const out = narrateAll([stored(), upload(), ev("FacilityFunded", { agent: LENDER, id: ID, amount: "640000000" })], AGENTS, TOPIC);
+    const out = narrateAll([stored(), upload(), ev("FacilityFunded", { agent: SELLER, makers: [LENDER], id: ID, amount: "640000000" })], AGENTS, TOPIC);
     const up = out.find((n) => n.type === "ReceivableUploaded")!;
     const doc = out.find((n) => n.type === "InvoiceDocumentStored")!;
     const funded = out.find((n) => n.type === "FacilityFunded")!;
