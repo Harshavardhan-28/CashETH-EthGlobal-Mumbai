@@ -7,9 +7,10 @@ const ORDER: ActorRole[] = ["seller", "buyer", "lender", "worker", "mcp"];
 
 function label(ms: number, spanMs: number): string {
   const d = new Date(ms);
+  // Fixed locale and zone so server and client render identical text (no hydration mismatch).
   return spanMs > 2 * 86_400_000
-    ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+    : d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }) + " UTC";
 }
 
 /** Stacked bars of actions per time bucket, coloured by the role of the agent that acted. */
