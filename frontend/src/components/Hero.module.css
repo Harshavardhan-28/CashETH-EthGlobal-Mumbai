@@ -160,27 +160,6 @@
   gap: 24px;
   max-width: 540px;
 }
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 15px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
-  background: color-mix(in oklch, var(--accent) 9%, transparent);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: var(--ink);
-}
-.badgeDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 10px var(--accent);
-  animation: tr-pulse 1.6s ease-in-out infinite;
-}
 .title {
   font-weight: 500;
   font-size: clamp(46px, 5.4vw, 78px);

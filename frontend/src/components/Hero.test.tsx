@@ -7,7 +7,7 @@ describe("Hero", () => {
     render(<Hero />);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Invoices your agents can spend.");
     expect(screen.getByText(/An MCP that turns a buyer-signed invoice into USDC working capital/)).toBeInTheDocument();
-    expect(screen.getByText("CASHETH MCP · LIVE ON HEDERA")).toBeInTheDocument();
+    expect(screen.queryByText(/LIVE ON HEDERA/)).not.toBeInTheDocument();
   });
 
   it("navigates to each landing section and the docs", () => {

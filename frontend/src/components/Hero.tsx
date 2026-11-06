@@ -34,10 +34,6 @@ export function Hero() {
 
       <HeroFx className={styles.body}>
         <div className={styles.copy}>
-          <span className={styles.badge}>
-            <span className={styles.badgeDot} />
-            CASHETH MCP · LIVE ON HEDERA
-          </span>
           <h1 className={styles.title}>
             Invoices your agents can <span>spend.</span>
           </h1>
