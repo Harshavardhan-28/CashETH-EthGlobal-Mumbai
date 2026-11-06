@@ -64,7 +64,7 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { hexKey, type McpConfig } from "./config.js";
+import { hexKey, type AgentKeyRole, type McpConfig } from "./config.js";
 import { createInvoiceExtractor, resolveLlm } from "./invoices/extract.js";
 import { InvoiceStore } from "./invoices/store.js";
 import { ToolError } from "./orchestrator/errors.js";
@@ -145,10 +145,19 @@ function agentKeys(env: Env): AgentKey[] {
   return out;
 }
 
-function inProcessAllowed(prefix: string, cfg: McpConfig): boolean {
+/** The agent role a demo account prefix signs as; server accounts (coordinator, co-signer, issuer) have none. */
+function agentKeyRole(prefix: string): AgentKeyRole | undefined {
+  if (prefix === "SELLER") return "seller";
+  if (prefix === "BUYER") return "buyer";
+  if (prefix.startsWith("WORKER_")) return "worker";
+  return undefined;
+}
+
+/** Whether the server may sign with this demo account's key (`AGENT_KEYS_IN_PROCESS`, `LENDER_KEYS_IN_PROCESS`). */
+export function inProcessAllowed(prefix: string, cfg: Pick<McpConfig, "agentKeyRoles" | "lenderKeysInProcess">): boolean {
   if (prefix.startsWith("LENDER_")) return cfg.lenderKeysInProcess;
-  if (prefix === "SELLER" || prefix === "BUYER" || prefix.startsWith("WORKER_")) return cfg.agentKeysInProcess;
-  return false;
+  const role = agentKeyRole(prefix);
+  return role !== undefined && cfg.agentKeyRoles.includes(role);
 }
 
 function mirrorBase(env: Env): string {
@@ -540,8 +549,8 @@ export function createLiveX402(env: Env, cfg: McpConfig, keys: AgentKey[]): X402
     },
     async pay({ worker, spendWalletId, url, cosign }) {
       const k = keys.find((x) => x.address.toLowerCase() === worker.toLowerCase());
-      if (!k || !k.prefix.startsWith("WORKER_") || !cfg.agentKeysInProcess) {
-        throw new ToolError("KEY_NOT_HELD", `the server does not hold the worker key for ${worker} (set AGENT_KEYS_IN_PROCESS=true for the demo)`);
+      if (!k || !k.prefix.startsWith("WORKER_") || !inProcessAllowed(k.prefix, cfg)) {
+        throw new ToolError("KEY_NOT_HELD", `the server does not hold the worker key for ${worker} (set AGENT_KEYS_IN_PROCESS=worker or true for the demo)`);
       }
       const signer = createCosignedHederaSigner({
         accountId: spendWalletId,

@@ -106,7 +106,7 @@ export type BudgetInput = { worker: string; alloc: string; maxPerTx: string; max
 
 /**
  * `set_budgets`: `CreditFacility.setBudgets` must be sent by the seller. The server sends it only when it holds
- * the seller's key (`AGENT_KEYS_IN_PROCESS=true`, demo); otherwise it returns the calldata for the seller to sign.
+ * the seller's key (`AGENT_KEYS_IN_PROCESS` names `seller` or is `true`, demo); otherwise it returns the calldata for the seller to sign.
  */
 export async function setBudgets(o: Orchestrator, caller: Caller, input: { id: string; budgets: BudgetInput[] }) {
   const id = bytes32(input.id, "id");

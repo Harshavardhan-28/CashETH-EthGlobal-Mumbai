@@ -3,6 +3,9 @@ import { fileURLToPath } from "node:url";
 import type { Env } from "@casheth/shared";
 import type { Hex } from "viem";
 
+export const AGENT_KEY_ROLES = ["seller", "buyer", "worker"] as const;
+export type AgentKeyRole = (typeof AGENT_KEY_ROLES)[number];
+
 export type McpConfig = {
   port: number;
   /** `MCP_RESOURCE_URL`: the audience of accepted tokens; POST is served on its path. */
@@ -19,8 +22,11 @@ export type McpConfig = {
   anthropicApiKey?: string;
   /** Demo only: sign as lender agents with their `.env.accounts` keys (`fund_agents`, `close_strategy`). */
   lenderKeysInProcess: boolean;
-  /** Demo only: sign as seller/buyer/worker agents (`set_budgets`, `repay_receivable`, `pay_x402`). */
-  agentKeysInProcess: boolean;
+  /**
+   * Demo only: the agent roles the server signs for with their `.env.accounts` keys (`set_budgets` as seller,
+   * `repay_receivable` as buyer, the worker half of `pay_x402`). `AGENT_KEYS_IN_PROCESS`, see `agentKeyRoles`.
+   */
+  agentKeyRoles: AgentKeyRole[];
   /** CAIP-2 x402 network (`hedera:testnet`). */
   x402Network: string;
   usdcTokenId: string;
@@ -57,6 +63,21 @@ export function hexKey(value: string): Hex {
 
 function flag(env: Env, key: string): boolean {
   return opt(env, key)?.toLowerCase() === "true";
+}
+
+/**
+ * `AGENT_KEYS_IN_PROCESS`: `true` holds the seller, buyer and worker keys, unset or `false` none, and a comma-separated
+ * role list only those (`seller,worker`: the buyer signs and repays from its own wallet while the server still signs
+ * the worker half of the 2-of-2 x402 payment).
+ */
+export function agentKeyRoles(env: Env): AgentKeyRole[] {
+  const value = opt(env, "AGENT_KEYS_IN_PROCESS")?.toLowerCase();
+  if (!value || value === "false") return [];
+  if (value === "true") return [...AGENT_KEY_ROLES];
+  const roles = value.split(",").map((r) => r.trim()).filter(Boolean);
+  const unknown = roles.filter((r) => !(AGENT_KEY_ROLES as readonly string[]).includes(r));
+  if (unknown.length) throw new Error(`AGENT_KEYS_IN_PROCESS: unknown role ${unknown.join(", ")} (use true, false or a list of ${AGENT_KEY_ROLES.join(", ")})`);
+  return AGENT_KEY_ROLES.filter((r) => roles.includes(r));
 }
 
 /** `hedera-testnet` (x402 v1 style) and `hedera:testnet` (CAIP-2) both mean testnet. */
@@ -107,7 +128,7 @@ export function loadConfig(env: Env, fallbacks: { hcsTopicId?: string; nftTokenI
     ...(nftTokenId ? { nftTokenId } : {}),
     ...(anthropicApiKey ? { anthropicApiKey } : {}),
     lenderKeysInProcess: flag(env, "LENDER_KEYS_IN_PROCESS"),
-    agentKeysInProcess: flag(env, "AGENT_KEYS_IN_PROCESS"),
+    agentKeyRoles: agentKeyRoles(env),
     x402Network: caip2Network(env.X402_NETWORK),
     usdcTokenId: env.USDC_TOKEN_ID,
     merchantOrigins: merchantOrigins(env),

@@ -51,6 +51,6 @@ app.listen(cfg.port, host, (error?: Error) => {
   if (error) throw error;
   console.log(
     `mcp-server listening on http://${host}:${cfg.port} (resource ${cfg.resource.href}, issuer ${cfg.issuer.href}, ` +
-      `HCS topic ${cfg.hcsTopicId ?? "none"}, lender keys in process ${cfg.lenderKeysInProcess}, agent keys in process ${cfg.agentKeysInProcess})`,
+      `HCS topic ${cfg.hcsTopicId ?? "none"}, lender keys in process ${cfg.lenderKeysInProcess}, agent keys in process ${cfg.agentKeyRoles.join(",") || "none"})`,
   );
 });

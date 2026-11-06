@@ -100,7 +100,7 @@ Every mutating tool requires `idempotencyKey` (8–128 chars). The first success
 | `get_lender_yield` | lender | `stats:read` | no | – |
 | `close_strategy` | lender | `lend:write` | yes | Aqua `dock` (lender key) or calldata, `StrategyDocked` |
 
-**Who signs.** The server holds the coordinator, co-signer and KYA-issuer keys (`.env.accounts`). Agent keys stay with the agents: `set_budgets`, `repay_receivable`, `fund_agents` and `close_strategy` return `{ mode: "calldata", calls: [{ to, data, description }] }` for the agent to sign and send in order. Only for the demo, `AGENT_KEYS_IN_PROCESS=true` (seller, buyer, workers) and `LENDER_KEYS_IN_PROCESS=true` (lenders) let the server sign with the demo keys and return `{ mode: "sent" | "shipped", txHash, hashscan }`. `pay_x402` needs the worker's half of the 2-of-2 spend-wallet key, so it requires `AGENT_KEYS_IN_PROCESS=true` (else `KEY_NOT_HELD`).
+**Who signs.** The server holds the coordinator, co-signer and KYA-issuer keys (`.env.accounts`). Agent keys stay with the agents: `set_budgets`, `repay_receivable`, `fund_agents` and `close_strategy` return `{ mode: "calldata", calls: [{ to, data, description }] }` for the agent to sign and send in order. Only for the demo, `AGENT_KEYS_IN_PROCESS=true` (seller, buyer, workers) and `LENDER_KEYS_IN_PROCESS=true` (lenders) let the server sign with the demo keys and return `{ mode: "sent" | "shipped", txHash, hashscan }`; `AGENT_KEYS_IN_PROCESS` also takes a role list such as `seller,worker`, and a role left out gets calldata (the Claude Code walkthrough keeps the buyer non-custodial this way: it signs and repays through the local wallet MCP server, `wallet-mcp/`). `pay_x402` needs the worker's half of the 2-of-2 spend-wallet key, so it requires the `worker` role in `AGENT_KEYS_IN_PROCESS` (else `KEY_NOT_HELD`).
 
 Inputs below omit `idempotencyKey`, which every mutating tool also takes. `hex32` = `0x` + 64 hex chars; `units` = USDC base-unit decimal string.
 
@@ -345,7 +345,7 @@ Authorization server (`apps/auth-server`): `AUTH_PORT` (`4020`), `AUTH_ISSUER` (
 | `HFS_ENABLED` | `false` | also store invoice documents on the Hedera File Service (operator pays; one create plus one append per 4 KB) |
 | `CASHETH_LLM_PROVIDER` | – (probe) | `ollama` forces the local model for invoice field extraction, any other value turns it off; unset uses it only if Ollama answers `GET /api/tags` |
 | `OLLAMA_BASE_URL`, `CASHETH_LLM_MODEL` | `http://localhost:11434`, `qwen2.5:7b` | Ollama OpenAI-compatible endpoint (`/v1/chat/completions`, JSON mode) |
-| `AGENT_KEYS_IN_PROCESS` | `false` | demo: sign as seller/buyer/workers |
+| `AGENT_KEYS_IN_PROCESS` | `false` | demo: sign as seller/buyer/workers (`true`), or only the listed roles (`seller,worker`); an unknown role stops the server at boot |
 | `LENDER_KEYS_IN_PROCESS` | `false` | demo: sign as lenders |
 | `AQUA_FROM_BLOCK` | swap router creation block | first block for Aqua log discovery |
 | `MERCHANT_ORIGINS` | – | extra `accountId=origin` pairs, comma-separated, on top of the demo merchant (`MERCHANT_ACCOUNT_ID=http://localhost:${MERCHANT_PORT:-3003}`, always admitted): the only origins `pay_x402` fetches, see [External x402 merchants](#external-x402-merchants) |
