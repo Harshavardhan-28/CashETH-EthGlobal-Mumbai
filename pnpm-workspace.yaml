@@ -3,6 +3,7 @@ packages:
   - apps/*
   - agents
   - seller-agent
+  - wallet-mcp
 allowBuilds:
   '@reown/appkit': false
   bufferutil: false
