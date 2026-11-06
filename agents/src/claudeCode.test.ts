@@ -14,22 +14,17 @@ import { type Stack, startStack } from "./test/stack.js";
 
 const WORKER_SCOPES = ["receivable:read", "credit:read", "spend:reserve", "spend:pay", "spend:commit", "stats:read"];
 
-/** The repo's `.mcp.json`: one remote server name per role (Claude Code keeps one OAuth token per server name). */
+/** The repo's `.mcp.json`: Claude Code signs in once, as the seller (the main agent); the buyer and worker are server-run counterparties. */
 const MCP_JSON = JSON.parse(readFileSync(new URL("../../.mcp.json", import.meta.url), "utf8")) as {
   mcpServers: Record<string, { type: string; url?: string; oauth?: { scopes?: string } }>;
 };
-const PINNED_SCOPES = Object.fromEntries(Object.entries(MCP_JSON.mcpServers).map(([name, s]) => [name, s.oauth?.scopes]));
 
 describe(".mcp.json", () => {
-  it("pins each role server to exactly that role's scopes, on the same MCP URL as casheth", () => {
-    for (const [name, roleId] of [["casheth-seller", 1], ["casheth-buyer", 2], ["casheth-worker", 3]] as const) {
-      expect(PINNED_SCOPES[name]?.split(" ").sort(), name).toEqual([...ROLE_SCOPES[roleId]!].sort());
-      expect(MCP_JSON.mcpServers[name]!.url).toBe(MCP_JSON.mcpServers.casheth!.url);
-    }
-  });
-
-  it("launches the local wallet over stdio", () => {
-    expect(MCP_JSON.mcpServers["casheth-wallet"]).toMatchObject({ type: "stdio", command: "pnpm", args: ["-s", "-F", "@casheth/wallet-mcp", "start"] });
+  it("declares one CashETH server, casheth-seller, pinned to exactly the seller's scopes", () => {
+    expect(Object.keys(MCP_JSON.mcpServers)).toEqual(["casheth-seller"]);
+    const seller = MCP_JSON.mcpServers["casheth-seller"]!;
+    expect(seller).toMatchObject({ type: "http", url: "http://localhost:4030/mcp" });
+    expect(seller.oauth?.scopes?.split(" ").sort()).toEqual([...ROLE_SCOPES[1]!].sort());
   });
 });
 
@@ -135,7 +130,7 @@ describe("Claude Code as a remote MCP client (AUTH_DEMO_GRANT=true)", () => {
     expect(claims).toMatchObject({ agent: worker.address, role: 3 });
   });
 
-  it("signs each .mcp.json role server (casheth-seller, -buyer, -worker) in as its own role from the pre-selected choice", async () => {
+  it("pre-selects and signs in the role whose scopes a client requests (seller, buyer, worker)", async () => {
     stack = await startStack({ authEnv: { AUTH_DEMO_GRANT: "true" } });
     const agents = { seller: stack.registerAgent(1), buyer: stack.registerAgent(2, 3), worker: stack.registerAgent(3) };
     stack.registerAgent(4);
@@ -143,9 +138,9 @@ describe("Claude Code as a remote MCP client (AUTH_DEMO_GRANT=true)", () => {
     for (const [role, roleId] of [["seller", 1], ["buyer", 2], ["worker", 3]] as const) {
       const provider = new ClaudeCodeLikeProvider();
       await expect(connect(stack, provider)).rejects.toBeInstanceOf(UnauthorizedError);
-      // Claude Code requests the server entry's pinned `oauth.scopes` instead of every advertised scope.
+      // A client that pins a role's `oauth.scopes` (as .mcp.json does for the seller) gets that role pre-selected.
       const url = new URL(provider.authorizationUrl!);
-      url.searchParams.set("scope", PINNED_SCOPES[`casheth-${role}`]!);
+      url.searchParams.set("scope", ROLE_SCOPES[roleId]!.join(" "));
 
       const page = await (await fetch(url)).text();
       const preselected = page.split("<form").find((f) => f.includes("autofocus"));

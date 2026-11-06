@@ -170,6 +170,15 @@ Out: `{ id, mode: "calldata", calls: [approve(router, amount), repay(id, amount)
 ### `explain_decision`
 In: `{ id }`. Out: `{ id, decision, decisionSource: "event"|"recomputed", explanation, source: "anthropic"|"template", model? }`. With `ANTHROPIC_API_KEY` the explanation comes from `claude-haiku-5-5` given the decision JSON and the rule list with the system instruction "explain, never change"; otherwise (or on a model error/refusal) a templated explanation with `source: "template"`. The returned `decision` is always the engine's.
 
+### `request_buyer_confirmation`
+Seller, scope `receivable:write`, mutating. In: `{ pendingId }`. The buyer counterparty (server-held key, `AGENT_KEYS_IN_PROCESS` includes `buyer`) signs the pending receivable's EIP-712 confirmation and it goes through `confirm_receivable`. Out: what `confirm_receivable` returns. `KEY_NOT_HELD` when the server does not hold the buyer key; `NOT_PARTY` when the caller is not the pending receivable's seller.
+
+### `buy_with_credit`
+Seller, scope `spend:reserve`, mutating. In: `{ id, url, merchant: "0.0.N" | 0x address, amount: units, ttlSeconds? }`. Runs `reserve_spend` → `pay_x402` → `commit_spend` as the seller's worker (`SELLER_WORKER_EVM` / `SELLER_SPEND_WALLET_EVM`, default the research worker and its spend wallet), so the co-signer still checks the payment against the reservation. Out: `{ status: "committed", worker, spendId, transactionId, payment, commit }`. The caller must be the facility's seller (`NOT_PARTY`); budget, merchant and origin checks are those of the three tools.
+
+### `settle_receivable`
+Seller, scope `receivable:write`, mutating. In: `{ id }`. The buyer counterparty repays the full invoice amount through `repay_receivable` (lenders first, the seller the rest). Out: what `repay_receivable` returns in `sent` mode. `KEY_NOT_HELD` without the buyer key.
+
 ### `whoami`
 Any role, scope `stats:read`. In: `{}`. Out: `{ address, role, level, scopes }` from the caller's token; no chain reads, so it answers instantly (use it to learn which account a connection acts as).
 

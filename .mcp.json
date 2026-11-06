@@ -1,29 +1,11 @@
 {
   "mcpServers": {
-    "casheth": {
-      "type": "http",
-      "url": "http://localhost:4030/mcp"
-    },
     "casheth-seller": {
       "type": "http",
       "url": "http://localhost:4030/mcp",
-      "oauth": { "scopes": "receivable:write receivable:read credit:read facility:open budget:write spend:reserve stats:read" }
-    },
-    "casheth-buyer": {
-      "type": "http",
-      "url": "http://localhost:4030/mcp",
-      "oauth": { "scopes": "receivable:confirm receivable:read credit:read repay:write stats:read" }
-    },
-    "casheth-worker": {
-      "type": "http",
-      "url": "http://localhost:4030/mcp",
-      "oauth": { "scopes": "receivable:read credit:read spend:reserve spend:pay spend:commit stats:read" }
-    },
-    "casheth-wallet": {
-      "type": "stdio",
-      "command": "pnpm",
-      "args": ["-s", "-F", "@casheth/wallet-mcp", "start"],
-      "env": { "WALLET_ACCOUNTS": "buyer" }
+      "oauth": {
+        "scopes": "receivable:write receivable:read credit:read facility:open budget:write spend:reserve stats:read"
+      }
     }
   }
 }
