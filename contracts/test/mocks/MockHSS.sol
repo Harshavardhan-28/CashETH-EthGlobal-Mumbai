@@ -87,10 +87,27 @@ contract MockHSS is IHederaScheduleService {
     }
 
     /// @notice Executes a pending schedule: calls `to` with `callData` as the scheduling contract.
+    /// @dev Ignores `expirySecond`, so a test may fire at any time (warp first if the target checks time).
     function fire(address scheduleAddress) external {
         Scheduled storage s = _schedules[scheduleAddress];
         require(s.scheduler != address(0), UnknownSchedule(scheduleAddress));
         require(!s.deleted && !s.executed, ScheduleNotPending(scheduleAddress));
+        _execute(s);
+    }
+
+    /// @notice Executes every pending schedule that exists when called, in creation order, skipping deleted
+    ///         and executed ones. Schedules created by these calls are left pending.
+    function fireAll() external {
+        uint256 count = n;
+        for (uint256 i = 1; i <= count; ++i) {
+            // casting to 'uint160' is safe because `i` is bounded by the small counter `n`
+            // forge-lint: disable-next-line(unsafe-typecast)
+            Scheduled storage s = _schedules[address(uint160(i))];
+            if (!s.deleted && !s.executed) _execute(s);
+        }
+    }
+
+    function _execute(Scheduled storage s) internal {
         s.executed = true;
         // A pranked call sends `value` from the pranked sender, so the scheduler pays it exactly once.
         _VM.prank(s.scheduler);

@@ -48,4 +48,34 @@ contract MockHSSTest is Test {
         assertEq(sink.lastSender(), scheduler);
         assertEq(sink.lastValue(), VALUE);
     }
+
+    function test_FireAllExecutesEveryPendingScheduleOnce() public {
+        vm.startPrank(scheduler);
+        (, address first) =
+            hss.scheduleCall(address(sink), block.timestamp + 60, 100_000, VALUE, abi.encodeCall(ValueSink.hit, ()));
+        (, address deleted) =
+            hss.scheduleCall(address(sink), block.timestamp + 90, 100_000, VALUE, abi.encodeCall(ValueSink.hit, ()));
+        (, address last) =
+            hss.scheduleCall(address(sink), block.timestamp + 120, 100_000, VALUE, abi.encodeCall(ValueSink.hit, ()));
+        assertEq(hss.deleteSchedule(deleted), 22);
+        vm.stopPrank();
+
+        hss.fire(first);
+        uint256 schedulerBefore = scheduler.balance;
+        uint256 sinkBefore = address(sink).balance;
+
+        // Fires regardless of `expirySecond`; skips executed and deleted schedules.
+        hss.fireAll();
+
+        assertEq(schedulerBefore - scheduler.balance, VALUE);
+        assertEq(address(sink).balance - sinkBefore, VALUE);
+        assertTrue(hss.getSchedule(last).executed);
+        assertFalse(hss.getSchedule(deleted).executed);
+
+        // Nothing is pending any more, so a second sweep moves no value.
+        hss.fireAll();
+        assertEq(address(sink).balance - sinkBefore, VALUE);
+        vm.expectRevert(abi.encodeWithSelector(MockHSS.ScheduleNotPending.selector, last));
+        hss.fire(last);
+    }
 }
