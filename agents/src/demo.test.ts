@@ -657,6 +657,17 @@ describe("the eight lifecycle steps against fake agents", () => {
     expect(calls.filter((c) => c.startsWith("top-up") || c.startsWith("ship-"))).toEqual([]);
   });
 
+  it("on a rerun past step 4 replays the facility instead of asking for quotes", async () => {
+    const { ctx, calls } = fakeContext();
+    calls.push("open");
+    ctx.seller.agent.quotes = (async () => {
+      throw new ToolCallError("get_quotes", { code: "NOT_CONFIRMED" });
+    }) as never;
+    const results = await runSteps(STEPS, ctx);
+    expect(results.find((r) => r.label.startsWith("4."))).toMatchObject({ txId: "0.0.1@0xfund", note: expect.stringContaining("earlier run") });
+    expect(exitCode(results)).toBe(0);
+  });
+
   it("proves the invoice document with the HCS anchor and the verifier's VERIFIED line", async () => {
     const { ctx } = fakeContext();
     const results = await runSteps(STEPS, ctx);

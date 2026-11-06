@@ -208,6 +208,11 @@ const openFacilityStep: Step = {
   label: "4. seller opens the facility: cheapest-first fill through the modified SwapVM router",
   async run(ctx) {
     const id = receivableId(ctx);
+    if (await facilityFunded(ctx)) {
+      // A rerun: the quotes only cover a Confirmed receivable, so replay the stored `open_facility` result for its transaction.
+      const opened = await ctx.seller.agent.openFacility(id);
+      return { ...(await proofOfEvmTx(ctx, opened.txHash)), note: `funded ${formatUsdc(BigInt(opened.total))} USDC by an earlier run (replayed from the server)` };
+    }
     const quotes = await ctx.seller.agent.quotes(id);
     if (quotes.decision.advanceBps !== ADVANCE_BPS) throw new Error(`expected an advance of ${ADVANCE_BPS} bps, the decision is ${quotes.decision.advanceBps}`);
     const plan = checkQuotePlan(quotes, ctx.makers);
