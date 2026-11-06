@@ -6,6 +6,7 @@ settings:
 
 overrides:
   '@langchain/core': 1.3.4
+  '@hashgraph/proto@2.25.0': npm:@hiero-ledger/proto@2.32.0
 
 importers:
 
@@ -214,7 +215,7 @@ importers:
         version: link:../shared
       '@hashgraphonline/standards-sdk':
         specifier: 0.1.192
-        version: 0.1.192(64426b50e3dca45ee70b1f06039b0fcf)
+        version: 0.1.192(73704225d78d8da4e9df2524177cf034)
       '@hiero-ledger/sdk':
         specifier: 2.90.1
         version: 2.90.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
@@ -711,16 +712,6 @@ packages:
       '@reown/walletkit': ^1.2.8
       '@walletconnect/modal': ^2.7.0
       ethers: ^6.13.5
-
-  '@hashgraph/proto@2.25.0':
-    resolution: {integrity: sha512-lN4DgGq/3peCC1dTc4mWCbHQOUMf0F8D0g4T9/lpEzsOA2l2ecbgLfeRbE8o68zz6PZ4nkWOK3jFio1GF3+Wzg==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      ansi-regex: 6.2.2
-      ansi-styles: 6.2.3
-      debug: 4.4.1
-      protobufjs: 7.5.4
-      strip-ansi: 7.1.2
 
   '@hashgraph/proto@2.26.0-beta.3':
     resolution: {integrity: sha512-i89RMYEjpG5uVOa7VzDMVQq8gNs4feeXvEJFyZzwp6i1NSmMHn9DfmIWePylh67LOFBNnX5ZyXNcgUJaAC8Fmw==}
@@ -5735,15 +5726,6 @@ snapshots:
       '@walletconnect/modal': 2.7.0(@types/react@19.3.0)(react@18.3.1)
       ethers: 6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
 
-  '@hashgraph/proto@2.25.0(ansi-regex@6.2.2)(ansi-styles@6.2.3)(debug@4.4.1)(protobufjs@8.6.6)(strip-ansi@7.1.2)':
-    dependencies:
-      ansi-regex: 6.2.2
-      ansi-styles: 6.2.3
-      debug: 4.4.1
-      long: 5.3.1
-      protobufjs: 8.6.6
-      strip-ansi: 7.1.2
-
   '@hashgraph/proto@2.26.0-beta.3(ansi-regex@6.2.2)(ansi-styles@6.2.3)(debug@4.4.1)(protobufjs@7.5.4)(strip-ansi@7.1.2)':
     dependencies:
       ansi-regex: 6.2.2
@@ -5818,10 +5800,10 @@ snapshots:
       - react-native
       - supports-color
 
-  '@hashgraphonline/hashinal-wc@2.0.64(421f2e3104f1ac1072f248d809f6f2ce)':
+  '@hashgraphonline/hashinal-wc@2.0.64(fcf4e13b728373370c85e3c8785e1e3a)':
     dependencies:
       '@hashgraph/hedera-wallet-connect': 2.0.6(@hiero-ledger/sdk@2.90.1(bufferutil@4.1.0)(utf-8-validate@5.0.10))(@reown/appkit-controllers@1.8.10(@types/react@19.3.0)(bufferutil@4.1.0)(react@18.3.1)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7))(@reown/appkit@1.8.17(@types/react@19.3.0)(@x402/core@2.30.0)(@x402/extensions@2.30.0(bufferutil@4.1.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10))(bufferutil@4.1.0)(debug@4.4.1)(react@18.3.1)(typescript@5.9.3)(use-sync-external-store@1.4.0(react@18.3.1))(utf-8-validate@5.0.10)(zod@4.6.7))(@reown/walletkit@1.6.0(bufferutil@4.1.0)(react-native@0.88.1(@babel/core@7.29.13)(@types/react@19.3.0)(bufferutil@4.1.0)(react@18.3.1)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7))(@walletconnect/modal@2.7.0(@types/react@19.3.0)(react@18.3.1))(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))
-      '@hashgraph/proto': 2.25.0(ansi-regex@6.2.2)(ansi-styles@6.2.3)(debug@4.4.1)(protobufjs@8.6.6)(strip-ansi@7.1.2)
+      '@hashgraph/proto': '@hiero-ledger/proto@2.32.0(protobufjs@8.6.6)'
       '@hashgraph/sdk': 2.81.0(bn.js@5.2.3)(react-native@0.88.1(@babel/core@7.29.13)(@types/react@19.3.0)(bufferutil@4.1.0)(react@18.3.1)(utf-8-validate@5.0.10))
       '@reown/appkit': 1.8.17(@types/react@19.3.0)(@x402/core@2.30.0)(@x402/extensions@2.30.0(bufferutil@4.1.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10))(bufferutil@4.1.0)(debug@4.4.1)(react@18.3.1)(typescript@5.9.3)(use-sync-external-store@1.4.0(react@18.3.1))(utf-8-validate@5.0.10)(zod@3.25.76)
       fetch-retry: 6.0.0
@@ -5851,8 +5833,6 @@ snapshots:
       - '@x402/evm'
       - '@x402/extensions'
       - '@x402/svm'
-      - ansi-regex
-      - ansi-styles
       - aws4fetch
       - bn.js
       - bufferutil
@@ -5868,7 +5848,6 @@ snapshots:
       - protobufjs
       - react
       - react-native
-      - strip-ansi
       - supports-color
       - typescript
       - uploadthing
@@ -5876,12 +5855,12 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@hashgraphonline/standards-sdk@0.1.192(64426b50e3dca45ee70b1f06039b0fcf)':
+  '@hashgraphonline/standards-sdk@0.1.192(73704225d78d8da4e9df2524177cf034)':
     dependencies:
       '@hashgraph/hedera-wallet-connect': 2.1.3(@hiero-ledger/proto@2.32.0(protobufjs@8.6.6))(@hiero-ledger/sdk@2.90.1(bufferutil@4.1.0)(utf-8-validate@5.0.10))(@reown/appkit-controllers@1.8.10(@types/react@19.3.0)(bufferutil@4.1.0)(react@18.3.1)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7))(@reown/appkit@1.8.17(@types/react@19.3.0)(@x402/core@2.30.0)(@x402/extensions@2.30.0(bufferutil@4.1.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10))(bufferutil@4.1.0)(debug@4.4.1)(react@18.3.1)(typescript@5.9.3)(use-sync-external-store@1.4.0(react@18.3.1))(utf-8-validate@5.0.10)(zod@4.6.7))(@reown/walletkit@1.6.0(bufferutil@4.1.0)(react-native@0.88.1(@babel/core@7.29.13)(@types/react@19.3.0)(bufferutil@4.1.0)(react@18.3.1)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7))(@walletconnect/modal@2.7.0(@types/react@19.3.0)(react@18.3.1))(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))
-      '@hashgraph/proto': 2.25.0(ansi-regex@6.2.2)(ansi-styles@6.2.3)(debug@4.4.1)(protobufjs@8.6.6)(strip-ansi@7.1.2)
+      '@hashgraph/proto': '@hiero-ledger/proto@2.32.0(protobufjs@8.6.6)'
       '@hashgraph/sdk': 2.81.0(bn.js@5.2.3)(react-native@0.88.1(@babel/core@7.29.13)(@types/react@19.3.0)(bufferutil@4.1.0)(react@18.3.1)(utf-8-validate@5.0.10))
-      '@hashgraphonline/hashinal-wc': 2.0.64(421f2e3104f1ac1072f248d809f6f2ce)
+      '@hashgraphonline/hashinal-wc': 2.0.64(fcf4e13b728373370c85e3c8785e1e3a)
       '@kiloscribe/inscription-sdk': 2.0.10-canary.9(@hashgraph/sdk@2.81.0(bn.js@5.2.3)(react-native@0.88.1(@babel/core@7.29.13)(@types/react@19.3.0)(bufferutil@4.1.0)(react@18.3.1)(utf-8-validate@5.0.10)))(@reown/appkit@1.8.17(@types/react@19.3.0)(@x402/core@2.30.0)(@x402/extensions@2.30.0(bufferutil@4.1.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10))(bufferutil@4.1.0)(debug@4.4.1)(react@18.3.1)(typescript@5.9.3)(use-sync-external-store@1.4.0(react@18.3.1))(utf-8-validate@5.0.10)(zod@4.6.7))(@reown/walletkit@1.6.0(bufferutil@4.1.0)(react-native@0.88.1(@babel/core@7.29.13)(@types/react@19.3.0)(bufferutil@4.1.0)(react@18.3.1)(utf-8-validate@5.0.10))(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.7))(@walletconnect/modal@2.7.0(@types/react@19.3.0)(react@18.3.1))(bufferutil@4.1.0)(debug@4.4.1)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
       '@noble/curves': 2.2.0
       '@types/localtunnel': 2.0.4
@@ -5928,8 +5907,6 @@ snapshots:
       - '@x402/evm'
       - '@x402/extensions'
       - '@x402/svm'
-      - ansi-regex
-      - ansi-styles
       - aws4fetch
       - bn.js
       - bufferutil
@@ -5946,7 +5923,6 @@ snapshots:
       - protobufjs
       - react
       - react-native
-      - strip-ansi
       - supports-color
       - typescript
       - uploadthing

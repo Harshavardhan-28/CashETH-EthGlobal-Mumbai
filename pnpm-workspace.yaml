@@ -12,3 +12,7 @@ allowBuilds:
 overrides:
   # hedera-agent-kit pins @langchain/core 1.1.24 but resolves @langchain/langgraph 1.7, which needs ^1.3.4 (its import fails otherwise)
   '@langchain/core': 1.3.4
+  # standards-sdk (HCS-14) pulls @hashgraph/proto 2.25.0, which registers its older types in the same protobufjs
+  # `roots.hashgraph` as @hiero-ledger/proto 2.32.0 (@hiero-ledger/sdk, @x402/hedera) and replaces them: x402 payload
+  # creation then fails with "reading 'encode'". One proto build for both keeps the shared registry consistent.
+  '@hashgraph/proto@2.25.0': npm:@hiero-ledger/proto@2.32.0
