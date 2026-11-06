@@ -14,5 +14,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@casheth/aqua": "workspace:*",
+    "@casheth/hedera": "workspace:*",
+    "@casheth/shared": "workspace:*",
+    "@hashgraph/sdk": "2.80.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "hedera-agent-kit": "3.8.2",
+    "jose": "^6.2.15",
+    "viem": "^2.57.16"
   }
 }
