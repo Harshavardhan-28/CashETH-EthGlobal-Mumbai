@@ -53,4 +53,15 @@ app.listen(cfg.port, host, (error?: Error) => {
     `mcp-server listening on http://${host}:${cfg.port} (resource ${cfg.resource.href}, issuer ${cfg.issuer.href}, ` +
       `HCS topic ${cfg.hcsTopicId ?? "none"}, lender keys in process ${cfg.lenderKeysInProcess}, agent keys in process ${cfg.agentKeyRoles.join(",") || "none"})`,
   );
+  warmStrategyDiscovery();
 });
+
+/** Reads the Aqua history once at boot, so the first `get_quotes` / `open_facility` only scans new blocks. */
+function warmStrategyDiscovery(): void {
+  const started = Date.now();
+  console.log("warming lender strategy discovery (one full Aqua log scan; quotes are fast once this finishes)...");
+  orchestrator.aqua
+    .discover()
+    .then(({ strategies }) => console.log(`lender strategy discovery ready: ${strategies.length} open strategies in ${((Date.now() - started) / 1000).toFixed(0)} s`))
+    .catch((error: unknown) => console.error(`lender strategy discovery warm-up failed (the first quote will scan instead): ${error instanceof Error ? error.message : String(error)}`));
+}

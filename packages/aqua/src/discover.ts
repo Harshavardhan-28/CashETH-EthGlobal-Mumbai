@@ -50,7 +50,7 @@ const DOCKED = DockedEvent.TOPIC.toString().toLowerCase();
 type Reader = Pick<PublicClient, "getBlockNumber" | "getLogs" | "readContract">;
 
 /** Aqua logs in `[from, to]`, fetched in ranges of at most `LOG_CHUNK_BLOCKS` blocks, in chain order. */
-async function aquaLogs(client: Reader, aqua: Address, from: bigint, to: bigint): Promise<Log[]> {
+async function aquaLogs(client: Pick<Reader, "getLogs">, aqua: Address, from: bigint, to: bigint): Promise<Log[]> {
   const out: Log[] = [];
   for (let start = from; start <= to; start += LOG_CHUNK_BLOCKS) {
     const end = start + LOG_CHUNK_BLOCKS - 1n < to ? start + LOG_CHUNK_BLOCKS - 1n : to;
@@ -58,6 +58,38 @@ async function aquaLogs(client: Reader, aqua: Address, from: bigint, to: bigint)
     out.push(...logs);
   }
   return out;
+}
+
+/**
+ * Remembers the Aqua logs already read, so a long-running server rescans only the blocks produced since its last
+ * discovery instead of the whole history (about a minute through Hashio for 15k blocks).
+ */
+export type AquaLogCache = {
+  logs(client: Pick<Reader, "getLogs">, aqua: Address, from: bigint, to: bigint): Promise<Log[]>;
+  /** A strategy's kind never changes (its bytes are hashed), so it is decoded once per process. */
+  kindOf<K>(strategyHash: Hex, decode: () => Promise<K | undefined>): Promise<K | undefined>;
+};
+
+export function createAquaLogCache(): AquaLogCache {
+  let state: { aqua: Address; from: bigint; scannedTo: bigint; logs: Log[] } | undefined;
+  const kinds = new Map<string, Promise<unknown>>();
+  return {
+    kindOf<K>(strategyHash: Hex, decode: () => Promise<K | undefined>) {
+      const key = strategyHash.toLowerCase();
+      if (!kinds.has(key)) kinds.set(key, decode().catch((err: unknown) => (kinds.delete(key), Promise.reject(err))));
+      return kinds.get(key) as Promise<K | undefined>;
+    },
+    async logs(client, aqua, from, to) {
+      const reusable = state && state.aqua.toLowerCase() === aqua.toLowerCase() && state.from <= from;
+      if (!reusable) state = { aqua, from, scannedTo: from - 1n, logs: [] };
+      const current = state!;
+      if (to > current.scannedTo) {
+        current.logs.push(...(await aquaLogs(client, aqua, current.scannedTo + 1n, to)));
+        current.scannedTo = to;
+      }
+      return current.logs.filter((l) => l.blockNumber === null || (l.blockNumber >= from && l.blockNumber <= to));
+    },
+  };
 }
 
 type Shipped = { maker: Address; strategyHash: Hex; strategy: Hex };
@@ -153,66 +185,17 @@ export const DISCOVERY_SKIP = {
 export async function discoverStrategies(
   client: Reader,
   addrs: Pick<AquaAddresses, "aqua" | "swapRouter" | "orderBuilder" | "usdc" | "rcn" | "tUsdt">,
-  opts: { fromBlock?: bigint; toBlock?: bigint } = {},
+  opts: { fromBlock?: bigint; toBlock?: bigint; cache?: AquaLogCache } = {},
 ): Promise<{ strategies: LenderStrategy[]; skipped: DiscoverySkip[] }> {
   const to = opts.toBlock ?? (await client.getBlockNumber({ cacheTime: 0 }));
-  const logs = await aquaLogs(client, addrs.aqua, opts.fromBlock ?? 0n, to);
+  const from = opts.fromBlock ?? 0n;
+  const logs = opts.cache ? await opts.cache.logs(client, addrs.aqua, from, to) : await aquaLogs(client, addrs.aqua, from, to);
   const app = getAddress(addrs.swapRouter);
 
-  const out: LenderStrategy[] = [];
-  const skipped: DiscoverySkip[] = [];
-  for (const s of openFromLogs(logs, app)) {
-    const skip = (reason: string) => skipped.push({ maker: s.maker, strategyHash: s.strategyHash, reason });
-    let order: Order;
-    try {
-      order = decodeStrategy(s.strategy);
-    } catch {
-      skip(DISCOVERY_SKIP.MALFORMED_STRATEGY);
-      continue;
-    }
-    // Aqua keys balances by the shipper while the router pulls from `order.maker`: they must be the same
-    // account, or a copy of a lender's order shipped by someone else would count as that lender's liquidity.
-    if (order.maker !== s.maker) {
-      skip(DISCOVERY_SKIP.MAKER_MISMATCH);
-      continue;
-    }
-    if (hasUnsupportedFlags(order.traits)) {
-      skip(DISCOVERY_SKIP.UNSUPPORTED_ORDER_FLAGS);
-      continue;
-    }
-    const kind = await classify(client, addrs, order);
-    if (!kind) {
-      skip(DISCOVERY_SKIP.NOT_CASHETH_ORDER);
-      continue;
-    }
-    let b0: bigint;
-    let b1: bigint;
-    try {
-      [b0, b1] = await client.readContract({
-        address: addrs.aqua,
-        abi: AquaRouterAbi,
-        functionName: "safeBalances",
-        args: [s.maker, app, s.strategyHash, kind.tokens[0], kind.tokens[1]],
-      });
-    } catch (err) {
-      // revertReason rethrows anything that is not a contract revert.
-      skip(`${DISCOVERY_SKIP.BALANCES_REVERTED}:${revertReason(err)}`);
-      continue;
-    }
-    const [realUsdc, allowance] = await Promise.all([
-      client.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "balanceOf", args: [s.maker] }),
-      client.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "allowance", args: [s.maker, addrs.aqua] }),
-    ]);
-    out.push({
-      ...kind,
-      maker: s.maker,
-      strategyHash: s.strategyHash,
-      order,
-      virtual: { [kind.tokens[0]]: b0, [kind.tokens[1]]: b1 },
-      realUsdc,
-      allowance,
-    });
-  }
+  // Every open strategy is inspected concurrently (each needs several relay round trips); results keep shipping order.
+  const results = await Promise.all(openFromLogs(logs, app).map((s) => inspect(client, addrs, app, s, opts.cache)));
+  const out = results.flatMap((r) => ("strategy" in r ? [r.strategy] : []));
+  const skipped = results.flatMap((r) => ("skip" in r ? [r.skip] : []));
 
   const credit = out
     .map((s, i) => ({ s, i }))
@@ -220,6 +203,44 @@ export async function discoverStrategies(
     .sort((x, y) => x.s.args!.aprBps - y.s.args!.aprBps || x.i - y.i)
     .map(({ s }) => s);
   return { strategies: [...credit, ...out.filter((s) => s.kind === "base")], skipped };
+}
+
+type Inspected = { strategy: LenderStrategy } | { skip: DiscoverySkip };
+
+/** One shipped strategy: decoded, checked, classified and priced; or the reason it is skipped. */
+async function inspect(
+  client: Reader,
+  addrs: Pick<AquaAddresses, "aqua" | "swapRouter" | "orderBuilder" | "usdc" | "rcn" | "tUsdt">,
+  app: Address,
+  s: Shipped,
+  cache: AquaLogCache | undefined,
+): Promise<Inspected> {
+  const skip = (reason: string): Inspected => ({ skip: { maker: s.maker, strategyHash: s.strategyHash, reason } });
+  let order: Order;
+  try {
+    order = decodeStrategy(s.strategy);
+  } catch {
+    return skip(DISCOVERY_SKIP.MALFORMED_STRATEGY);
+  }
+  // Aqua keys balances by the shipper while the router pulls from `order.maker`: they must be the same
+  // account, or a copy of a lender's order shipped by someone else would count as that lender's liquidity.
+  if (order.maker !== s.maker) return skip(DISCOVERY_SKIP.MAKER_MISMATCH);
+  if (hasUnsupportedFlags(order.traits)) return skip(DISCOVERY_SKIP.UNSUPPORTED_ORDER_FLAGS);
+  const kind = cache ? await cache.kindOf(s.strategyHash, () => classify(client, addrs, order)) : await classify(client, addrs, order);
+  if (!kind) return skip(DISCOVERY_SKIP.NOT_CASHETH_ORDER);
+  const [balances, realUsdc, allowance] = await Promise.all([
+    client
+      .readContract({ address: addrs.aqua, abi: AquaRouterAbi, functionName: "safeBalances", args: [s.maker, app, s.strategyHash, kind.tokens[0], kind.tokens[1]] })
+      // revertReason rethrows anything that is not a contract revert.
+      .catch((err: unknown) => ({ reverted: revertReason(err) })),
+    client.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "balanceOf", args: [s.maker] }),
+    client.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "allowance", args: [s.maker, addrs.aqua] }),
+  ]);
+  if ("reverted" in balances) return skip(`${DISCOVERY_SKIP.BALANCES_REVERTED}:${balances.reverted}`);
+  const [b0, b1] = balances;
+  return {
+    strategy: { ...kind, maker: s.maker, strategyHash: s.strategyHash, order, virtual: { [kind.tokens[0]]: b0, [kind.tokens[1]]: b1 }, realUsdc, allowance },
+  };
 }
 
 /**

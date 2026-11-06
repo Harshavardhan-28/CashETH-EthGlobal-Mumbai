@@ -11,6 +11,7 @@ import { AquaProtocolContract, Address as SdkAddress, HexString } from "@1inch/a
 import {
   buildBaseYieldOrder,
   buildLenderOrder,
+  createAquaLogCache,
   discoverStrategies,
   dockStrategy,
   shipBaseYield,
@@ -472,12 +473,14 @@ export function createLiveAqua(env: Env, cfg: McpConfig, keys: AgentKey[]): Aqua
     if (!k || !k.prefix.startsWith("LENDER_") || !cfg.lenderKeysInProcess) throw new ToolError("KEY_NOT_HELD", `the server does not sign for ${lender}`);
     return evmClients(env, k.key).wallet as LenderWallet;
   };
+  // One scan of the Aqua history per process; later discoveries only read the blocks produced since.
+  const logCache = createAquaLogCache();
   return {
     addresses,
     async discover() {
       const addrs = addresses();
       if (!fromBlock || fromBlock.router !== addrs.swapRouter) fromBlock = { router: addrs.swapRouter, block: aquaFromBlock(env, cfg, addrs.swapRouter) };
-      return discoverStrategies(pub as PublicClient, addrs, { fromBlock: await fromBlock.block });
+      return discoverStrategies(pub as PublicClient, addrs, { fromBlock: await fromBlock.block, cache: logCache });
     },
     solve(input) {
       return solve(pub as PublicClient, addresses(), { ...input, coordinator: privateKeyToAccount(cfg.coordinatorKey).address });
