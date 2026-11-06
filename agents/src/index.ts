@@ -22,3 +22,5 @@ export type { LenderYieldRow } from "./yieldReport.js";
 export { consoleLog } from "./log.js";
 export type { Log } from "./log.js";
 export * from "./llm/index.js";
+export { renderInvoicePdf } from "./invoicePdf.js";
+export type { InvoiceFields } from "./invoicePdf.js";
