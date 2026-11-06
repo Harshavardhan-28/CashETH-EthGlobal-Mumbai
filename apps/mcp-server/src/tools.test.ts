@@ -327,6 +327,17 @@ describe("spending", () => {
     expect(o.events.list().at(-1)).toMatchObject({ type: "SpendRejected", code: "COSIGNER_REFUSED", reason: "wrong_payee" });
   });
 
+  it("pay_x402 on an expired reservation is refused before any fetch and recorded as SpendRejected", async () => {
+    const { app, tokens, o } = await setup();
+    const spendId = openReservation(o);
+    o.chain.reservations.set(spendId.toLowerCase(), { ...o.chain.reservations.get(spendId.toLowerCase())!, expiry: NOW });
+    const { result, json } = await callTool(app, tokens.worker, "pay_x402", { spendId, url: "https://merchant.example/research?topic=x", idempotencyKey: "pay-key-expired" });
+    expect(result.isError).toBe(true);
+    expect(json).toMatchObject({ code: "RESERVATION_EXPIRED", spendId });
+    expect(o.x402.payments).toEqual([]);
+    expect(o.events.list().at(-1)).toMatchObject({ type: "SpendRejected", spendId, code: "RESERVATION_EXPIRED", reason: "reservation_expired", stage: "cosigner" });
+  });
+
   it("pay_x402 refuses a URL outside the reservation merchant's configured origins without fetching it", async () => {
     const { app, tokens, o } = await setup();
     const spendId = openReservation(o);

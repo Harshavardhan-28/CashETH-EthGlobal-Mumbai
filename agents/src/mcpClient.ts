@@ -16,6 +16,7 @@ export type AgentRole = "seller" | "buyer" | "worker" | "lender";
 const ROLE_IDS: Record<AgentRole, number> = { seller: ROLES.Seller, buyer: ROLES.Buyer, worker: ROLES.Worker, lender: ROLES.Lender };
 const JWT_BEARER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 const DEFAULT_MCP_URL = "http://localhost:4030/mcp";
+const DEFAULT_CALL_TIMEOUT_MS = 120_000;
 
 type FetchLike = typeof fetch;
 
@@ -29,6 +30,8 @@ export interface AgentClientOptions {
   mandateHash?: Hex;
   /** `MCP_RESOURCE_URL`; defaults to the local MCP server. */
   mcpUrl?: string;
+  /** Per tool call, in ms (default 120 s): a tool that writes on-chain waits for the receipt, which the Hashio relay can delay. */
+  callTimeoutMs?: number;
   fetch?: FetchLike;
 }
 
@@ -107,7 +110,11 @@ export class AgentClient implements ToolCaller {
 
   /** Calls a tool and returns its JSON result; an `isError` result throws a `ToolCallError`. */
   async call<T = Record<string, unknown>>(tool: string, args: Record<string, unknown>): Promise<T> {
-    const result = await (await this.#connection()).callTool({ name: tool, arguments: args });
+    const result = await (await this.#connection()).callTool(
+      { name: tool, arguments: args },
+      undefined,
+      { timeout: this.#options.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS },
+    );
     const [first] = result.content as { type: string; text: string }[];
     const body = JSON.parse(first?.text ?? "null") as unknown;
     if (result.isError) throw new ToolCallError(tool, body as Record<string, unknown>);

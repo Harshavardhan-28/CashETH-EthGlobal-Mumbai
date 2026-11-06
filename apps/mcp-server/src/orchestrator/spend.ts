@@ -165,7 +165,12 @@ export async function payX402(o: Orchestrator, caller: Caller, input: { spendId:
   const r = await o.chain.reservation(spendId);
   if (r.status !== RESERVATION_OPEN) fail("RESERVATION_NOT_OPEN", `reservation ${spendId} is not open`);
   requireParty(caller, r.worker, "worker of this reservation");
-  if (o.now() >= r.expiry) fail("RESERVATION_EXPIRED", "the reservation expired; reserve again");
+  if (o.now() >= r.expiry) {
+    // The co-signer's `approvePayment` would refuse too (`reservation_expired`); answering here keeps the fetch
+    // from happening at all, but the refusal is still part of the audit trail.
+    await record(o, { type: "SpendRejected", id: r.id, spendId, code: "RESERVATION_EXPIRED", reason: "reservation_expired", stage: "cosigner", ...actor(caller) });
+    throw new ToolError("RESERVATION_EXPIRED", "the reservation expired; reserve again", { spendId });
+  }
 
   const [spendWalletId, merchantAccountId] = await Promise.all([o.x402.accountIdOf(r.spendWallet), o.x402.accountIdOf(r.merchant)]);
   if (!(o.config.merchantOrigins[merchantAccountId] ?? []).includes(url.origin)) {
