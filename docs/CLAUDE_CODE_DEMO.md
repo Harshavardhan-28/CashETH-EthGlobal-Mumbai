@@ -21,7 +21,13 @@ From the repo root, with `.env` and `.env.accounts` in place. Build first: works
 pnpm -r build
 ```
 
-Then one terminal each:
+Then either one command that builds, starts both servers, waits for them and stops both on Ctrl+C:
+
+```bash
+pnpm servers
+```
+
+or one terminal each:
 
 ```bash
 AUTH_DEMO_GRANT=true pnpm -F @casheth/auth start                                     # :4020
