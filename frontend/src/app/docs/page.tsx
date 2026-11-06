@@ -23,7 +23,7 @@ import {
 
 export const metadata: Metadata = {
   title: "Docs - CashETH",
-  description: "Build spec for CashETH: connecting agents to the MCP server, its 20 tools, the read API, contracts and error codes.",
+  description: "Build spec for CashETH: connecting agents to the MCP server, its 21 tools, the read API, contracts and error codes.",
 };
 
 export default function DocsPage() {
@@ -91,16 +91,28 @@ X402_FACILITATOR_URL=https://api.testnet.blocky402.com`}
             HTTP, <code>POST</code> only, JSON responses, no session id. Any MCP client works; point it at the endpoint
             and it discovers the authorization server from the <code>401</code>.
           </p>
-          <CodeBlock title=".mcp.json">
+          <CodeBlock title=".mcp.json · one connection per role, plus the local wallet">
 {`{
   "mcpServers": {
-    "casheth": {
-      "type": "http",
-      "url": "http://localhost:4030/mcp"
+    "casheth-seller": {
+      "type": "http", "url": "http://localhost:4030/mcp",
+      "oauth": { "scopes": "receivable:write receivable:read credit:read facility:open budget:write spend:reserve stats:read" }
+    },
+    "casheth-buyer":  { "type": "http", "url": "http://localhost:4030/mcp", "oauth": { "scopes": "receivable:confirm … repay:write" } },
+    "casheth-worker": { "type": "http", "url": "http://localhost:4030/mcp", "oauth": { "scopes": "… spend:pay spend:commit" } },
+    "casheth-wallet": {
+      "type": "stdio", "command": "pnpm", "args": ["-s", "-F", "@casheth/wallet-mcp", "start"],
+      "env": { "WALLET_ACCOUNTS": "buyer" }
     }
   }
 }`}
           </CodeBlock>
+          <p className={styles.p}>
+            Each role-pinned entry requests only its role&apos;s scopes, so the consent page pre-selects the matching agent.
+            The local <code>casheth-wallet</code> server signs the buyer&apos;s confirmation and sends allow-listed calldata
+            from the agent&apos;s own key, which never reaches the MCP server. Call <code>whoami</code> to see which account
+            a connection acts as.
+          </p>
           <p className={styles.p}>
             The MCP server is an OAuth 2.1 resource server. An agent signs a JWT with its ECDSA secp256k1 key and
             exchanges it (RFC 7523 JWT-bearer) at the CashETH authorization server for a 10-minute token bound to the

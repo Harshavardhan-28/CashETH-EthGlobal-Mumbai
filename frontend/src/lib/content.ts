@@ -144,7 +144,7 @@ export const X402_STEPS = [
 
 export type McpTool = { name: string; roles: Role[]; scope: string; mutating: boolean; effect: string };
 
-/** All 20 tools, in `apps/mcp-server/src/tools.ts` order, with its roles and scopes (docs/API.md §3). */
+/** All 21 tools, in `apps/mcp-server/src/tools.ts` order, with its roles and scopes (docs/API.md §3). */
 export const MCP_TOOLS: McpTool[] = [
   { name: "register_agent", roles: ["owner"], scope: "agent:admin", mutating: true, effect: "KYARegistry.register by the KYA issuer · HCS-14 profile as AgentRegistered" },
   { name: "upload_invoice_document", roles: ["seller"], scope: "receivable:write", mutating: true, effect: "Stores the invoice file and reads its fields · InvoiceDocumentStored (hashes only) · optional HFS copy" },
@@ -163,6 +163,7 @@ export const MCP_TOOLS: McpTool[] = [
   { name: "explain_decision", roles: ["any"], scope: "credit:read", mutating: false, effect: "— (AI explains a deterministic decision, never makes one)" },
   { name: "list_agents", roles: ["any"], scope: "stats:read", mutating: false, effect: "—" },
   { name: "get_agent_stats", roles: ["any"], scope: "stats:read", mutating: false, effect: "—" },
+  { name: "whoami", roles: ["any"], scope: "stats:read", mutating: false, effect: "— (the caller's address, role, KYA level and scopes from its token; no chain reads)" },
   { name: "fund_agents", roles: ["lender"], scope: "lend:write", mutating: true, effect: "Aqua ship of a credit (and optional base-yield) strategy · StrategyShipped" },
   { name: "get_lender_yield", roles: ["lender"], scope: "stats:read", mutating: false, effect: "—" },
   { name: "close_strategy", roles: ["lender"], scope: "lend:write", mutating: true, effect: "Aqua dock · StrategyDocked" },
@@ -253,7 +254,7 @@ export const MCP_ENV: [string, string, string][] = [
   ["HFS_ENABLED", "false", "Also store invoice documents on the Hedera File Service"],
   ["CASHETH_LLM_PROVIDER", "— (probe)", "ollama forces the local model for invoice field extraction"],
   ["OLLAMA_BASE_URL, CASHETH_LLM_MODEL", "http://localhost:11434, qwen2.5:7b", "Ollama OpenAI-compatible endpoint"],
-  ["AGENT_KEYS_IN_PROCESS", "false", "Demo: the server signs as seller, buyer and workers"],
+  ["AGENT_KEYS_IN_PROCESS", "false", "Demo: the server signs as seller, buyer and workers (true), or only the listed roles (seller,worker); other roles get calldata"],
   ["LENDER_KEYS_IN_PROCESS", "false", "Demo: the server signs as lenders"],
   ["AQUA_FROM_BLOCK", "swap router creation block", "First block for Aqua log discovery"],
   ["MERCHANT_ORIGINS", "—", "Extra accountId=origin pairs: the only origins pay_x402 fetches"],

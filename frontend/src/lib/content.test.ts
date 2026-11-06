@@ -19,11 +19,11 @@ describe("docs content", () => {
     }
   });
 
-  it("documents all 20 MCP server tools in tools.ts order", () => {
+  it("documents all 21 MCP server tools in tools.ts order", () => {
     expect(MCP_TOOLS.map((t) => t.name)).toEqual([
       "register_agent", "upload_invoice_document", "get_invoice_document", "upload_receivable", "confirm_receivable",
       "get_receivable_status", "get_quotes", "open_facility", "set_budgets", "reserve_spend", "pay_x402", "commit_spend",
-      "release_spend", "repay_receivable", "explain_decision", "list_agents", "get_agent_stats", "fund_agents",
+      "release_spend", "repay_receivable", "explain_decision", "list_agents", "get_agent_stats", "whoami", "fund_agents",
       "get_lender_yield", "close_strategy",
     ]);
   });
@@ -35,6 +35,7 @@ describe("docs content", () => {
     expect(tool("fund_agents")).toMatchObject({ roles: ["lender"], scope: "lend:write" });
     expect(tool("list_agents")).toMatchObject({ roles: ["any"], scope: "stats:read" });
     expect(tool("register_agent").scope).toBe("agent:admin");
+    expect(tool("whoami")).toMatchObject({ roles: ["any"], scope: "stats:read", mutating: false });
   });
 
   it("lists the read API endpoints the dashboards use", () => {
