@@ -103,7 +103,7 @@ AlarmProbe: [0.0.11338265](https://hashscan.io/testnet/contract/0.0.11338265) (`
 | deploy `AlarmProbe` | [0.0.7314364@1793963937.665626821](https://hashscan.io/testnet/transaction/0.0.7314364@1793963937.665626821) | 442,393 | 295,379 |
 | fund 5 HBAR through `receive()` | [0.0.7314364@1793963939.125757865](https://hashscan.io/testnet/transaction/0.0.7314364@1793963939.125757865) | 62,300 | 21,067 |
 | `schedule(90)` → schedule [0.0.11338268](https://hashscan.io/testnet/schedule/0.0.11338268) | [0.0.7314364@1793963948.917566541](https://hashscan.io/testnet/transaction/0.0.7314364@1793963948.917566541) | 2,134,962 | 1,458,281 |
-| network executes `ring(0)` (scheduled `CONTRACTCALL`, `SUCCESS`) | [1793964046.045736810](https://hashscan.io/testnet/transaction/1793964046.045736810) | 200,000 | 44,893 |
+| network executes `ring(0)` (scheduled `CONTRACTCALL`, `SUCCESS`) | consensus timestamp 1793964046.045736810 (the executed transaction is shown on the [schedule page](https://hashscan.io/testnet/schedule/0.0.11338268)) | 200,000 | 44,893 |
 | `schedule(600)` → schedule [0.0.11338283](https://hashscan.io/testnet/schedule/0.0.11338283) | [0.0.7314364@1793964052.726185880](https://hashscan.io/testnet/transaction/0.0.7314364@1793964052.726185880) | 2,111,821 | 1,441,193 |
 | `cancel(0.0.11338283)` (`deleteSchedule`) | [0.0.7314364@1793964061.192393677](https://hashscan.io/testnet/transaction/0.0.7314364@1793964061.192393677) | 59,277 | 39,774 |
 

@@ -45,13 +45,13 @@ The demo also submits the same obligation twice (rejected with `DUPLICATE_RECEIV
 | Requirement | Status | Evidence |
 | --- | --- | --- |
 | Our own x402-protected endpoint | Done | `apps/merchant`: `GET /research?topic=...`, 0.25 USDC to merchant [0.0.11333304](https://hashscan.io/testnet/account/0.0.11333304); scheme `exact`, network `hedera:testnet`. Spike S3 in [EVIDENCE.md](docs/EVIDENCE.md). |
-| Settles USDC on Hedera through a listed facilitator | Done (spike) | `https://x402.org/facilitator` settled [payment A](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214) (single key) and [payment B](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) (2-of-2 spend wallet). |
-| Agent pays with no human approval | Final run pending | See "Settled x402 transaction" below. |
+| Settles USDC on Hedera through a listed facilitator | Done | `https://x402.org/facilitator` settled the agent purchase [0.0.9185802@1793985365.210563681](https://hashscan.io/testnet/transaction/0.0.9185802@1793985365.210563681) (below), and earlier the spike payments [A](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214) (single key) and [B](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) (2-of-2). |
+| Agent pays with no human approval | Done | The research worker reserved, paid and committed with no human step: see "Settled x402 transaction" below. |
 | Spending controls | Done in contracts and engine | Per-agent budget, per-transaction and daily limits, merchant allowlist, facility-wide ceiling, one open reservation per wallet, and a co-signer that must approve every payment. A single-signature payment from a 2-of-2 wallet was refused by the facilitator (S3). |
 | Agent identity and reputation (HCS-14, ERC-8004-shaped) | Done | 10 HCS-14 UAIDs published on the audit topic ([EVIDENCE.md](docs/EVIDENCE.md), "C2: HCS topic, HCS-14 profiles"); `KYARegistry` holds KYA level, owner group and repayment counters. |
 | HCS audit log | Done | Topic [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927): agent profiles, `ReceivableConfirmed` seq 34, `NftMinted` seq 35. Hashes only. |
 | Settling in an HTS token | Done | USDC [0.0.429274](https://hashscan.io/testnet/token/0.0.429274). |
-| Scheduled Transactions (HIP-1215) | Done in the facility; see [section 4.6](#46-scheduled-lifecycle) | Spike S4: network-executed schedule [0.0.11338268](https://hashscan.io/testnet/schedule/0.0.11338268) and deleted schedule [0.0.11338283](https://hashscan.io/testnet/schedule/0.0.11338283). |
+| Scheduled Transactions (HIP-1215) | Done in the facility; see [section 4.6](#46-scheduled-lifecycle) | The funding transaction created exactly one schedule, `markOverdue` [0.0.11342318](https://hashscan.io/testnet/schedule/0.0.11342318) (pending until the due date + 7 days). Spike S4: network-executed schedule [0.0.11338268](https://hashscan.io/testnet/schedule/0.0.11338268) and deleted schedule [0.0.11338283](https://hashscan.io/testnet/schedule/0.0.11338283). |
 | Hedera Agent Kit | Done | `agents/src/kit.ts` gives each agent a `hedera-agent-kit` 3.8.2 instance that runs the kit's `submit_topic_message_tool` (agent notes on an HCS topic) and `associate_token_tool` (HTS association) as the agent's own account. |
 
 ### 1inch: Build an Aqua App
@@ -68,9 +68,19 @@ The demo also submits the same obligation twice (rejected with `DUPLICATE_RECEIV
 
 **Aqua funding transaction (`openAndFund` through the modified router, lenders A and B fill PO-1002, the receivable becomes Financed): [0.0.7314364@1793982496.157443985](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985).**
 
-**Settled x402 transaction (final demo run, paid from a 2-of-2 spend wallet): TODO.**
+**Settled Hedera x402 transaction: [0.0.9185802@1793985365.210563681](https://hashscan.io/testnet/transaction/0.0.9185802@1793985365.210563681).** The research worker's spend wallet [0.0.11339484](https://hashscan.io/testnet/account/0.0.11339484) (2-of-2: worker + co-signer) paid 0.25 USDC to merchant [0.0.11333304](https://hashscan.io/testnet/account/0.0.11333304) for `/research` on `hedera:testnet`, scheme `exact`, settled by `https://x402.org/facilitator` (fee payer 0.0.9185802). The id came back in the `PAYMENT-RESPONSE` header and was recorded on-chain at commit.
 
-<!-- TODO(8.2-final): settled x402 transaction id from the PAYMENT-RESPONSE header of the final demo run (HashScan link). -->
+| Leg | Transaction |
+| --- | --- |
+| Reserve (facility funds the spend wallet) | [0.0.7314364@1793985356.566369946](https://hashscan.io/testnet/transaction/0.0.7314364@1793985356.566369946), HCS `SpendReserved` seq 44 |
+| x402 settlement | [0.0.9185802@1793985365.210563681](https://hashscan.io/testnet/transaction/0.0.9185802@1793985365.210563681) |
+| Commit (`keccak256` of the settlement id) | [0.0.7314364@1793985376.841020355](https://hashscan.io/testnet/transaction/0.0.7314364@1793985376.841020355), HCS `SpendCommitted` seq 45 |
+| Rejection `TX_LIMIT_EXCEEDED` (0.6 USDC, `maxPerTx` 0.5), engine | HCS `SpendRejected` seq 46 |
+| Rejection `AGENT_BUDGET_EXCEEDED` (5.5 USDC, budget 3.0), engine | HCS `SpendRejected` seq 47 |
+| Same 5.5 USDC sent straight to `CreditFacility.reserve`: contract reverts `AGENT_BUDGET_EXCEEDED()` | [0.0.7314364@1793985589.809847638](https://hashscan.io/testnet/transaction/0.0.7314364@1793985589.809847638) |
+| Unpaid reservation refused late (`RESERVATION_EXPIRED`), then released by the coordinator | [release 0.0.7314364@1793987537.265152144](https://hashscan.io/testnet/transaction/0.0.7314364@1793987537.265152144), HCS `SpendReleased` seq 53 |
+
+Full detail and the mirror-node USDC movements: [docs/EVIDENCE.md](docs/EVIDENCE.md), "C5 spend (x402)", and `deployments/testnet/c5.json`.
 
 ## 3. Deployed contracts (Hedera testnet, chain 296)
 
@@ -168,7 +178,7 @@ The C2, C3 and C4 sections of [docs/EVIDENCE.md](docs/EVIDENCE.md) record this f
 
 - The buyer agent signs an EIP-712 `ReceivableConfirmation` (domain `AgentReceivables` v1, chain 296, verifying contract = `ReceivableRegistry`): seller, buyer, currency, amount, due date, `buyerRef`, `detailsCommitment`, `payTo`, nonce, deadline. The canonical id is `keccak256(abi.encode(buyer, buyerRef))`, so the same obligation always maps to the same id.
 - `ReceivableRegistry.register` checks, in order: duplicate (`DUPLICATE_RECEIVABLE`), buyer signature (`BAD_BUYER_SIG`), payee equals `RepaymentRouter` (`WRONG_PAYEE`), deadline and a 1 to 120 day term, nonce, currency, KYA levels (buyer at least 3, seller at least 2, unrevoked and unexpired), and different owner groups (`SELF_DEALING`).
-- Only hashes go on-chain and to HCS: `detailsCommitment` is a hash of the invoice details, never the details.
+- Only hashes go on-chain and to HCS: `detailsCommitment` is the keccak256 of the invoice file (section 4.7), never the contents.
 - The HTS NFT is a handle for the receivable, not the source of truth: its metadata is `{id, seq}` where `seq` is the HCS sequence of `ReceivableConfirmed`.
 
 Current-stack evidence for PO-1002 (6 USDC, due in 30 days, id `0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c`):
@@ -221,22 +231,39 @@ A non-empty `sellerSet` (up to 3 addresses) replaces the score thresholds: an ex
 
 **Current strategies** (shipped to the kept Aqua registry with the new router as app; sized to the lenders' real balances; record: [deployments/testnet/strategies.json](deployments/testnet/strategies.json)):
 
-| Lender | Tier | Credit | Base | sellerSet | Expected result for PO-1002 |
+| Lender | Tier | Credit | Base | sellerSet | Result for PO-1002 (observed) |
 | --- | --- | --- | --- | --- | --- |
 | A | low (700 bps) | 3.5 USDC | 0.5 USDC + 0.5 tUSDT | seller | filled 3.5 USDC |
 | B | medium (850 bps) | 1.5 USDC | 0.5 USDC + 0.5 tUSDT | seller | filled 1.0 USDC (the remainder) |
-| C | high (1300 bps) | 0.5 USDC | 0.5 USDC + 0.5 tUSDT | any | eligible, not needed (most expensive) |
+| C | high (1300 bps) | 0.5 USDC | 0.5 USDC + 0.5 tUSDT | any | `NOT_NEEDED` (eligible, most expensive) |
 | D | low (700 bps) | 1.0 USDC | none | workerResearch | skipped on-chain: `SELLER_NOT_FUNDED_BY_LENDER` |
 
-PO-1002 is 6 USDC with a 75% advance, so the borrowing base is 4.5 USDC. The last column is the designed outcome; the observed fill is the `openAndFund` transaction [0.0.7314364@1793982496.157443985](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985) (A 3.5 USDC, B 1.0 USDC, C not needed, D skipped).
+PO-1002 is 6 USDC with a 75% advance, so the borrowing base is 4.5 USDC. The last column is what the solver and the chain did in the `openAndFund` transaction [0.0.7314364@1793982496.157443985](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985) (A 3.5 USDC, B 1.0 USDC, C not needed, D skipped).
 
-`Aqua.ship` transactions recorded so far (the remaining ships are recorded in `strategies.json` as they land):
+`Aqua.ship` transactions (from `strategies.json`; strategy hashes are in [docs/EVIDENCE.md](docs/EVIDENCE.md), "C4 strategies (final)"):
 
 | Lender | Kind | Transaction |
 | --- | --- | --- |
 | A | credit, 3.5 USDC | [0.0.7314364@1793980834.590739155](https://hashscan.io/testnet/transaction/0.0.7314364@1793980834.590739155) |
 | A | base, 0.5 + 0.5 | [0.0.7314364@1793980911.340291226](https://hashscan.io/testnet/transaction/0.0.7314364@1793980911.340291226) |
 | B | credit, 1.5 USDC | [0.0.7314364@1793981034.732736160](https://hashscan.io/testnet/transaction/0.0.7314364@1793981034.732736160) |
+| B | base, 0.5 + 0.5 | [0.0.7314364@1793981428.956894431](https://hashscan.io/testnet/transaction/0.0.7314364@1793981428.956894431) |
+| C | credit, 0.5 USDC | [0.0.7314364@1793981544.024005875](https://hashscan.io/testnet/transaction/0.0.7314364@1793981544.024005875) |
+| C | base, 0.5 + 0.5 | [0.0.7314364@1793981618.317305300](https://hashscan.io/testnet/transaction/0.0.7314364@1793981618.317305300) |
+| D | credit, 1.0 USDC | [0.0.7314364@1793982142.770577875](https://hashscan.io/testnet/transaction/0.0.7314364@1793982142.770577875) |
+
+**Funding result** (`deployments/testnet/facility.json`; score 600, advance 75%, limit 4.5 USDC): `openAndFund` [0.0.7314364@1793982496.157443985](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985) filled A 3.5 USDC at 700 bps and B 1.0 USDC at 850 bps, so the facility holds 4.5 USDC and A and B hold 3.5 and 1.0 RCN. The receivable is `Financed` and HCS `FacilityFunded` is seq 36 ([tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793982667.668877640)). C was skipped as `NOT_NEEDED` and D as `SELLER_NOT_FUNDED_BY_LENDER`. Two real reverts prove the access checks: `NOT_CONFIRMED()` for an unregistered id ([tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793982511.134508238)) and `NOT_COORDINATOR()` when the seller calls it ([tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793982519.722396023)).
+
+**Measured base yield ("scripted volume").** The trader agent made 4 real swaps against lender A's base strategy (two USDC to tUSDT and back round trips of 0.2 USDC, through `CashEthTaker`; record `deployments/testnet/trades.json`, links in [docs/EVIDENCE.md](docs/EVIDENCE.md), "C4 base yield (scripted volume)"). Fees are 30 bps of the 0.684925 USDC-equivalent pushed in: 0.002054 USDC.
+
+| Lender | Capital (USDC) | Lent | Base fees | Base APR | Boost APR | Blended APR |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A (low) | 4.01081 | 3.5 | 0.002054 | 2820.05% | 7% | 365.27% |
+| B (medium) | 2 | 1 | 0 | 0% | 8.5% | 4.25% |
+| C (high) | 1 | 0 | 0 | 0% | 13% | 0% |
+| D (low) | 1 | 0 | 0 | 0% | 7% | 0% |
+
+Read this with care: only lender A was traded (B and C were not, for time, because the relay took 1 to 5 minutes per transaction), so their base APR of 0 is not a result. A's base APR is a measurement over about 38 minutes on a 1.0 virtual balance, annualised; it shows the mechanism works on real swaps and is not a forecast or a guaranteed rate. Price impact is large because the pool is small.
 
 **Solver** (`packages/aqua/src/solver.ts`, off-chain, deterministic): discover open strategies from `Shipped` events, quote each credit strategy through `router.quote` called as the facility (so the tier, seller set and per-buyer cap decide eligibility on-chain), sort by `aprBps` ascending, and fill until the borrowing base is reached. `CreditFacility.openAndFund` re-checks that the fills are cheapest-first (`NOT_CHEAPEST_FIRST`) and within the borrowing base (`BORROWING_BASE_EXCEEDED`), so the coordinator cannot overpay a lender.
 
@@ -284,6 +311,36 @@ Configuration: the authorization and MCP servers bind to `HOST` (default `127.0.
 The facility schedules its own overdue and default checks through the Hedera Schedule Service (HIP-1215, system contract `0x16b`), so no keeper bot is needed. **Hedera allows one `scheduleCall` per transaction.** `openAndFund` therefore schedules only `markOverdue` (7 days after the due date); `markOverdue` schedules `markDefaulted` (30 days after the due date) when it runs. Both are also callable by anyone once due. Repayment always pays lenders first.
 
 HSS mechanism evidence (spike S4): schedule [0.0.11338268](https://hashscan.io/testnet/schedule/0.0.11338268) was executed by the network about 46 ms after its expiry second with the contract as `msg.sender`; schedule [0.0.11338283](https://hashscan.io/testnet/schedule/0.0.11338283) was deleted before it fired. The two-schedules-in-one-transaction failure that led to the fix is linked in [section 3](#3-deployed-contracts-hedera-testnet-chain-296).
+
+### 4.7 Invoice documents
+
+The seller can attach the real invoice. `upload_invoice_document` stores the PDF (or text) file, reads its printed fields (amount, currency, due date, buyer reference) with a local model or a heuristic fallback, and returns its keccak256. That hash is used as the receivable's `detailsCommitment`, so the buyer's EIP-712 signature covers the exact file. `confirm_receivable` rejects a document whose printed terms differ from the submitted ones (`INVOICE_MISMATCH`).
+
+Anyone can check it without trusting us: `GET /invoices/:keccak256` returns the stored bytes, and `scripts/c9-invoice-verify.ts <receivableId>` hashes them and compares with `ReceivableRegistry.get(id).detailsCommitment`, printing `VERIFIED` or `MISMATCH`. Details: [docs/API.md](docs/API.md).
+
+Registered from an invoice PDF (PO-1003): [0.0.7314364@1793989261.174955397](https://hashscan.io/testnet/transaction/0.0.7314364@1793989261.174955397), receivable `0xc7fd228d5a20c42b8ac4083d9c8d073ef84bb76905ce5b5f8acdf279ca42dc8b`; the stored document verifies against the on-chain commitment.
+
+### 4.8 Agent modes
+
+| Mode | What drives the tools | Doc |
+| --- | --- | --- |
+| Scripted agents | `agents/` seller, buyer, worker, lender, trader and the demo runner (`pnpm demo`) | [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) |
+| LLM agents | A language model chooses the MCP tools; an agent wrapper enforces a client-side spend cap. Local Ollama by default (no API key), Claude optional. | [docs/LLM_AGENTS.md](docs/LLM_AGENTS.md) |
+| Claude Code as a client | Claude Code connects as a remote MCP client (`.mcp.json`, OAuth with PKCE through the demo grant) and buys the research report as the research worker | [docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md) |
+
+All three use the same 20 MCP tools and the same on-chain checks. The model never approves credit: the score is deterministic and `explain_decision` only explains it.
+
+### 4.9 Security hardening from the final review
+
+| Change | Effect |
+| --- | --- |
+| Demo authorization-code grant off by default (`AUTH_DEMO_GRANT=true` to enable); servers bind `127.0.0.1` | No open path to act as an agent; `agent:admin` is never granted from a query flag, only to the KYA issuer through JWT-bearer |
+| UAID bound to the registry | The assertion's UAID must match the registry's hash for that address, so audit identity and evidence binding cannot be spoofed |
+| Single payment per reservation | The co-signer records that it signed for a `spendId` and refuses a second payment; a retry cannot pay twice |
+| `release_spend` tool, commit after expiry | An unpaid or expired reservation is released by the coordinator; a paid one can still be committed, so a wallet cannot stay busy |
+| No repay after `Repaid`; deterministic idempotency keys for repay and ship | A retried repayment cannot send a second payment to the seller; a retried ship cannot duplicate a strategy |
+| Strategies with hook or Permit2 flags are skipped | A foreign strategy cannot pass the solver's dry run and then fail the real fill |
+| Document checks run however the commitment is given | A `detailsCommitment` that equals a stored document's hash gets the same printed-terms checks as naming the document |
 
 ## 5. The modified SwapVM
 
@@ -337,11 +394,11 @@ Spike S1 evidence that Aqua and SwapVM run on Hedera with real HTS USDC: [ship](
 | `packages/engine` | `@casheth/engine`: credit score, borrowing base, spend policy, co-signer policy, event store, idempotency |
 | `apps/merchant` | Our x402 research API |
 | `apps/auth-server` | OAuth 2.1 authorization server with KYA checks |
-| `apps/mcp-server` | MCP tools (19), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`) |
+| `apps/mcp-server` | MCP tools (20), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`) |
 | `agents/` | `AgentClient` and the seller, buyer, worker, lender and trader agents; Hedera Agent Kit wrapper; demo runner |
 | `scripts/` | Account setup, deploy and wiring drivers (`c2` to `c5`), spikes, sweep, ABI sync |
 | `deployments/testnet/` | Addresses and run records |
-| `docs/` | `EVIDENCE.md`, `API.md`, `DEMO_SCRIPT.md` |
+| `docs/` | `EVIDENCE.md`, `API.md`, `DEMO_SCRIPT.md`, `LLM_AGENTS.md`, `CLAUDE_CODE_DEMO.md` |
 | `diagrams/` | Architecture diagram |
 
 ### Prerequisites
@@ -399,9 +456,9 @@ pnpm -F @casheth/mcp start                   # MCP server and read API, MCP_PORT
 pnpm demo                                    # drives the eight steps, the duplicate and two rejections
 ```
 
-`pnpm demo` starts and stops the three servers itself (or expects them with `DEMO_SERVERS=external`), prints a HashScan link for each step, appends the run to `docs/EVIDENCE.md` under a dated "Demo run" heading, and exits non-zero if a step has no Hedera transaction id. For a demo run the MCP server may sign for the demo agents (`AGENT_KEYS_IN_PROCESS=true`, `LENDER_KEYS_IN_PROCESS=true`); in normal operation agents sign their own transactions and the server returns calldata.
+`pnpm demo` (root script; walkthrough in `docs/DEMO.md` on the demo branch) starts and stops the servers itself (or expects them with `DEMO_SERVERS=external`), drives the eight steps plus the duplicate and the two rejections through the MCP tools, prints a HashScan link for each step, appends the run to [docs/EVIDENCE.md](docs/EVIDENCE.md) under a dated "Demo run" heading, and exits non-zero if a step has no Hedera transaction id. For a demo run the MCP server may sign for the demo agents (`AGENT_KEYS_IN_PROCESS=true`, `LENDER_KEYS_IN_PROCESS=true`); in normal operation agents sign their own transactions and the server returns calldata.
 
-<!-- TODO(8.2-final): confirm that the root `pnpm demo` script has landed (Task 7.2) and that its flags and output match the paragraph above. -->
+The agent-driven run on PO-1003 (registered from the invoice PDF, section 4.7) is being recorded: its funding and repayment transaction ids are appended by the demo runner to the "Demo run" section of EVIDENCE.md. The funding, x402 and spend evidence above comes from the PO-1002 run.
 
 ### Frontend
 
@@ -413,8 +470,12 @@ Everything is recorded in [docs/EVIDENCE.md](docs/EVIDENCE.md) and the run recor
 
 | What | Where |
 | --- | --- |
-| First Aqua-funded facility (`openAndFund` through the modified router, A and B filled) | Done: [0.0.7314364@1793982496.157443985](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985) |
-| Settled x402 payment, final run | TODO (see section 2) |
+| First Aqua-funded facility (`openAndFund` through the modified router, A 3.5 + B 1.0 filled, C `NOT_NEEDED`, D `SELLER_NOT_FUNDED_BY_LENDER`) | [0.0.7314364@1793982496.157443985](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985) |
+| Settled x402 payment (spend wallet to merchant, 0.25 USDC) | [0.0.9185802@1793985365.210563681](https://hashscan.io/testnet/transaction/0.0.9185802@1793985365.210563681), reserve [0.0.7314364@1793985356.566369946](https://hashscan.io/testnet/transaction/0.0.7314364@1793985356.566369946), commit [0.0.7314364@1793985376.841020355](https://hashscan.io/testnet/transaction/0.0.7314364@1793985376.841020355) |
+| Spend rejections and release | [section 2](#2-prize-tracks) table; EVIDENCE.md "C5 spend (x402)" |
+| Measured base yield, scripted volume (lender A, 4 swaps) | [section 4.2](#42-funding-through-aqua-shared-liquidity); `deployments/testnet/trades.json` |
+| Receivable registered from an invoice PDF (PO-1003) | [0.0.7314364@1793989261.174955397](https://hashscan.io/testnet/transaction/0.0.7314364@1793989261.174955397) |
+| Agent-driven end-to-end run (funding, repayment) | EVIDENCE.md "Demo run" section (appended by the demo runner, being recorded) |
 | x402 mechanism, single-key and 2-of-2 settlements | [A](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214), [B](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) |
 | 2-of-2 spend wallets (threshold key read back from the mirror node) | [research](https://hashscan.io/testnet/account/0.0.11339484), [compute](https://hashscan.io/testnet/account/0.0.11339486) |
 | Scheduled lifecycle: network-executed schedule and a deleted one | [executed](https://hashscan.io/testnet/schedule/0.0.11338268), [deleted](https://hashscan.io/testnet/schedule/0.0.11338283) |
@@ -426,21 +487,39 @@ Everything is recorded in [docs/EVIDENCE.md](docs/EVIDENCE.md) and the run recor
 | Contract sizes | `forge build --sizes`; router 23,759 B ([section 5](#5-the-modified-swapvm)) |
 | HCS audit topic and NFT collection | [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927), [0.0.11338934](https://hashscan.io/testnet/token/0.0.11338934) |
 
-<!-- TODO(8.2-final): once the demo run is recorded, replace the two TODO rows with links and add the repayment transaction (Repaid) and the measured base-yield table ("scripted volume"). -->
 
 ## 8. Known limitations and rulings
 
-- **Base yield is scripted volume.** The base-yield APR comes from swaps made by our own trader agent, not from organic volume. It is labelled as such and is not a promised rate.
-- **Testnet and relay flakiness.** Transactions go through the Hashio JSON-RPC relay. It cannot estimate gas for a creation that carries value, so contracts are funded in a second transaction; gas limits are explicit; transaction ids of EVM transactions show the relay account as payer.
-- **One HSS schedule per transaction.** The first facility design violated this and was redeployed (section 3). Overdue and default checks are chained, and both are also permissionless.
-- **HCS topic contains test probes.** Messages marked `"test": true` (and without `agentUaid`) come from live tests of `@casheth/hedera`; consumers can skip them.
-- **Trusted parties.** The coordinator submits `openAndFund` and `reserve` and the policy co-signer approves payments; the contracts re-check every limit, and the co-signer can refuse but cannot move funds alone. Keys are demo `.env` keys, not a KMS.
-- **Demo identity is an allowlist.** KYA levels are set by one issuer account. There is no sybil resistance beyond owner-group separation between buyer and seller. The demo agents were registered before UAIDs existed, so the registry holds `keccak256(address)` instead of their UAID hash: their tokens carry that hash as `sub` and audit events omit `agentUaid` until they are re-registered.
-- **The auth-code demo grant has no owner login.** It is off unless `AUTH_DEMO_GRANT=true` and meant for a local walkthrough only (section 4.5).
-- **`maxPerBuyer` is cumulative.** `exposure(maker, buyer)` only grows; it caps lifetime advances to a buyer, not outstanding principal.
-- **No concentrated-liquidity strategies.** `XYCConcentrateSwap` was removed to fit EIP-170.
-- **Fixed base rate is out of scope.** A guaranteed base yield would need a subsidy pot.
-- **Amounts are small.** The demo receivable is 6 USDC; lender balances are 0.5 to 3.5 USDC per strategy because the testnet USDC supply is limited.
+Honest limits of a hackathon build on testnet. The contract-level ones (rulings R45) were found in the final review and documented instead of triggering a third deployment.
+
+**Contracts (documented, not fixed)**
+
+| Limit | Detail |
+| --- | --- |
+| Push-payment griefing at repayment | `RepaymentRouter` pays every lender and the seller in one transaction. A lender or the seller that dissociates USDC (or requires a receiver signature) makes `repay` revert for everyone, and fees keep accruing while it is blocked. The fix is a claim (pull) pattern. |
+| No exit after default | `markDefaulted` freezes the facility but nothing returns the undrawn USDC to lenders; only a full repayment closes a facility. The fix is to route undrawn funds through the waterfall on default. |
+| Schedule horizon about 55 days | Receivables due further out than about 55 days get no HSS schedule at funding (the horizon is 62 days minus margins). `markOverdue` and `markDefaulted` stay permissionless. The demo uses 30 days. |
+| Schedule liveness | A caller that supplies only just enough gas to the permissionless `markOverdue` during the slack window can make the nested default schedule fail, and nothing re-schedules it. The nested schedule path first fires at due + 7 days, so it is not yet proven on testnet; only the funding-time schedule is (section 4.6). |
+| Spend wallet not bound on-chain | The 2-of-2 key is verified server-side against the mirror node, but `reserve` sends USDC to whatever wallet the coordinator names. |
+| Co-signer checks | The co-signer checks asset, payee, amount and the exact debit and credit in the transfer bytes, not the transaction type or the fee payer. |
+| `release` allowance | `release` pulls back through a finite exact HTS allowance from the spend wallet; each release consumes some. |
+| tUSDT has no value | It is owner-minted and every lender holds some, so any lender could swap free tUSDT for another lender's base-strategy USDC. Base yield is a mechanism demo. |
+| Facility HBAR | The facility holds HBAR for schedule fees with no withdrawal and no low-balance guard. |
+| Opcode reads only buyer on-time | `late` and `defaults` of the buyer are not read by `ReceivableCredit` (matches the spec). |
+| `maxPerBuyer` is cumulative | `exposure(maker, buyer)` only grows; it caps lifetime advances, not outstanding principal. |
+| No concentrated-liquidity strategies | `XYCConcentrateSwap` was removed to fit EIP-170. |
+
+**Identity and operations**
+
+- **Placeholder UAIDs.** The 8 demo agents were registered before UAIDs existed, so `KYARegistry` holds `keccak256(address)` instead of the UAID hash (ruling R49). Their tokens carry that hash as `sub` and their audit events omit `agentUaid`. They are re-registered with real UAID hashes from the issuer key after the demo run.
+- **Calldata-mode repay retry.** In calldata mode the agent signs and sends `repay` itself. The server refuses a repay on a `Repaid` receivable, but an agent that blindly retries after a timeout whose transaction landed can still pay twice; check `get_receivable_status` first.
+- **Demo identity is an allowlist.** KYA levels come from one issuer account; there is no sybil resistance beyond owner-group separation between buyer and seller.
+- **The demo grant has no owner login.** It is off unless `AUTH_DEMO_GRANT=true`, binds to localhost, and exists for the judges' walkthrough (section 4.5).
+- **Trusted parties and keys.** The coordinator submits `openAndFund` and `reserve`; the co-signer approves payments; the contracts re-check every limit and the co-signer cannot move funds alone. Keys are demo `.env` keys, not a KMS. `pay_x402` needs the worker's half of the 2-of-2 key, so with `AGENT_KEYS_IN_PROCESS=true` both keys sit in the MCP server process.
+- **Base yield is scripted volume.** It comes from swaps by our own trader agent: 4 swaps on lender A only, others not traded for time. Labelled as such, not a promised rate; a guaranteed base rate would need a subsidy pot.
+- **Testnet relay flakiness.** Transactions go through the Hashio JSON-RPC relay: 502s, 1 to 5 minute confirmations on bad days, no gas estimate for a creation that carries value (so contracts are funded in a second transaction), and explicit gas limits. Several scripts are idempotent for that reason.
+- **HCS topic contains test probes.** Messages marked `"test": true` (no `agentUaid`) come from live tests of `@casheth/hedera`; consumers can skip them.
+- **Amounts are small.** PO-1002 is 6 USDC and lender balances are 0.5 to 3.5 USDC per strategy because testnet USDC is scarce.
 - **Out of scope:** production KYC, fiat rails, governance, liquidations.
 
 ## 9. Next steps

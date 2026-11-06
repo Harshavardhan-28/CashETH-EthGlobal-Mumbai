@@ -39,4 +39,4 @@ Powered by Aqua — © Degensoft Ltd 2025
 
 The full license texts are in the upstream repositories listed above (the submodules under `contracts/lib/`).
 
-Note: the license headers and dated change notes were added to `contracts/src/aqua/CashEthSwapVMRouter.sol` and `contracts/src/aqua/ReceivableCredit.sol` after the testnet deployment (commit 85e70d3). The change is comment-only; the deployed runtime bytecode is unchanged and only the Solidity metadata hash appended to a fresh build differs.
+Note: the license headers and dated change notes in `contracts/src/aqua/CashEthSwapVMRouter.sol` and `contracts/src/aqua/ReceivableCredit.sol` were added by a comment-only commit (2382412) after the first testnet deployment (85e70d3, archived). The current router `0x458b3b7CaDec64Cd0AE0B244d582006C4E99ce1b` was deployed after that commit, so it matches the current source, headers included.
