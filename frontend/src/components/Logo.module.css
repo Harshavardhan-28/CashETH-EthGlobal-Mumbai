@@ -1,0 +1,25 @@
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--ink);
+}
+.dark,
+.light {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+.dark {
+  display: var(--show-dark);
+}
+.light {
+  display: var(--show-light);
+}
+.word {
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
+}
+.word em {
+  color: var(--accent);
+}
