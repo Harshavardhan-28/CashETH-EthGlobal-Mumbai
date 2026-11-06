@@ -87,6 +87,9 @@ export type ChainAddresses = {
 /** Who signs a server-sent transaction: the coordinator, the KYA issuer, or an agent whose key the server holds. */
 export type Signer = "coordinator" | "issuer" | { agent: Address };
 
+/** EIP-712 typed data as `receivableConfirmationTypedData` builds it (viem's strict generics are applied by the signer). */
+export type TypedDataToSign = { domain: object; types: object; primaryType: string; message: object };
+
 /** Contract reads and server-signed writes on Hedera EVM. */
 export interface ChainPort {
   /** Read from `deployments/testnet/addresses.json` on every call; throws `NOT_DEPLOYED` for a missing contract. */
@@ -116,6 +119,8 @@ export interface ChainPort {
   send(from: Signer, call: Calldata): Promise<{ txHash: Hex }>;
   /** True when the server may sign as `agent` (its key is configured and the in-process flag for its role is on). */
   holdsKey(agent: Address): boolean;
+  /** Signs EIP-712 typed data as `agent` with its in-process key (demo counterparties); `KEY_NOT_HELD` otherwise. */
+  signTypedData(agent: Address, typedData: TypedDataToSign): Promise<Hex>;
 }
 
 /** What `fund_agents` ships for one lender: the credit (boost) strategy and optionally the base-yield strategy. */
@@ -275,6 +280,8 @@ export type OrchestratorConfig = {
   explorer: "testnet";
   /** Merchant account id -> URL origins `pay_x402` may fetch for a reservation to that merchant. */
   merchantOrigins: Record<string, string[]>;
+  /** The worker and 2-of-2 spend wallet `buy_with_credit` spends through on the seller's behalf (demo). */
+  sellerWorker?: { worker: Address; spendWallet: Address };
 };
 
 export interface Orchestrator {

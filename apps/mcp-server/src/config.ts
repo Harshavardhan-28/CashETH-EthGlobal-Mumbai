@@ -1,7 +1,7 @@
 /** MCP server settings from the environment (`.env` + `.env.accounts`, validated by `@casheth/shared` `loadEnv`). */
 import { fileURLToPath } from "node:url";
 import type { Env } from "@casheth/shared";
-import type { Hex } from "viem";
+import { getAddress, type Address, type Hex } from "viem";
 
 export const AGENT_KEY_ROLES = ["seller", "buyer", "worker"] as const;
 export type AgentKeyRole = (typeof AGENT_KEY_ROLES)[number];
@@ -32,6 +32,8 @@ export type McpConfig = {
   usdcTokenId: string;
   /** Merchant account id -> URL origins `pay_x402` may fetch (`MERCHANT_ORIGINS`). */
   merchantOrigins: Record<string, string[]>;
+  /** `SELLER_WORKER_EVM` / `SELLER_SPEND_WALLET_EVM` (default the research worker and its spend wallet): `buy_with_credit`. */
+  sellerWorker?: { worker: Address; spendWallet: Address };
   aquaFromBlock?: bigint;
   /** `HFS_ENABLED=true`: also copy invoice documents to the Hedera File Service. */
   hfsEnabled: boolean;
@@ -132,10 +134,19 @@ export function loadConfig(env: Env, fallbacks: { hcsTopicId?: string; nftTokenI
     x402Network: caip2Network(env.X402_NETWORK),
     usdcTokenId: env.USDC_TOKEN_ID,
     merchantOrigins: merchantOrigins(env),
+    ...sellerWorker(env),
     ...(fromBlock ? { aquaFromBlock: BigInt(fromBlock) } : {}),
     hfsEnabled: flag(env, "HFS_ENABLED"),
     ...(llmProvider ? { llmProvider } : {}),
     ollamaBaseUrl: opt(env, "OLLAMA_BASE_URL") ?? "http://localhost:11434",
     llmModel: opt(env, "CASHETH_LLM_MODEL") ?? "qwen2.5:7b",
   };
+}
+
+/** The worker `buy_with_credit` spends through for the seller: explicit env, else the demo research worker. */
+function sellerWorker(env: Env): { sellerWorker?: { worker: Address; spendWallet: Address } } {
+  const worker = opt(env, "SELLER_WORKER_EVM") ?? opt(env, "WORKER_RESEARCH_EVM");
+  const spendWallet = opt(env, "SELLER_SPEND_WALLET_EVM") ?? opt(env, "SPEND_WALLET_RESEARCH_EVM");
+  if (!worker || !spendWallet) return {};
+  return { sellerWorker: { worker: getAddress(worker), spendWallet: getAddress(spendWallet) } };
 }

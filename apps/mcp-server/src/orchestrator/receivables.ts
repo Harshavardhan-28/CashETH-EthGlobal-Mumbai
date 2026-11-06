@@ -72,7 +72,7 @@ function confirmationOf(p: PendingReceivable): ReceivableConfirmation {
   };
 }
 
-function typedDataOf(p: PendingReceivable) {
+export function typedDataOf(p: PendingReceivable) {
   return receivableConfirmationTypedData(receivableDomain(p.chainId, p.verifyingContract), confirmationOf(p));
 }
 

@@ -350,6 +350,11 @@ export function createLiveChain(env: Env, cfg: McpConfig, keys: AgentKey[]): Cha
       const k = keys.find((x) => x.address.toLowerCase() === agent.toLowerCase());
       return !!k && inProcessAllowed(k.prefix, cfg);
     },
+    async signTypedData(agent, typedData) {
+      if (!this.holdsKey(agent)) throw new ToolError("KEY_NOT_HELD", `the server does not hold the key for ${agent} (AGENT_KEYS_IN_PROCESS)`);
+      const wallet = walletFor(keyOf({ agent }));
+      return wallet.signTypedData({ ...typedData, account: wallet.account! } as Parameters<WalletClient["signTypedData"]>[0]);
+    },
     send(from, call) {
       const key = keyOf(from);
       return enqueue(sendQueues, key, async () => {
@@ -692,7 +697,7 @@ export async function createLiveOrchestrator(env: Env, cfg: McpConfig): Promise<
     invoices: new InvoiceStore(join(cfg.dataDir, "invoices")),
     extractor: createInvoiceExtractor({ ...(llm ? { llm } : {}), log }),
     ...(cfg.hfsEnabled ? { hfs: { store: (bytes: Uint8Array, memo: string) => storeFile(hiero, bytes, memo) } } : {}),
-    config: { x402Network: cfg.x402Network, usdcTokenId: cfg.usdcTokenId, explorer: "testnet", merchantOrigins: cfg.merchantOrigins },
+    config: { x402Network: cfg.x402Network, usdcTokenId: cfg.usdcTokenId, explorer: "testnet", merchantOrigins: cfg.merchantOrigins, ...(cfg.sellerWorker ? { sellerWorker: cfg.sellerWorker } : {}) },
     now: () => BigInt(Math.floor(Date.now() / 1000)),
     log,
   };

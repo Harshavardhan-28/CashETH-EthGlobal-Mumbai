@@ -76,7 +76,7 @@ async function signConfirmation(typed: { domain: Record<string, unknown>; messag
 }
 
 describe("tool registry", () => {
-  it("tools/list returns all 21 tools", async () => {
+  it("tools/list returns all 24 tools", async () => {
     const { app, tokens } = await setup();
     const body = await rpc(app, tokens.seller, "tools/list");
     const names = (body.result!.tools as { name: string }[]).map((t) => t.name).sort();
@@ -98,6 +98,9 @@ describe("tool registry", () => {
         "register_agent",
         "release_spend",
         "repay_receivable",
+        "request_buyer_confirmation",
+        "buy_with_credit",
+        "settle_receivable",
         "reserve_spend",
         "set_budgets",
         "upload_invoice_document",
@@ -902,3 +905,129 @@ describe("read API", () => {
   });
 });
 
+
+describe("seller as the main agent: automated buyer and worker counterparties", () => {
+  const id = keccak256(toHex("receivable-main"));
+  const PAY_URL = "https://merchant.example/research?topic=x";
+
+  /** The server holds the counterparty's key (demo) and signs with it, as the live chain adapter does. */
+  function holdKey(o: TestOrchestrator, account: ReturnType<typeof privateKeyToAccount> | Address) {
+    const address = typeof account === "string" ? account : account.address;
+    o.chain.held.add(address.toLowerCase());
+    if (typeof account !== "string") o.chain.signers.set(address.toLowerCase(), account);
+  }
+
+  function fundedFacility(o: TestOrchestrator) {
+    o.chain.facilities.set(id.toLowerCase(), {
+      seller: seller.address,
+      buyer: buyer.address,
+      receivableAmount: 10_000_000n,
+      dueDate: NOW + 30n * DAY,
+      funded: 7_500_000n,
+      committed: 0n,
+      reserved: 0n,
+      status: 1,
+    });
+    o.chain.available_ = 7_500_000n;
+    o.chain.budgets.set(`${id}:${worker}`.toLowerCase(), budget({ alloc: 1_000_000n, maxPerTx: 500_000n, maxDaily: 2_000_000n }));
+    o.chain.merchantLists.set(`${id}:${worker}`.toLowerCase(), [merchant]);
+    o.spendWallets.register(spendWallet, worker);
+    o.x402.accounts.set(spendWallet.toLowerCase(), "0.0.11339484");
+    o.x402.accounts.set(merchant.toLowerCase(), "0.0.9001");
+    o.config.sellerWorker = { worker, spendWallet };
+    // The fake facility opens the reservation the coordinator's `reserve` call names, as the contract does.
+    const send = o.chain.send.bind(o.chain);
+    o.chain.send = async (from, call) => {
+      const sent = await send(from, call);
+      try {
+        const { functionName, args } = decodeFunctionData({ abi: CreditFacilityAbi, data: call.data });
+        if (functionName === "reserve") {
+          const [rid, spendId, w, wallet, m, amount, expiry] = args as [Hex, Hex, Address, Address, Address, bigint, bigint];
+          o.chain.reservations.set(spendId.toLowerCase(), { id: rid, worker: w, spendWallet: wallet, merchant: m, amount, expiry, status: 1, txIdHash: `0x${"0".repeat(64)}` });
+        }
+      } catch {
+        /* not a facility call */
+      }
+      return sent;
+    };
+  }
+
+  it("request_buyer_confirmation signs the buyer's EIP-712 confirmation with the held buyer key and registers the receivable", async () => {
+    const { app, tokens, o } = await setup();
+    holdKey(o, buyer);
+    const up = await callTool(app, tokens.seller, "upload_receivable", uploadArgs("main-upload-1"));
+    const { result, json } = await callTool(app, tokens.seller, "request_buyer_confirmation", { pendingId: up.json.pendingId, idempotencyKey: "main-confirm-1" });
+    expect(result.isError).toBeFalsy();
+    expect(json).toMatchObject({ id: up.json.id, decision: { approved: true } });
+    expect(o.chain.sent.some((s) => s.call.to === ADDRS.receivableRegistry)).toBe(true);
+  });
+
+  it("request_buyer_confirmation is refused with KEY_NOT_HELD when the server does not hold the buyer key", async () => {
+    const { app, tokens } = await setup();
+    const up = await callTool(app, tokens.seller, "upload_receivable", uploadArgs("main-upload-2"));
+    const { json } = await callTool(app, tokens.seller, "request_buyer_confirmation", { pendingId: up.json.pendingId, idempotencyKey: "main-confirm-2" });
+    expect(json).toMatchObject({ code: "KEY_NOT_HELD" });
+  });
+
+  it("request_buyer_confirmation is a seller tool: the buyer cannot call it", async () => {
+    const { app, tokens } = await setup();
+    const { json } = await callTool(app, tokens.buyer, "request_buyer_confirmation", { pendingId: keccak256(toHex("p")), idempotencyKey: "main-confirm-3" });
+    expect(json).toMatchObject({ code: "INSUFFICIENT_SCOPE" });
+  });
+
+  it("buy_with_credit reserves, pays over x402 with the co-signer and commits, as the seller's own worker", async () => {
+    const { app, tokens, o } = await setup();
+    fundedFacility(o);
+    holdKey(o, worker);
+    const { result, json } = await callTool(app, tokens.seller, "buy_with_credit", { id, url: PAY_URL, merchant, amount: "250000", idempotencyKey: "main-buy-1" });
+    expect(result.isError).toBeFalsy();
+    expect(json).toMatchObject({ status: "committed", worker, transactionId: "0.0.5005@1800000000.000000001" });
+    expect(o.x402.cosigned).toHaveLength(1);
+    const calls = o.chain.sent.map((s) => decodeFunctionData({ abi: CreditFacilityAbi, data: s.call.data }).functionName);
+    expect(calls).toEqual(["reserve", "commit"]);
+  });
+
+  it("buy_with_credit accepts the merchant as a Hedera account id", async () => {
+    const { app, tokens, o } = await setup();
+    fundedFacility(o);
+    holdKey(o, worker);
+    const longZero = getAddress("0x0000000000000000000000000000000000002329");
+    o.chain.merchantLists.set(`${id}:${worker}`.toLowerCase(), [longZero]);
+    o.x402.accounts.set(longZero.toLowerCase(), "0.0.9001");
+    const { json } = await callTool(app, tokens.seller, "buy_with_credit", { id, url: PAY_URL, merchant: "0.0.9001", amount: "250000", idempotencyKey: "main-buy-2" });
+    expect(json).toMatchObject({ status: "committed" });
+  });
+
+  it("buy_with_credit is refused for a facility the caller is not the seller of", async () => {
+    const { app, tokens, o, issuer } = await setup();
+    fundedFacility(o);
+    holdKey(o, worker);
+    const other = privateKeyToAccount(generatePrivateKey());
+    o.chain.agents.set(other.address.toLowerCase(), kyaAgent(2, 1, "other-co"));
+    const token = await issuer.mint({ agent: other.address, role: 1, level: 2, scope: SELLER_SCOPES });
+    const { json } = await callTool(app, token, "buy_with_credit", { id, url: PAY_URL, merchant, amount: "250000", idempotencyKey: "main-buy-3" });
+    expect(json).toMatchObject({ code: "NOT_PARTY" });
+    expect(o.chain.sent).toHaveLength(0);
+    void tokens;
+  });
+
+  it("settle_receivable has the held buyer key repay the full invoice: lenders first, the seller the rest", async () => {
+    const { app, tokens, o } = await setup();
+    holdKey(o, buyer);
+    o.chain.receivables.set(id.toLowerCase(), {
+      seller: seller.address,
+      buyer: buyer.address,
+      currency: ADDRS.usdc,
+      amount: 10_000_000n,
+      dueDate: NOW + 30n * DAY,
+      detailsCommitment: keccak256(toHex("doc")),
+      state: 2,
+      registeredAt: NOW,
+    });
+    const { result, json } = await callTool(app, tokens.seller, "settle_receivable", { id, idempotencyKey: "main-settle-1" });
+    expect(result.isError).toBeFalsy();
+    expect(json).toMatchObject({ mode: "sent" });
+    const repay = o.chain.sent.map((s) => s.call).find((c) => c.to === ADDRS.repaymentRouter)!;
+    expect(decodeFunctionData({ abi: RepaymentRouterAbi, data: repay.data })).toMatchObject({ functionName: "repay", args: [id, 10_000_000n] });
+  });
+});

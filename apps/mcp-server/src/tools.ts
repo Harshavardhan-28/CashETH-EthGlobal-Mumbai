@@ -18,6 +18,7 @@ import { getInvoiceDocument, MAX_DOCUMENT_BASE64_CHARS, uploadInvoiceDocument } 
 import { closeStrategy, fundAgents } from "./orchestrator/lender.js";
 import { confirmReceivable, decisionFor, receivableDetails, uploadReceivable } from "./orchestrator/receivables.js";
 import { repayReceivable } from "./orchestrator/repay.js";
+import { buyWithCredit, requestBuyerConfirmation, settleReceivable } from "./orchestrator/counterparty.js";
 import { commitSpend, payX402, releaseSpend, reserveSpend } from "./orchestrator/spend.js";
 import type { Caller, Orchestrator } from "./orchestrator/types.js";
 
@@ -351,6 +352,39 @@ export function registerTools(server: McpServer, o: Orchestrator): void {
     mutating: false,
     input: { address: address.optional() },
     run: (o, c, a) => o.stats.agentStats(a.address ? addr(a.address, "address") : c.agent),
+  });
+
+  add({
+    name: "request_buyer_confirmation",
+    description:
+      "Seller: ask the buyer of a pending receivable to confirm it. The buyer counterparty (run by the server with its own key, demo) signs the EIP-712 confirmation and the receivable is registered; returns what confirm_receivable returns (id, credit decision, NFT, HashScan link).",
+    roles: ["seller"],
+    scope: "receivable:write",
+    mutating: true,
+    input: { pendingId: hex32 },
+    run: (o, c, a) => requestBuyerConfirmation(o, c, a),
+  });
+
+  add({
+    name: "buy_with_credit",
+    description:
+      "Seller: buy a paid x402 resource with the facility's credit, through the seller's worker and its 2-of-2 spend wallet: reserve_spend, pay_x402 (the co-signer checks the payment against the reservation) and commit_spend in one call. `merchant` is the payee's Hedera account id (0.0.N) or EVM address and must be on the worker's budget allowlist; `url` must be on that merchant's configured origin.",
+    roles: ["seller"],
+    scope: "spend:reserve",
+    mutating: true,
+    input: { id: hex32, url: z.string().url(), merchant: z.string().min(5), amount, ttlSeconds: z.number().int().min(60).max(3600).optional() },
+    run: (o, c, a) => buyWithCredit(o, c, a),
+  });
+
+  add({
+    name: "settle_receivable",
+    description:
+      "Seller: settle a financed receivable. The buyer counterparty (server-held key, demo) pays the full invoice amount into the RepaymentRouter: lenders get principal plus fee first, the seller the rest, and the receivable becomes Repaid.",
+    roles: ["seller"],
+    scope: "receivable:write",
+    mutating: true,
+    input: { id: hex32 },
+    run: (o, c, a) => settleReceivable(o, c, a),
   });
 
   add({

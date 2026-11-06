@@ -7,7 +7,7 @@ import { EventStore, IdempotencyLedger } from "@casheth/engine";
 import type { DecodedKey } from "@casheth/hedera";
 import { computeReceivableId, ReceivableRegistryAbi } from "@casheth/shared";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "jose";
-import { decodeFunctionData, getAddress, keccak256, toHex, type Address, type Hex } from "viem";
+import { decodeFunctionData, getAddress, keccak256, toHex, type Address, type Hex, type TypedDataDefinition } from "viem";
 import { createVerifier } from "../auth.js";
 import { createInvoiceExtractor } from "../invoices/extract.js";
 import { InvoiceStore } from "../invoices/store.js";
@@ -35,6 +35,7 @@ import type {
   StatsProvider,
   TransferSummary,
   X402Port,
+  TypedDataToSign,
 } from "../orchestrator/types.js";
 import { createMcpApp } from "../server.js";
 
@@ -79,6 +80,8 @@ export class FakeChain implements ChainPort {
   available_ = 0n;
   lenderDue_ = 0n;
   held = new Set<string>();
+  /** In-process signers for the counterparties whose keys the server holds (keyed by lower-case address). */
+  signers = new Map<string, { signTypedData(typedData: TypedDataDefinition): Promise<Hex> }>();
   sent: { from: Signer; call: Calldata }[] = [];
   /** Throws this error code from the next `send` (a contract revert). */
   revertNext: ToolErrorCode | undefined;
@@ -176,6 +179,11 @@ export class FakeChain implements ChainPort {
   }
   holdsKey(agent: Address) {
     return this.held.has(k(agent));
+  }
+  async signTypedData(agent: Address, typedData: TypedDataToSign) {
+    const signer = this.signers.get(k(agent));
+    if (!this.holdsKey(agent) || !signer) throw new ToolError("KEY_NOT_HELD", `no in-process key for ${agent}`);
+    return signer.signTypedData(typedData as TypedDataDefinition);
   }
   async send(from: Signer, call: Calldata) {
     if (this.revertNext) {
