@@ -1,155 +1,303 @@
 # CashETH
 
-**Autonomous working capital for agents, on Hedera testnet.** A seller agent turns a buyer-signed receivable into USDC credit that its worker agents spend through x402. When the buyer pays, lenders are repaid first, on-chain.
+**Autonomous working capital for AI agents, on Hedera testnet.** A seller agent turns a receivable that a buyer agent has signed into USDC credit. Its worker agents spend that credit through x402, and when the buyer pays, lenders are repaid first, on-chain. Credit is funded by lenders' own wallets through a redeployed 1inch Aqua registry and a modified SwapVM router whose new opcode checks the receivable's on-chain state on every fill.
 
 Built for ETHGlobal Mumbai. Targets: Hedera "AI Agents That Pay (x402)" and 1inch "Build an Aqua App".
 
 Powered by Aqua — © Degensoft Ltd 2025
 
-> Status: first documentation pass. Everything with an on-chain link has been executed on Hedera testnet (chain 296) and is recorded in [docs/EVIDENCE.md](docs/EVIDENCE.md). Items still being built are marked `TODO(8.2-final)` and listed in the open-items table at the end.
+![CashETH architecture](diagrams/architecture-hedera.png)
 
 ## Contents
 
-1. [What it is](#what-it-is)
-2. [Architecture](#architecture)
-3. [Deployed contracts and accounts](#deployed-contracts-and-accounts)
-4. [Payment flow](#payment-flow)
-5. [Modified SwapVM and Aqua](#modified-swapvm-and-aqua)
-6. [Shared liquidity: base yield, credit boost, risk tiers](#shared-liquidity-base-yield-credit-boost-risk-tiers)
-7. [x402 spending](#x402-spending)
-8. [Settled transactions](#settled-transactions)
-9. [Prize-track checklists](#prize-track-checklists)
-10. [How to run](#how-to-run)
-11. [Frontend and read API](#frontend-and-read-api)
-12. [Attribution and licenses](#attribution-and-licenses)
-13. [Rulings and known limitations](#rulings-and-known-limitations)
-14. [Next steps](#next-steps)
-15. [Open items for the final pass](#open-items-for-the-final-pass)
+1. [The eight-step flow](#1-the-eight-step-flow)
+2. [Prize tracks](#2-prize-tracks)
+3. [Deployed contracts (Hedera testnet, chain 296)](#3-deployed-contracts-hedera-testnet-chain-296)
+4. [How it works](#4-how-it-works)
+5. [The modified SwapVM](#5-the-modified-swapvm)
+6. [Repository layout and how to run](#6-repository-layout-and-how-to-run)
+7. [Evidence index](#7-evidence-index)
+8. [Known limitations and rulings](#8-known-limitations-and-rulings)
+9. [Next steps](#9-next-steps)
+10. [Attribution and licenses](#10-attribution-and-licenses)
 
-Demo script: [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md). Full evidence log: [docs/EVIDENCE.md](docs/EVIDENCE.md).
+Related documents: [docs/EVIDENCE.md](docs/EVIDENCE.md) (every transaction), [docs/API.md](docs/API.md) (MCP tools and read API), [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md), [BUILD.md](BUILD.md) (design spec), [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md).
 
-## What it is
+## 1. The eight-step flow
 
-Agents pay for things now. Buyers pay them in 30 to 60 days. CashETH closes that gap:
-
-1. The seller agent uploads a receivable. The buyer agent signs an EIP-712 `ReceivableConfirmation` naming our `RepaymentRouter` as payee. That signature is the root of trust.
-2. `ReceivableRegistry.register` verifies it on-chain (signature, KYA levels, owner separation, term, duplicate check) and the receivable becomes `Confirmed`. An HTS NFT and an HCS audit message are the handle and the log.
-3. Lenders have shipped Aqua strategies from their own wallets. The credit facility fills the eligible ones through our modified SwapVM router. The router's new opcode checks the on-chain receivable state on every fill, and the facility marks the receivable `Financed` in the same transaction.
-4. Worker agents reserve spend, pay merchants through x402 from 2-of-2 co-signed spend wallets, and commit the spend.
-5. The buyer repays through `RepaymentRouter`. Lenders get principal plus fee first, the seller agent gets the rest.
-
-The repayment fee is `principal * apr * max(elapsed, minTerm) / 365 days`.
-
-## Architecture
-
-![CashETH architecture](diagrams/architecture-hedera.png)
-
-| Layer | Component | Role |
-| --- | --- | --- |
-| Agents | seller, buyer, worker, lender, trader | MCP clients. Each has an ECDSA key, a Hedera account, an HCS-14 UAID and a KYA level. |
-| Access | `apps/mcp-server`, `apps/auth-server` | MCP tools behind OAuth 2.1; KYA checked at the authorization server |
-| Brain | `packages/engine` | Credit score, borrowing base, spend policy, co-signer policy, event store |
-| Hedera EVM | `KYARegistry`, `ReceivableRegistry`, `CreditFacility`, `ReceivableCreditNote`, `RepaymentRouter` | Identity, receivable state machine, funding and budgets, repayment waterfall |
-| Hedera EVM | Aqua registry, `CashEthSwapVMRouter`, `CashEthOrderBuilder`, `CashEthTaker` | Shared-liquidity strategies and the credit opcode |
-| Hedera native | HTS, HCS, HSS | USDC and the receivable NFT, the audit topic and HCS-14 profiles, scheduled overdue/default checks |
-| Merchant | `apps/merchant` | Our x402-protected research API |
-
-Everything runs on one chain, so register, fund, reserve and repay need no cross-chain attestation. The off-chain trust that remains is the coordinator (it submits `openAndFund` and `reserve`; the contracts re-check every limit) and the policy co-signer on spend wallets (it can refuse a payment but cannot move funds alone).
-
-## Deployed contracts and accounts
-
-Network: Hedera testnet, EVM chain 296. USDC is HTS `0.0.429274` with EVM facade `0x0000000000000000000000000000000000068cDa`, 6 decimals. Machine-readable addresses: [deployments/testnet/addresses.json](deployments/testnet/addresses.json). Deploy transactions, gas and read-backs: [docs/EVIDENCE.md](docs/EVIDENCE.md) sections C2 to C4.
-
-| Contract | EVM address | HashScan | Deploy tx |
+| # | Step | Who | What happens |
 | --- | --- | --- | --- |
-| KYARegistry | `0xE51950be227c5A31B603e1343cD53e813C593f39` | [0.0.11338820](https://hashscan.io/testnet/contract/0.0.11338820) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966394.171576721) |
-| ReceivableRegistry | `0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b` | [0.0.11338823](https://hashscan.io/testnet/contract/0.0.11338823) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966402.245288564) |
-| ReceivableCreditNote (RCN) | `0x54a665d52E2e79bA3Ec46b20f8c2cfE950C9A0ce` | [0.0.11339718](https://hashscan.io/testnet/contract/0.0.11339718) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793971488.122320980) |
-| CreditFacility | `0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640` | [0.0.11339720](https://hashscan.io/testnet/contract/0.0.11339720) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793971495.452167794) |
-| RepaymentRouter | `0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7` | [0.0.11339725](https://hashscan.io/testnet/contract/0.0.11339725) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793971507.280224870) |
-| Aqua registry (`AquaRouter`, redeployed by us, block 42741303) | `0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c` | [0.0.11339989](https://hashscan.io/testnet/contract/0.0.11339989) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973211.309180764) |
-| CashEthSwapVMRouter (modified SwapVM) | `0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562` | [0.0.11339992](https://hashscan.io/testnet/contract/0.0.11339992) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973238.198619187) |
-| CashEthOrderBuilder | `0x4125108453A1E9c333b100a917F630b84F3413Fb` | [0.0.11339998](https://hashscan.io/testnet/contract/0.0.11339998) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973249.483160364) |
-| TestStablecoin (tUSDT, 6 dec.) | `0x65C25Cc145f0836C8fFAb83Bf9676e98a8a2648a` | [0.0.11340006](https://hashscan.io/testnet/contract/0.0.11340006) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973289.919591005) |
-| CashEthTaker | `0x506646D702C00A19854eE1f28eF3F396E32a3838` | [0.0.11340016](https://hashscan.io/testnet/contract/0.0.11340016) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973323.248921375) |
+| 1 | Upload | seller agent | `upload_receivable` returns a pending id and an EIP-712 confirmation request for the buyer. |
+| 2 | Confirm | buyer agent | Signs the `ReceivableConfirmation` (payee = `RepaymentRouter`) and calls `confirm_receivable`. |
+| 3 | Verify | orchestrator | Checks signature, KYA levels and owner separation, dedupes the canonical id, computes the credit score and borrowing base. |
+| 4 | Register | coordinator | `ReceivableRegistry.register` makes the state `Confirmed`. An HTS NFT is minted and the event goes to the HCS audit topic. |
+| 5 | Ship | lender agents | Each lender has shipped Aqua strategies from its own wallet: a base-yield strategy and a credit strategy with a risk tier. |
+| 6 | Fund | seller agent, coordinator | `open_facility` calls `CreditFacility.openAndFund`, which fills the cheapest eligible credit strategies through the modified router. The opcode checks `Confirmed` and the facility marks the id `Financed`, in one transaction. |
+| 7 | Spend | worker agents | `reserve_spend`, then `pay_x402` from a 2-of-2 co-signed spend wallet, then `commit_spend`. |
+| 8 | Repay | buyer agent | `repay_receivable`: `RepaymentRouter` pays lenders principal plus fee first and the seller the remainder. The id becomes `Repaid`. |
 
-Wiring (one-time, from the operator), each read back from the chain:
+The demo also submits the same obligation twice (rejected with `DUPLICATE_RECEIVABLE`) and sends two spend requests that are rejected by policy. The demo script is [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
 
-| Step | Tx |
+## 2. Prize tracks
+
+### Hedera: AI Agents That Pay (x402)
+
+| Requirement | Status | Evidence |
+| --- | --- | --- |
+| Our own x402-protected endpoint | Done | `apps/merchant`: `GET /research?topic=...`, 0.25 USDC to merchant [0.0.11333304](https://hashscan.io/testnet/account/0.0.11333304); scheme `exact`, network `hedera:testnet`. Spike S3 in [EVIDENCE.md](docs/EVIDENCE.md). |
+| Settles USDC on Hedera through a listed facilitator | Done (spike) | `https://x402.org/facilitator` settled [payment A](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214) (single key) and [payment B](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) (2-of-2 spend wallet). |
+| Agent pays with no human approval | Final run pending | See "Settled x402 transaction" below. |
+| Spending controls | Done in contracts and engine | Per-agent budget, per-transaction and daily limits, merchant allowlist, facility-wide ceiling, one open reservation per wallet, and a co-signer that must approve every payment. A single-signature payment from a 2-of-2 wallet was refused by the facilitator (S3). |
+| Agent identity and reputation (HCS-14, ERC-8004-shaped) | Done | 10 HCS-14 UAIDs published on the audit topic ([EVIDENCE.md](docs/EVIDENCE.md), "C2: HCS topic, HCS-14 profiles"); `KYARegistry` holds KYA level, owner group and repayment counters. |
+| HCS audit log | Done | Topic [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927): agent profiles, `ReceivableConfirmed` seq 34, `NftMinted` seq 35. Hashes only. |
+| Settling in an HTS token | Done | USDC [0.0.429274](https://hashscan.io/testnet/token/0.0.429274). |
+| Scheduled Transactions (HIP-1215) | Done in the facility; see [section 4.6](#46-scheduled-lifecycle) | Spike S4: network-executed schedule [0.0.11338268](https://hashscan.io/testnet/schedule/0.0.11338268) and deleted schedule [0.0.11338283](https://hashscan.io/testnet/schedule/0.0.11338283). |
+| Hedera Agent Kit | Done | `agents/src/kit.ts` gives each agent a `hedera-agent-kit` 3.8.2 instance that runs the kit's `submit_topic_message_tool` (agent notes on an HCS topic) and `associate_token_tool` (HTS association) as the agent's own account. |
+
+### 1inch: Build an Aqua App
+
+| Requirement | Status | Evidence |
+| --- | --- | --- |
+| Redeploy Aqua on Hedera testnet | Done | Aqua registry [0xc65A…d54c](https://hashscan.io/testnet/contract/0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c), deployed unmodified by us. |
+| Modified SwapVM router (a redeployed, modified SwapVM is allowed by the track) | Done | `CashEthSwapVMRouter` [0x458b…ce1b](https://hashscan.io/testnet/contract/0x458b3b7CaDec64Cd0AE0B244d582006C4E99ce1b), custom opcode `ReceivableCredit` on `Opcode._21`, runtime 23,759 B. |
+| Custom instruction gates fills on real state | Done | [Section 5](#5-the-modified-swapvm); `contracts/test/ReceivableCredit.t.sol`. |
+| Lender strategies on-chain; token transfers visible on HashScan | Done for ships; funding fill pending | Strategies table in [section 4.2](#42-funding-through-aqua-shared-liquidity); spike S1 fill with HTS child transfer: [fill tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793963078.419965153). |
+| Shared liquidity | Done | One lender balance backs a base-yield strategy and a credit strategy. |
+| Commits spread across the event | See `git log` | |
+| Attribution | Done | [Section 10](#10-attribution-and-licenses). |
+
+**Aqua funding transaction (`openAndFund` through the modified router): TODO.**
+
+<!-- TODO(8.2-final): the `CreditFacility.openAndFund` transaction id (HashScan link) in which the modified router fills lenders A and B for PO-1002 and the receivable becomes Financed. -->
+
+**Settled x402 transaction (final demo run, paid from a 2-of-2 spend wallet): TODO.**
+
+<!-- TODO(8.2-final): settled x402 transaction id from the PAYMENT-RESPONSE header of the final demo run (HashScan link). -->
+
+## 3. Deployed contracts (Hedera testnet, chain 296)
+
+Machine-readable record: [deployments/testnet/addresses.json](deployments/testnet/addresses.json). Per-contract transactions, gas and read-backs: `deployments/testnet/c2.json`, `c3.json`, `c4.json`.
+
+The core stack was **redeployed on 2026-11-06** after a failed funding transaction (see the collapsed section below). Aqua, the order builder, tUSDT, the HCS topic, the NFT collection and the spend wallets were kept. Every address in the "kept" rows is the original deployment.
+
+### Contracts
+
+| Contract | Address (HashScan) | Contract id | Role | Status |
+| --- | --- | --- | --- | --- |
+| KYARegistry | [`0x81d1935e41705DCD4c4499285c74c955626673dD`](https://hashscan.io/testnet/contract/0x81d1935e41705DCD4c4499285c74c955626673dD) | 0.0.11341323 | Agent identity, KYA level, owner group, on-time and default counters (ERC-8004-shaped) | redeployed 2026-11-06 |
+| ReceivableRegistry | [`0x0D118059D67cbe738aD86C4B8c25cdf06837791f`](https://hashscan.io/testnet/contract/0x0D118059D67cbe738aD86C4B8c25cdf06837791f) | 0.0.11341326 | Verifies the buyer's EIP-712 confirmation, canonical id, receivable state machine | redeployed 2026-11-06 |
+| ReceivableCreditNote (RCN) | [`0x733bE9213C79Be5dC3E3dD68FB126182D2F74f15`](https://hashscan.io/testnet/contract/0x733bE9213C79Be5dC3E3dD68FB126182D2F74f15) | 0.0.11341528 | Note the facility sells to lenders for USDC in an Aqua fill | redeployed 2026-11-06 |
+| CreditFacility | [`0x38ACd9F1FEED870b2507b1421bE887d9a751d9e0`](https://hashscan.io/testnet/contract/0x38ACd9F1FEED870b2507b1421bE887d9a751d9e0) | 0.0.11341529 | Funds a confirmed receivable through Aqua, budgets, spend reservations, HSS schedules | redeployed 2026-11-06 |
+| RepaymentRouter | [`0x63B6f03a60026626B6052D800864dD74604f6a8a`](https://hashscan.io/testnet/contract/0x63B6f03a60026626B6052D800864dD74604f6a8a) | 0.0.11341530 | Payee of every confirmation; waterfall: lenders first, then the seller | redeployed 2026-11-06 |
+| CashEthSwapVMRouter | [`0x458b3b7CaDec64Cd0AE0B244d582006C4E99ce1b`](https://hashscan.io/testnet/contract/0x458b3b7CaDec64Cd0AE0B244d582006C4E99ce1b) | 0.0.11341628 | Modified SwapVM router with the `ReceivableCredit` opcode | redeployed 2026-11-06 (facility address is an immutable) |
+| CashEthTaker | [`0x8FC7B1BBa8EEdf5a4C9Ac9FEA746ABAd17804B5B`](https://hashscan.io/testnet/contract/0x8FC7B1BBa8EEdf5a4C9Ac9FEA746ABAd17804B5B) | 0.0.11341636 | Swap helper the scripted trader uses against the base-yield strategies | redeployed 2026-11-06 (router is an immutable) |
+| Aqua registry (`AquaRouter`) | [`0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c`](https://hashscan.io/testnet/contract/0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c) | 0.0.11339989 | 1inch Aqua registry holding the strategies' virtual balances; unmodified | kept (block 42741303) |
+| CashEthOrderBuilder | [`0x4125108453A1E9c333b100a917F630b84F3413Fb`](https://hashscan.io/testnet/contract/0x4125108453A1E9c333b100a917F630b84F3413Fb) | 0.0.11339998 | Builds orders and taker data on-chain for `eth_call` | kept |
+| TestStablecoin (tUSDT, 6 dec.) | [`0x65C25Cc145f0836C8fFAb83Bf9676e98a8a2648a`](https://hashscan.io/testnet/contract/0x65C25Cc145f0836C8fFAb83Bf9676e98a8a2648a) | 0.0.11340006 | Second leg of the base-yield strategies | kept |
+
+Deploy and wiring transactions of the current stack (all wiring is one-shot and read back from chain):
+
+| Step | Transaction |
 | --- | --- |
-| `ReceivableRegistry.wire(facility, repaymentRouter)` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793971547.693584156) |
-| `KYARegistry.wire(repaymentRouter, facility)` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793971571.194228108) |
-| `ReceivableCreditNote.wire(facility, repaymentRouter, swapRouter, aqua)` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973375.185154979) |
-| `CreditFacility.wire(swapRouter, repaymentRouter)` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973384.629786380) |
+| KYARegistry deploy | [0.0.7314364@1793978954.588950176](https://hashscan.io/testnet/transaction/0.0.7314364@1793978954.588950176) |
+| ReceivableRegistry deploy | [0.0.7314364@1793978957.638929669](https://hashscan.io/testnet/transaction/0.0.7314364@1793978957.638929669) |
+| RCN deploy | [0.0.7314364@1793979983.761485389](https://hashscan.io/testnet/transaction/0.0.7314364@1793979983.761485389) |
+| CreditFacility deploy | [0.0.7314364@1793979989.446409772](https://hashscan.io/testnet/transaction/0.0.7314364@1793979989.446409772) |
+| RepaymentRouter deploy | [0.0.7314364@1793979992.300892540](https://hashscan.io/testnet/transaction/0.0.7314364@1793979992.300892540) |
+| 20 HBAR into the facility (for HSS schedule fees) | [0.0.7314364@1793979998.723889452](https://hashscan.io/testnet/transaction/0.0.7314364@1793979998.723889452) |
+| `ReceivableRegistry.wire(facility, repaymentRouter)` | [0.0.7314364@1793980017.168341300](https://hashscan.io/testnet/transaction/0.0.7314364@1793980017.168341300) |
+| `KYARegistry.wire(repaymentRouter, facility)` | [0.0.7314364@1793980024.675648188](https://hashscan.io/testnet/transaction/0.0.7314364@1793980024.675648188) |
+| CashEthSwapVMRouter deploy | [0.0.7314364@1793980328.280390902](https://hashscan.io/testnet/transaction/0.0.7314364@1793980328.280390902) |
+| CashEthTaker deploy | [0.0.7314364@1793980360.664551738](https://hashscan.io/testnet/transaction/0.0.7314364@1793980360.664551738) |
+| `ReceivableCreditNote.wire(facility, repaymentRouter, swapRouter, aqua)` | [0.0.7314364@1793980425.858553275](https://hashscan.io/testnet/transaction/0.0.7314364@1793980425.858553275) |
+| `CreditFacility.wire(swapRouter, repaymentRouter)` | [0.0.7314364@1793980444.372359298](https://hashscan.io/testnet/transaction/0.0.7314364@1793980444.372359298) |
 
-Hedera-native objects:
+KYA registrations on the new registry (KYA issuer, one transaction each): [seller](https://hashscan.io/testnet/transaction/0.0.7314364@1793978969.206969469), [buyer](https://hashscan.io/testnet/transaction/0.0.7314364@1793979051.992267965), [workerResearch](https://hashscan.io/testnet/transaction/0.0.7314364@1793979068.059888846), [workerCompute](https://hashscan.io/testnet/transaction/0.0.7314364@1793979111.064268848), [lenderA](https://hashscan.io/testnet/transaction/0.0.7314364@1793979122.903942077), [lenderB](https://hashscan.io/testnet/transaction/0.0.7314364@1793979276.242368379), [lenderC](https://hashscan.io/testnet/transaction/0.0.7314364@1793979300.479479344), [lenderD](https://hashscan.io/testnet/transaction/0.0.7314364@1793980554.341621558).
 
-| Object | Id |
+### Infrastructure
+
+| Item | Id | Notes |
+| --- | --- | --- |
+| USDC (HTS) | [0.0.429274](https://hashscan.io/testnet/token/0.0.429274) | 6 decimals; EVM facade `0x0000000000000000000000000000000000068cDa` |
+| tUSDT | `0x65C2…648a` (above) | Plain ERC-20 we deployed; 50 minted to each lender, 20 to the trader (operator) account |
+| HCS audit topic | [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927) | `CashETH audit v1`; submit key = operator, no admin key; env `HCS_AUDIT_TOPIC_ID` |
+| Receivable NFT collection | [0.0.11338934](https://hashscan.io/testnet/token/0.0.11338934) | `CashETH Receivable` / `CRCV`; env `RECEIVABLE_NFT_TOKEN_ID` |
+| Operator (deployer, treasury) | [0.0.11333252](https://hashscan.io/testnet/account/0.0.11333252) | EVM `0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e`; env `HEDERA_OPERATOR_ID` / `HEDERA_OPERATOR_KEY` |
+| x402 merchant | [0.0.11333304](https://hashscan.io/testnet/account/0.0.11333304) | env `MERCHANT_ACCOUNT_ID` / `MERCHANT_KEY` |
+| SPEND_WALLET_RESEARCH | [0.0.11339484](https://hashscan.io/testnet/account/0.0.11339484) | 2-of-2 key (workerResearch + cosigner); [create tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793969914.172231452) |
+| SPEND_WALLET_COMPUTE | [0.0.11339486](https://hashscan.io/testnet/account/0.0.11339486) | 2-of-2 key (workerCompute + cosigner); [create tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793969922.674066550) |
+
+Demo accounts, written by `pnpm setup:accounts` to `.env.accounts` as `<PREFIX>_ID`, `<PREFIX>_KEY`, `<PREFIX>_EVM` (names only here; keys are never committed):
+
+| Role | Prefix | Account | KYA |
+| --- | --- | --- | --- |
+| seller | `SELLER` | [0.0.11337987](https://hashscan.io/testnet/account/0.0.11337987) | role 1, level 2 |
+| buyer | `BUYER` | [0.0.11337988](https://hashscan.io/testnet/account/0.0.11337988) | role 2, level 3 |
+| research worker | `WORKER_RESEARCH` | [0.0.11337989](https://hashscan.io/testnet/account/0.0.11337989) | role 3, level 2 |
+| compute worker | `WORKER_COMPUTE` | [0.0.11337990](https://hashscan.io/testnet/account/0.0.11337990) | role 3, level 2 |
+| lender A | `LENDER_A` | [0.0.11337991](https://hashscan.io/testnet/account/0.0.11337991) | role 4, level 2 |
+| lender B | `LENDER_B` | [0.0.11337992](https://hashscan.io/testnet/account/0.0.11337992) | role 4, level 2 |
+| lender C | `LENDER_C` | [0.0.11337993](https://hashscan.io/testnet/account/0.0.11337993) | role 4, level 2 |
+| lender D | `LENDER_D` | [0.0.11340117](https://hashscan.io/testnet/account/0.0.11340117) | role 4, level 2 |
+| coordinator (submits `openAndFund`, `reserve`) | `COORDINATOR` | [0.0.11337994](https://hashscan.io/testnet/account/0.0.11337994) | n/a |
+| policy co-signer | `COSIGNER` | [0.0.11337995](https://hashscan.io/testnet/account/0.0.11337995) | n/a |
+| KYA issuer | `KYA_ISSUER` | [0.0.11337996](https://hashscan.io/testnet/account/0.0.11337996) | n/a |
+
+<details>
+<summary>Archived first deployment, and why it was replaced</summary>
+
+The first core deployment (record: `deployments/testnet/archive-2026-11-06-redeploy.json`) worked through registration and strategy shipping. The first Aqua-funded `openAndFund` then failed: the facility made two Hedera Schedule Service `scheduleCall`s in one transaction (`markOverdue` and `markDefaulted`), and Hedera's recursion protection (HIP-1215) allows one per transaction. The network rejected it with `NO_SCHEDULING_ALLOWED_AFTER_SCHEDULED_RECURSION` ([failed transaction](https://hashscan.io/testnet/transaction/0.0.7314364@1793976431.091663990)).
+
+The fix (commit `b2a4ab1`): funding schedules only `markOverdue`, which schedules `markDefaulted` when it runs. The facility address is an immutable in the SwapVM router, the repayment router and the taker, and every `wire()` is one-shot, so the core stack was redeployed. The old strategies were docked and the lenders' Aqua allowances cleared (docks and allowance clears are listed in the archive file).
+
+| Contract | First deployment (archived, not used) |
 | --- | --- |
-| HCS audit topic (`CashETH audit v1`, submit key = operator, no admin key) | [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927) |
-| Receivable NFT collection (`CashETH Receivable` / `CRCV`) | [0.0.11338934](https://hashscan.io/testnet/token/0.0.11338934) |
-| USDC (testnet) | [0.0.429274](https://hashscan.io/testnet/token/0.0.429274) |
+| KYARegistry | [`0xE51950be227c5A31B603e1343cD53e813C593f39`](https://hashscan.io/testnet/contract/0xE51950be227c5A31B603e1343cD53e813C593f39) |
+| ReceivableRegistry | [`0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b`](https://hashscan.io/testnet/contract/0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b) |
+| ReceivableCreditNote | [`0x54a665d52E2e79bA3Ec46b20f8c2cfE950C9A0ce`](https://hashscan.io/testnet/contract/0x54a665d52E2e79bA3Ec46b20f8c2cfE950C9A0ce) |
+| CreditFacility | [`0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640`](https://hashscan.io/testnet/contract/0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640) |
+| RepaymentRouter | [`0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7`](https://hashscan.io/testnet/contract/0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7) |
+| CashEthSwapVMRouter | [`0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562`](https://hashscan.io/testnet/contract/0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562) |
+| CashEthTaker | [`0x506646D702C00A19854eE1f28eF3F396E32a3838`](https://hashscan.io/testnet/contract/0x506646D702C00A19854eE1f28eF3F396E32a3838) |
 
-Demo agent accounts (ECDSA, 20 HBAR each, USDC associated):
+The C2, C3 and C4 sections of [docs/EVIDENCE.md](docs/EVIDENCE.md) record this first deployment (its registration of PO-1002, the duplicate rejection, wiring, sizes and the invariant suite). The spike sections (S1 to S4) are independent of it.
 
-| Agent | Account |
+</details>
+
+## 4. How it works
+
+### 4.1 Receivables
+
+- The buyer agent signs an EIP-712 `ReceivableConfirmation` (domain `AgentReceivables` v1, chain 296, verifying contract = `ReceivableRegistry`): seller, buyer, currency, amount, due date, `buyerRef`, `detailsCommitment`, `payTo`, nonce, deadline. The canonical id is `keccak256(abi.encode(buyer, buyerRef))`, so the same obligation always maps to the same id.
+- `ReceivableRegistry.register` checks, in order: duplicate (`DUPLICATE_RECEIVABLE`), buyer signature (`BAD_BUYER_SIG`), payee equals `RepaymentRouter` (`WRONG_PAYEE`), deadline and a 1 to 120 day term, nonce, currency, KYA levels (buyer at least 3, seller at least 2, unrevoked and unexpired), and different owner groups (`SELF_DEALING`).
+- Only hashes go on-chain and to HCS: `detailsCommitment` is a hash of the invoice details, never the details.
+- The HTS NFT is a handle for the receivable, not the source of truth: its metadata is `{id, seq}` where `seq` is the HCS sequence of `ReceivableConfirmed`.
+
+Current-stack evidence for PO-1002 (6 USDC, due in 30 days, id `0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c`):
+
+| Item | Transaction |
 | --- | --- |
-| seller | [0.0.11337987](https://hashscan.io/testnet/account/0.0.11337987) |
-| buyer | [0.0.11337988](https://hashscan.io/testnet/account/0.0.11337988) |
-| workerResearch | [0.0.11337989](https://hashscan.io/testnet/account/0.0.11337989) |
-| workerCompute | [0.0.11337990](https://hashscan.io/testnet/account/0.0.11337990) |
-| lenderA | [0.0.11337991](https://hashscan.io/testnet/account/0.0.11337991) |
-| lenderB | [0.0.11337992](https://hashscan.io/testnet/account/0.0.11337992) |
-| lenderC | [0.0.11337993](https://hashscan.io/testnet/account/0.0.11337993) |
-| lenderD | [0.0.11340117](https://hashscan.io/testnet/account/0.0.11340117) |
-| coordinator | [0.0.11337994](https://hashscan.io/testnet/account/0.0.11337994) |
-| cosigner | [0.0.11337995](https://hashscan.io/testnet/account/0.0.11337995) |
-| kyaIssuer | [0.0.11337996](https://hashscan.io/testnet/account/0.0.11337996) |
+| `register` (state `Confirmed`) | [0.0.7314364@1793980592.500689981](https://hashscan.io/testnet/transaction/0.0.7314364@1793980592.500689981) |
+| HCS `ReceivableConfirmed`, seq 34 | [0.0.11333252@1793980598.332603471](https://hashscan.io/testnet/transaction/0.0.11333252@1793980598.332603471) |
+| NFT serial 2 minted | [0.0.11333252@1793980599.981683574](https://hashscan.io/testnet/transaction/0.0.11333252@1793980599.981683574) |
+| HCS `NftMinted`, seq 35 | [0.0.11333252@1793980602.620678492](https://hashscan.io/testnet/transaction/0.0.11333252@1793980602.620678492) |
+| Same obligation again: reverts `DUPLICATE_RECEIVABLE()` (`0x55e1137b`) | [0.0.7314364@1793980736.789329045](https://hashscan.io/testnet/transaction/0.0.7314364@1793980736.789329045) |
 
-Every agent has an HCS-14 UAID published as an `AgentRegistered` message on the audit topic. The UAIDs and sequence-number links are in [docs/EVIDENCE.md](docs/EVIDENCE.md), section "C2: HCS topic, HCS-14 profiles and receivable NFT collection".
+Earlier rejections on the first deployment, kept as evidence of the checks (the registry code is unchanged): [`WRONG_PAYEE()`](https://hashscan.io/testnet/transaction/0.0.7314364@1793966502.770050429) and [`BAD_BUYER_SIG()`](https://hashscan.io/testnet/transaction/0.0.7314364@1793966532.109597123).
 
-## Payment flow
+**Credit score** (`packages/engine/src/score.ts`, deterministic; AI explains a decision through `explain_decision` but never makes one):
 
-1. **Upload and confirm.** Seller agent: `upload_receivable`. Buyer agent signs the EIP-712 confirmation (payee = `RepaymentRouter`) and calls `confirm_receivable`.
-2. **Register.** The coordinator calls `ReceivableRegistry.register`. The registry checks duplicate, buyer signature, payee, term (1 to 120 days), nonce, currency, KYA levels and owner separation. State becomes `Confirmed`; the NFT is minted and `ReceivableConfirmed` / `NftMinted` go to the HCS topic.
-3. **Fund.** The seller agent calls `open_facility`. The coordinator calls `CreditFacility.openAndFund`, which fills the cheapest eligible lender strategies through `CashEthSwapVMRouter`. The credit opcode reads the live receivable state; the facility marks the id `Financed` in the same transaction.
-4. **Spend.** Worker: `reserve_spend`, then `pay_x402`, then `commit_spend`. The facility moves exactly the reserved USDC into the worker's spend wallet; the co-signer approves the matching x402 transfer; the facilitator settles it. Unspent funds are released back.
-5. **Repay.** The buyer agent calls `repay_receivable`. `RepaymentRouter` pays lenders (principal plus fee) first, the seller agent the remainder. The receivable becomes `Repaid`.
-6. **Late.** The facility schedules its own overdue and default checks through the Hedera Schedule Service (HIP-1215). Repayment always works and always pays lenders first.
-
-On-chain proof of the registration step (receivable PO-1002, id `0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c`):
-
-| Item | Link |
+| Rule | Value |
 | --- | --- |
-| `ReceivableRegistry.register` (state `Confirmed`) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973922.254969725) |
-| HCS `ReceivableConfirmed`, seq 30 | [tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793973943.240502909) |
-| NFT serial 1 minted | [tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793973947.419241023) |
-| HCS `NftMinted`, seq 31 | [tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793973947.577011440) |
-| Same obligation submitted again: reverts `DUPLICATE_RECEIVABLE()` (`0x55e1137b`) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973975.081244937) |
-| Unwired payee: reverts `WRONG_PAYEE()` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966502.770050429) |
-| Tampered buyer signature: reverts `BAD_BUYER_SIG()` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966532.109597123) |
+| Base score | 600 |
+| Buyer on-time repayments | +15 each, capped at 10 |
+| Late repayment | -40 each |
+| Default | -200 each |
+| Tenor longer than 60 days | -50 |
+| Advance rate | 80% at score 700 or more, 75% at 600 or more, 60% at 500 or more, declined below 500 |
+| Approval | buyer KYA level 3 and seller KYA level 2 |
+| Limit | at most 1,000 USDC for a level 2 seller, 10,000 USDC for level 3 |
 
-<!-- TODO(8.2-final): add the end-to-end demo run: openAndFund (Financed), reserve/commit spends, repay (Repaid), with HashScan links and the final receivable id. -->
+The on-chain on-time and default counters in `KYARegistry` feed the score. Lenders additionally enforce seller thresholds in the opcode at fill time (below), so the score is the facility's view and the tier is each lender's own.
 
-## Modified SwapVM and Aqua
+### 4.2 Funding through Aqua (shared liquidity)
 
-**Aqua registry.** We redeployed the official 1inch Aqua registry ourselves (`AquaRouter`, address above) with no source changes. 1inch does not deploy it on Hedera, so this registry is CashETH's own.
+There is no pool contract and no external yield protocol. A lender's USDC stays in the lender's own wallet. One lender balance backs two Aqua strategies on `CashEthSwapVMRouter` ("shared liquidity"):
 
-**Router.** `CashEthSwapVMRouter is Simulator, SwapVM, AquaOpcodes`: the same base and constructor arguments as 1inch's `AquaSwapVMRouter`, plus exactly one new instruction.
+| Strategy | Program | Purpose |
+| --- | --- | --- |
+| Base yield | `Salt`, `FeeFlatIn`, `XYCSwap`: constant product over USDC / tUSDT with a 30 bps fee | Earns swap fees. Variable. |
+| Credit (boost) | `Salt`, `ReceivableCredit(args)` over USDC / RCN | Sells USDC 1:1 for RCN against a confirmed receivable at the lender's fixed `aprBps`. |
+
+The base APR is measured from real on-chain swaps by a scripted trader agent (through `CashEthTaker`) and is labelled "scripted volume" wherever shown; it is not a promised rate. The credit APR is the fixed leg. Per-lender `baseApr`, `boostApr` and `blendedApr` are computed by the MCP server (`apps/mcp-server/src/orchestrator/stats.ts`) from the Aqua and router logs and served by `GET /lenders`.
+
+**Risk tiers** are presets of the opcode's arguments, enforced on-chain at fill time:
+
+| Tier | aprBps | minSellerOnTime | maxSellerDefaults | minBuyerOnTime | maxPerBuyer | sellerSet |
+| --- | --- | --- | --- | --- | --- | --- |
+| low | 700 | 3 | 0 | 0 | 5 USDC | optional allowlist |
+| medium | 850 | 1 | 0 | 0 | 5 USDC | optional allowlist |
+| high | 1300 | 0 | 2 | 0 | 5 USDC | empty (any seller) |
+
+A non-empty `sellerSet` (up to 3 addresses) replaces the score thresholds: an explicit choice beats the score.
+
+**Current strategies** (shipped to the kept Aqua registry with the new router as app; sized to the lenders' real balances; record: [deployments/testnet/strategies.json](deployments/testnet/strategies.json)):
+
+| Lender | Tier | Credit | Base | sellerSet | Expected result for PO-1002 |
+| --- | --- | --- | --- | --- | --- |
+| A | low (700 bps) | 3.5 USDC | 0.5 USDC + 0.5 tUSDT | seller | filled 3.5 USDC |
+| B | medium (850 bps) | 1.5 USDC | 0.5 USDC + 0.5 tUSDT | seller | filled 1.0 USDC (the remainder) |
+| C | high (1300 bps) | 0.5 USDC | 0.5 USDC + 0.5 tUSDT | any | eligible, not needed (most expensive) |
+| D | low (700 bps) | 1.0 USDC | none | workerResearch | skipped on-chain: `SELLER_NOT_FUNDED_BY_LENDER` |
+
+PO-1002 is 6 USDC with a 75% advance, so the borrowing base is 4.5 USDC. The last column is the designed outcome; the observed fill is the `openAndFund` TODO above.
+
+`Aqua.ship` transactions recorded so far (the remaining ships are recorded in `strategies.json` as they land):
+
+| Lender | Kind | Transaction |
+| --- | --- | --- |
+| A | credit, 3.5 USDC | [0.0.7314364@1793980834.590739155](https://hashscan.io/testnet/transaction/0.0.7314364@1793980834.590739155) |
+| A | base, 0.5 + 0.5 | [0.0.7314364@1793980911.340291226](https://hashscan.io/testnet/transaction/0.0.7314364@1793980911.340291226) |
+| B | credit, 1.5 USDC | [0.0.7314364@1793981034.732736160](https://hashscan.io/testnet/transaction/0.0.7314364@1793981034.732736160) |
+
+**Solver** (`packages/aqua/src/solver.ts`, off-chain, deterministic): discover open strategies from `Shipped` events, quote each credit strategy through `router.quote` called as the facility (so the tier, seller set and per-buyer cap decide eligibility on-chain), sort by `aprBps` ascending, and fill until the borrowing base is reached. `CreditFacility.openAndFund` re-checks that the fills are cheapest-first (`NOT_CHEAPEST_FIRST`) and within the borrowing base (`BORROWING_BASE_EXCEEDED`), so the coordinator cannot overpay a lender.
+
+### 4.3 Spending through x402
+
+Hedera's `exact` scheme has the client sign a `TransferTransaction` that debits its own account, and the facilitator pays the fee. A contract cannot sign that, so the facility cannot be the payer. CashETH uses **2-of-2 co-signed spend wallets**:
+
+- Each worker has an account with key `KeyList([worker, cosigner], threshold 2)`, associated with USDC, holding no balance between payments.
+- `reserve_spend`: the engine checks policy, then the coordinator calls `CreditFacility.reserve`, which moves exactly the reserved USDC into the wallet. The same checks run again in the contract.
+- `pay_x402`: the worker calls the merchant, gets `402` with `PaymentRequirements` and signs the transfer. The co-signer signs only if scheme, network, asset, `payTo`, amount and payer match the open reservation **and** the transaction bytes move exactly that USDC and nothing else. Facilitator: `https://x402.org/facilitator`. The settlement transaction id is in the `PAYMENT-RESPONSE` header.
+- `commit_spend` records the Hedera transaction id on-chain and posts `SpendCommitted` to HCS. A timeout or failure releases the unspent USDC back through the facility's allowance.
+
+| Policy | Error codes (same names in engine, contracts and MCP) |
+| --- | --- |
+| Budgets and limits | `AGENT_BUDGET_EXCEEDED`, `TX_LIMIT_EXCEEDED`, `DAILY_LIMIT_EXCEEDED`, `GLOBAL_CREDIT_LIMIT_EXCEEDED` |
+| Merchant | `MERCHANT_NOT_ALLOWED` |
+| Wallet and reservation | `WALLET_BUSY`, `RESERVATION_EXISTS`, `RESERVATION_EXPIRED`, `RESERVATION_NOT_OPEN`, `SPEND_WALLET_NOT_REGISTERED` |
+| Lifecycle | `FACILITY_NOT_ACTIVE`, `PAUSED`, `NOT_FINANCED` |
+| Lender rules in the opcode | `SELLER_NOT_FUNDED_BY_LENDER`, `LENDER_RESERVE_TOO_LOW` |
+| Receivable | `DUPLICATE_RECEIVABLE`, `BAD_BUYER_SIG`, `WRONG_PAYEE`, `BAD_NONCE`, `TERM_INELIGIBLE`, `KYA_FAIL`, `SELF_DEALING`, `NOT_CONFIRMED` |
+
+Spike S3 proved the mechanism before the agents were integrated: [payment A](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214) (single key) and [payment B](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) (2-of-2 key, worker plus co-signer), each 0.25 USDC to the merchant. The same wallet paying with the worker signature alone was refused by the facilitator with HTTP 402 `invalid_exact_hedera_payload_signature_invalid`, and its USDC did not move.
+
+### 4.4 Repayment waterfall
+
+```
+fee_i     = principal_i * aprBps_i * max(elapsed, 30 days) / (365 days * 10_000)    (floored)
+lenderDue = sum(principal_i + fee_i)
+payment   -> lenders pro rata until lenderDue is paid -> seller agent gets the remainder
+undrawn USDC left in the facility goes to the seller agent when the facility closes
+```
+
+`RepaymentRouter` is the payee of every confirmation, so the buyer's payment cannot reach the seller before lenders are paid. Repayment always works, including when overdue. Invariants (fuzz and invariant suite, recorded in EVIDENCE.md at C3 with 128 runs x depth 32): budgets never exceed funded, committed + reserved + available equals funded, debt never exceeds the borrowing base, the seller gets nothing while lenders are owed, state only moves forward.
+
+### 4.5 Identity
+
+Every agent has an ECDSA key, a Hedera account, an HCS-14 UAID (published as `AgentRegistered` on the audit topic) and a `KYARegistry` entry (role, level, owner group, mandate hash). The MCP server is an OAuth 2.1 resource server: an agent proves itself to `apps/auth-server` with an ES256K-signed JWT (RFC 7523), the authorization server checks the registry, and issues a short-lived, audience-bound token whose scopes depend on role and level. Tokens are never passed through to other services. Details and all 17 tools: [docs/API.md](docs/API.md).
+
+### 4.6 Scheduled lifecycle
+
+The facility schedules its own overdue and default checks through the Hedera Schedule Service (HIP-1215, system contract `0x16b`), so no keeper bot is needed. **Hedera allows one `scheduleCall` per transaction.** `openAndFund` therefore schedules only `markOverdue` (7 days after the due date); `markOverdue` schedules `markDefaulted` (30 days after the due date) when it runs. Both are also callable by anyone once due. Repayment always pays lenders first.
+
+HSS mechanism evidence (spike S4): schedule [0.0.11338268](https://hashscan.io/testnet/schedule/0.0.11338268) was executed by the network about 46 ms after its expiry second with the contract as `msg.sender`; schedule [0.0.11338283](https://hashscan.io/testnet/schedule/0.0.11338283) was deleted before it fired. The two-schedules-in-one-transaction failure that led to the fix is linked in [section 3](#3-deployed-contracts-hedera-testnet-chain-296).
+
+## 5. The modified SwapVM
+
+`CashEthSwapVMRouter is Simulator, SwapVM, AquaOpcodes`: the same base and constructor arguments as 1inch's `AquaSwapVMRouter`, with one added instruction.
 
 | Item | Value |
 | --- | --- |
-| Source | [contracts/src/aqua/CashEthSwapVMRouter.sol](contracts/src/aqua/CashEthSwapVMRouter.sol), [contracts/src/aqua/ReceivableCredit.sol](contracts/src/aqua/ReceivableCredit.sol) |
-| Custom opcode | `ReceivableCredit` on the free slot `Opcode._21` (conditions bank) |
+| Source | [contracts/src/aqua/CashEthSwapVMRouter.sol](contracts/src/aqua/CashEthSwapVMRouter.sol), [contracts/src/aqua/ReceivableCredit.sol](contracts/src/aqua/ReceivableCredit.sol), [contracts/src/aqua/CashEthOrderBuilder.sol](contracts/src/aqua/CashEthOrderBuilder.sol) |
+| Custom opcode | `ReceivableCredit` on the free slot `Opcode._21` of the conditions bank |
 | Dropped to fit EIP-170 | `XYCConcentrateSwap`. With it the runtime is 24,650 B (74 over the limit); without it 23,759 B. A program using it reverts `UnknownOpcode`. CashETH ships no concentrated strategies. |
-| Runtime size | 23,759 B (initcode 25,445 B, margin 817 B) |
-| Immutables added | `REGISTRY`, `KYA`, `FACILITY` |
-| Extra view | `exposure(maker, buyer)`: cumulative USDC a lender has advanced against a buyer (the `maxPerBuyer` cap applies to it) |
+| Runtime size | 23,759 B, initcode 25,445 B, margin 817 B |
+| Added immutables | `REGISTRY`, `KYA`, `FACILITY` |
+| Added view | `exposure(maker, buyer)`: cumulative USDC a lender has advanced against a buyer (`maxPerBuyer` applies to it; repayments do not reduce it) |
 | EIP-712 domain | "CashETH SwapVM", "1.0.0", chain 296 |
-| Order and taker bytes | Built on-chain by `CashEthOrderBuilder` via `eth_call`; nothing is hand-encoded off-chain |
-| Deployed code check | All five C4 contracts were read back from the mirror node and matched `out/` byte for byte (immutables masked) |
-
-Check the size yourself:
+| Order and taker bytes | Built on-chain by `CashEthOrderBuilder` through `eth_call`; nothing is hand-encoded off-chain |
+| Code check | In the first deployment the deployed runtime of each contract was read from the mirror node and matched `out/` byte for byte (immutables masked) |
 
 ```
 cd contracts && forge build --sizes | grep CashEthSwapVMRouter
@@ -160,209 +308,149 @@ cd contracts && forge build --sizes | grep CashEthSwapVMRouter
 
 1. `taker == facility`. Only the credit facility can fill a credit strategy.
 2. Taker args are exactly `[bytes32 id, uint16 advanceBps]`.
-3. `registry.get(id).state == Confirmed` (the core rule: no confirmed receivable, no fill).
-4. Seller filter: if the lender set a `sellerSet` the seller must be in it (score ignored); otherwise the seller's KYA reputation must meet `minSellerOnTime` and `maxSellerDefaults`. Failure: `SELLER_NOT_FUNDED_BY_LENDER`.
+3. `registry.get(id).state == Confirmed`: no confirmed receivable, no fill.
+4. Seller filter: a non-empty `sellerSet` must contain the seller; otherwise the seller's KYA reputation must meet `minSellerOnTime` and `maxSellerDefaults`. Failure: `SELLER_NOT_FUNDED_BY_LENDER`.
 5. Remaining tenor is positive and at most `maxTenorDays`.
 6. `advanceBps <= maxAdvanceBps`.
 7. Buyer reputation `onTime >= minBuyerOnTime`.
 8. Output token is the receivable's currency; direction is RCN to USDC.
 9. The amount fits the strategy's Aqua balance and the lender's per-buyer exposure cap, and leaves at least `minReserve` USDC in the lender's wallet. Failure: `LENDER_RESERVE_TOO_LOW`.
 
-Price is 1:1; the lender's yield is the `aprBps` recorded in its strategy. On a real swap (not a quote) the opcode adds to `exposure[maker][buyer]` and calls `facility.onCreditFill(id, maker, amount, aprBps)`.
+Pricing is 1:1; the lender's yield is the `aprBps` in its strategy. On a real swap the opcode adds to `exposure[maker][buyer]` and calls `facility.onCreditFill(id, maker, amount, aprBps)`. The default 1inch taker gate (a KYC NFT balance check) is not used; the opcode restricts the taker to the facility instead.
 
-**On-chain evidence for Aqua on Hedera**
+Tests: `contracts/test/` (`ReceivableCredit.t.sol`, `CashEthSwapVMRouter.t.sol`, `CashEthTaker.t.sol`, `invariants/`), and anvil-backed TypeScript tests in `packages/aqua`.
 
-| What | Link |
+Spike S1 evidence that Aqua and SwapVM run on Hedera with real HTS USDC: [ship](https://hashscan.io/testnet/transaction/0.0.7314364@1793963071.121512471), [fill](https://hashscan.io/testnet/transaction/0.0.7314364@1793963078.419965153) (the HTS child transfer debits the lender's allowance with `is_approval: true`).
+
+**License.** Powered by Aqua — © Degensoft Ltd 2025. The router source is published under `LicenseRef-Degensoft-SwapVM-1.1` terms with changes marked and dated 2026-11-06. The Aqua registry is `LicenseRef-Degensoft-Aqua-Source-1.1` (source-available), redeployed unmodified on testnet. See [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md).
+
+## 6. Repository layout and how to run
+
+| Path | Contents |
 | --- | --- |
-| Spike S1: unmodified `AquaRouter` and `AquaSwapVMRouter` deployed; lender A ships an XYC strategy | ship [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793963071.121512471) |
-| Spike S1: `SpikeTaker.fill` swaps 0.1 TOKENB for 90,909 USDC units; the HTS child transfer debits lender A's allowance (`is_approval: true`) | fill [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793963078.419965153) |
-| C4: our registry and modified router deployed | [registry tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973211.309180764), [router tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793973238.198619187) |
-| C4: registry, router, RCN and facility wired | wiring table above |
+| `contracts/` | Foundry project. `src/core` (registries, RCN, facility, repayment router, taker, tUSDT), `src/aqua` (router, opcode, order builder), `src/hedera` (HTS, HSS interfaces), `test/`, `script/` (deploy scripts), `lib/` (submodules) |
+| `packages/shared` | `@casheth/shared`: env, addresses, ABIs, EIP-712 types, error codes, HashScan helpers |
+| `packages/hedera` | `@casheth/hedera`: viem and Hiero SDK helpers, HCS, NFT, HCS-14, spend wallets, x402 client signer |
+| `packages/aqua` | `@casheth/aqua`: order builder calls, ship and dock, strategy discovery, solver |
+| `packages/engine` | `@casheth/engine`: credit score, borrowing base, spend policy, co-signer policy, event store, idempotency |
+| `apps/merchant` | Our x402 research API |
+| `apps/auth-server` | OAuth 2.1 authorization server with KYA checks |
+| `apps/mcp-server` | MCP tools (17), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`) |
+| `agents/` | `AgentClient` and the seller, buyer, worker, lender and trader agents; Hedera Agent Kit wrapper; demo runner |
+| `scripts/` | Account setup, deploy and wiring drivers (`c2` to `c5`), spikes, sweep, ABI sync |
+| `deployments/testnet/` | Addresses and run records |
+| `docs/` | `EVIDENCE.md`, `API.md`, `DEMO_SCRIPT.md` |
+| `diagrams/` | Architecture diagram |
 
-<!-- TODO(8.2-final): credit strategies shipped by lenders A, B, C, D, and the `openAndFund` transaction in which the modified router fills A and B, skips C (price) and D (`SELLER_NOT_FUNDED_BY_LENDER`). Link the Aqua funding transaction id here. -->
+### Prerequisites
 
-Unit, fuzz and invariant tests are in `contracts/test/` (`ReceivableCredit.t.sol`, `CashEthSwapVMRouter.t.sol`, `CashEthTaker.t.sol`, `invariants/`). As recorded at C4 in EVIDENCE.md, `forge test` passed 182 of 182.
+- Node 22 (`.nvmrc`) and pnpm 11.
+- **Foundry**, installed or updated with `foundryup`. On some machines the `forge` on `PATH` is a different CLI (for example an Atlassian tool). Check that `forge --version` prints Foundry; otherwise point the scripts at the real binary with `FORGE=/path/to/foundry/forge`, and the anvil-backed tests at its directory with `FOUNDRY_BIN=$HOME/.foundry/bin`.
+- A funded Hedera testnet ECDSA operator account (HBAR, and USDC from `https://faucet.circle.com`, Hedera Testnet).
 
-## Shared liquidity: base yield, credit boost, risk tiers
-
-There is no pool contract and no external yield protocol. A lender's USDC stays in the lender's own wallet. One lender balance backs two strategies on `CashEthSwapVMRouter` (shared liquidity):
-
-| Strategy | Program | Purpose |
-| --- | --- | --- |
-| Base yield | `Salt`, `FeeFlatIn`, `XYCSwap`: constant product over USDC / tUSDT, 30 bps fee | Earns swap fees from trading volume. Variable. |
-| Credit (boost) | `Salt`, `ReceivableCredit(args)` over USDC / RCN | Sells USDC 1:1 for RCN against a confirmed receivable at the lender's fixed `aprBps`. |
-
-The base APR is measured from real on-chain swaps made by a scripted trader agent through `CashEthTaker` against the tUSDT leg. It is labelled "scripted volume" wherever it is shown and is not a promised rate. The credit APR is the fixed leg. `tUSDT` is a plain 6-decimal test token we deployed (no HTS association needed). The C4 mints to each lender and to the trader account are in [docs/EVIDENCE.md](docs/EVIDENCE.md).
-
-**Risk tiers** are presets of the credit opcode arguments, enforced by the opcode at fill time:
-
-| Tier | aprBps | minSellerOnTime | maxSellerDefaults | minBuyerOnTime | maxPerBuyer (USDC units) | sellerSet |
-| --- | --- | --- | --- | --- | --- | --- |
-| low | 700 | 3 | 0 | 0 | 5,000,000 | optional allowlist |
-| medium | 850 | 1 | 0 | 0 | 5,000,000 | optional allowlist |
-| high | 1300 | 0 | 2 | 0 | 5,000,000 | empty (any seller) |
-
-A non-empty `sellerSet` (up to 3 addresses) replaces the score thresholds: an explicit choice beats the score.
-
-Demo lenders:
-
-| Lender | Account | Tier | sellerSet | Designed outcome |
-| --- | --- | --- | --- | --- |
-| A | [0.0.11337991](https://hashscan.io/testnet/account/0.0.11337991) | low | seller | filled |
-| B | [0.0.11337992](https://hashscan.io/testnet/account/0.0.11337992) | medium | seller | filled |
-| C | [0.0.11337993](https://hashscan.io/testnet/account/0.0.11337993) | high | any | eligible but the most expensive, not needed |
-| D | [0.0.11340117](https://hashscan.io/testnet/account/0.0.11340117) | low | workerResearch | skipped on-chain: `SELLER_NOT_FUNDED_BY_LENDER` |
-
-The last column is the design. The observed run is linked once it exists.
-
-<!-- TODO(8.2-final): measured per-lender yield table (baseFees, creditFees, capital, blendedApr) from `packages/stats`, with the trader's swap transaction links, labelled "scripted volume"; and the observed fill outcome for A, B, C, D. -->
-
-## x402 spending
-
-Hedera's `exact` scheme has the client sign a `TransferTransaction` that debits its own account, and the facilitator pays the network fee. A contract cannot sign that, so the facility cannot be the payer. CashETH uses **2-of-2 co-signed spend wallets**:
-
-- Each worker has a Hedera account whose key is `KeyList([worker, cosigner], threshold 2)`. It is associated with USDC and holds zero balance between payments.
-- `reserve` moves exactly the reserved USDC in from the facility; the worker signs the x402 transfer; the policy co-signer adds its signature only if `payTo`, asset and amount match the reservation and the merchant is allowlisted. Without the second signature the facilitator refuses the payment.
-- Limits (per-agent budget, per-transaction, daily, merchant allowlist, facility-wide ceiling) are checked in the engine and again in `CreditFacility`, with the same error names: `AGENT_BUDGET_EXCEEDED`, `TX_LIMIT_EXCEEDED`, `DAILY_LIMIT_EXCEEDED`, `MERCHANT_NOT_ALLOWED`, `GLOBAL_CREDIT_LIMIT_EXCEEDED`.
-- Scheme `exact`, network `hedera:testnet`, facilitator `https://x402.org/facilitator`. The settlement transaction id comes back in the `PAYMENT-RESPONSE` header.
-
-Our merchant (`apps/merchant`): `GET /research?topic=...`, price 0.25 USDC to merchant account [0.0.11333304](https://hashscan.io/testnet/account/0.0.11333304), built on `@x402/core`, `@x402/express` and `@x402/hedera` 2.30.0.
-
-Spend wallets (key and threshold read back from the mirror node and decoded in EVIDENCE.md):
-
-| Wallet | Account | Create tx | USDC association tx (both signatures) |
-| --- | --- | --- | --- |
-| SPEND_WALLET_RESEARCH | [0.0.11339484](https://hashscan.io/testnet/account/0.0.11339484) | [tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793969914.172231452) | [tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793969919.209773850) |
-| SPEND_WALLET_COMPUTE | [0.0.11339486](https://hashscan.io/testnet/account/0.0.11339486) | [tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793969922.674066550) | [tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793969930.470415616) |
-
-## Settled transactions
-
-### x402 payment (Hedera track)
-
-**Settled Hedera x402 transaction id (final demo run): TODO.**
-
-<!-- TODO(8.2-final): settled x402 transaction id from the PAYMENT-RESPONSE header of the final demo run (HashScan link), paid by SPEND_WALLET_RESEARCH to the merchant. -->
-
-Before the agents were integrated, spike S3 proved the same mechanism against our merchant on `hedera:testnet` with the public facilitator (`scripts/spikes/s3-x402.ts`). Both payments are 0.25 USDC (250,000 units) to the merchant. The facilitator account `0.0.9185802` pays the fee.
-
-| Payment | Payer | Settlement transaction |
-| --- | --- | --- |
-| A: single ECDSA key | WORKER_RESEARCH [0.0.11337989](https://hashscan.io/testnet/account/0.0.11337989) | [0.0.9185802@1793964900.434830214](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214) |
-| B: 2-of-2 KeyList (worker + co-signer) | spend wallet [0.0.11338499](https://hashscan.io/testnet/account/0.0.11338499) | [0.0.9185802@1793964918.249682742](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) |
-
-Negative check: the same 2-of-2 wallet paying with the worker signature only was refused by the facilitator with HTTP 402 `invalid_exact_hedera_payload_signature_invalid`, and its USDC did not move.
-
-### Aqua funding transaction (1inch track)
-
-**Aqua funding transaction id (`openAndFund` through the modified router): TODO.**
-
-<!-- TODO(8.2-final): the `CreditFacility.openAndFund` transaction id (HashScan link) showing the modified router filling lenders A and B and the receivable becoming Financed. -->
-
-## Prize-track checklists
-
-### Hedera: AI Agents That Pay (x402)
-
-| Requirement | Status | Evidence |
-| --- | --- | --- |
-| Own x402-protected endpoint | Done (spike) | `apps/merchant`; 402 `PaymentRequirements` and settled payments in [S3](#x402-payment-hedera-track) |
-| Settles USDC on Hedera testnet through a listed facilitator | Done (spike) | S3 settlements above via `https://x402.org/facilitator` |
-| Worker agent pays with no human approval | Pending | Final run transaction id (see the TODO under Settled transactions) |
-| Spending controls | Contracts built and tested; on-chain run pending | `CreditFacility` budgets, limits and reservations; 2-of-2 spend wallets (table above); refused single-signature payment (S3) |
-| Agent identity and reputation (HCS-14, ERC-8004-shaped) | Done | UAIDs on the audit topic; `KYARegistry` registrations in [docs/EVIDENCE.md](docs/EVIDENCE.md), section C2 |
-| HCS audit log | Done for registration; spend events pending | Topic [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927), seq 30 and 31 |
-| Settling in an HTS token | Done | USDC [0.0.429274](https://hashscan.io/testnet/token/0.0.429274) |
-| Scheduled Transactions (HIP-1215) | Mechanism proven; facility schedule pending | Spike S4: schedule [0.0.11338268](https://hashscan.io/testnet/schedule/0.0.11338268) executed by the network; schedule [0.0.11338283](https://hashscan.io/testnet/schedule/0.0.11338283) deleted before firing |
-| Hedera Agent Kit | Not yet documented | See TODO below |
-
-<!-- TODO(8.2-final): update the "Pending" rows above once the final demo run exists, and fill the Hedera Agent Kit row. -->
-
-### 1inch: Build an Aqua App
-
-| Requirement | Status | Evidence |
-| --- | --- | --- |
-| Redeploy Aqua on Hedera testnet | Done | Registry [0.0.11339989](https://hashscan.io/testnet/contract/0.0.11339989) |
-| Modified SwapVM router | Done | [0.0.11339992](https://hashscan.io/testnet/contract/0.0.11339992); `ReceivableCredit` on `Opcode._21`; runtime 23,759 B |
-| Custom instruction gates fills on real state | Done in code and tests | `ReceivableCredit.sol`; on-chain credit fill pending below |
-| Lender strategies filled on-chain, token transfers visible on HashScan | Spike done; credit fill pending | S1 fill [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793963078.419965153); credit fill is the TODO under Settled transactions |
-| Shared liquidity (base yield and credit boost from one balance) | Built; measured yield pending | [Shared liquidity](#shared-liquidity-base-yield-credit-boost-risk-tiers) |
-| Commits spread across the event | See `git log` | |
-| Attribution | Done | [Attribution and licenses](#attribution-and-licenses) |
-
-## How to run
-
-Requirements: Node 22 (`.nvmrc`), pnpm 11, [Foundry](https://book.getfoundry.sh/) and a funded Hedera testnet ECDSA operator account.
-
-**Foundry is required for the contract deploys.** Install or update it with `foundryup`. On some machines `forge` on `PATH` is a different CLI (for example an Atlassian tool). Check that `forge --version` prints Foundry, or point the scripts at the real binary with `FORGE=/path/to/foundry/forge`.
+### Setup
 
 ```
-git clone --recurse-submodules <repo>      # contracts/lib/{forge-std,openzeppelin-contracts,solidity-utils,aqua,swap-vm}
-cp .env.example .env                       # operator, merchant, JSON-RPC relay, USDC ids, x402 facilitator
+git clone --recurse-submodules <repo>        # contracts/lib/{forge-std,openzeppelin-contracts,solidity-utils,aqua,swap-vm}
+cp .env.example .env                         # operator, merchant, JSON-RPC relay, USDC ids, x402 facilitator, ports
 pnpm install
 pnpm -r build
-pnpm setup:accounts                        # creates the demo accounts, writes .env.accounts, funds them with USDC
+pnpm setup:accounts                          # creates the demo accounts, writes .env.accounts, funds them
 (cd contracts && forge build && forge test)
 pnpm abi:sync
 ```
 
-Deploys go through the Hashio relay. Each script runs `forge script` with `--legacy --slow --skip-simulation` (forge's replay cannot execute the HTS and HSS system contracts), then does the wiring and read-backs in TypeScript:
+`.env` holds operator and service settings; `.env.accounts` holds the demo account ids and keys (`<PREFIX>_ID/_KEY/_EVM`). Neither is committed. Do not duplicate the demo accounts in `.env`: it takes precedence.
+
+### Tests
 
 ```
-FORGE=/path/to/foundry/forge pnpm tsx scripts/c2-register-demo.ts       # 01_DeployCore: KYARegistry, ReceivableRegistry
-pnpm tsx scripts/c2-topic-and-nft.ts                                    # HCS topic, receivable NFT, HCS-14 profiles
-FORGE=/path/to/foundry/forge pnpm tsx scripts/c3-deploy.ts              # 02_DeployFacility: RCN, CreditFacility, RepaymentRouter
-pnpm tsx scripts/c5-spend-wallets.ts                                    # 2-of-2 spend wallets
-FORGE=/path/to/foundry/forge pnpm tsx scripts/c4-deploy-and-wire.ts     # 03_DeployAqua: Aqua, router, order builder, tUSDT, taker
-pnpm tsx scripts/c4-register.ts                                         # first registration and the duplicate rejection
+pnpm test                                    # all TypeScript packages (vitest)
+pnpm lint                                    # tsc --noEmit in every package
+(cd contracts && forge test)                 # unit, fuzz and invariant tests
+FOUNDRY_BIN=$HOME/.foundry/bin pnpm -F @casheth/aqua test    # anvil-backed Aqua tests (starts anvil)
 ```
 
-Notes from testing on Hedera: HTS `approve(spender, type(uint256).max)` reverts (allowances are int64), so USDC approvals are bounded. A contract constructor that calls `associate()` costs about 1.0M gas. Contracts that hold HBAR are funded through `receive()` in a second transaction. Details and transaction links are in [docs/EVIDENCE.md](docs/EVIDENCE.md).
+Live tests that touch testnet are opt-in (for example `LIVE=1 pnpm -F @casheth/aqua exec vitest run --project unit discover.live`).
 
-<!-- TODO(8.2-final): `pnpm demo` (full end-to-end run) does not exist yet. Add the command, expected output and runtime once the demo runner lands, and document starting `apps/auth-server`, `apps/mcp-server` and `apps/merchant` (ports from `.env`). -->
+### Deploy (already done; scripts are re-runnable)
 
-## Frontend and read API
+Deploys go through the Hashio relay. Each driver runs `forge script` with `--legacy --slow --skip-simulation` (forge's replay cannot execute the HTS and HSS system contracts), then does wiring and read-backs in TypeScript:
 
-The UI is a separate Next.js app on the branch `feat/nextjs-frontend` (directory `frontend/`; landing and docs pages from the Tranche UI design). It is merged and integrated last. It consumes the backend's read API:
+```
+FORGE=/path/to/forge pnpm tsx scripts/c2-register-demo.ts      # KYARegistry, ReceivableRegistry, agent registrations
+pnpm tsx scripts/c2-topic-and-nft.ts                           # HCS topic, NFT collection, HCS-14 profiles
+FORGE=/path/to/forge pnpm tsx scripts/c3-deploy.ts             # RCN, CreditFacility, RepaymentRouter
+pnpm tsx scripts/c5-spend-wallets.ts                           # 2-of-2 spend wallets
+FORGE=/path/to/forge pnpm tsx scripts/c4-deploy-and-wire.ts    # Aqua, router, order builder, tUSDT, taker, wiring
+pnpm tsx scripts/c4-register.ts                                # first registration and the duplicate rejection
+```
 
-| Endpoint | Returns |
+Hedera notes: HTS `approve(spender, type(uint256).max)` reverts (allowances are int64), so USDC approvals are exact amounts. A constructor that calls `associate()` costs about 1.0M gas. Contracts that hold HBAR are funded through `receive()` in a second transaction. One `scheduleCall` per transaction. Details are in [docs/EVIDENCE.md](docs/EVIDENCE.md).
+
+### Servers and the demo
+
+```
+pnpm -F @casheth/merchant start              # x402 merchant, MERCHANT_PORT (default 3003)
+pnpm -F @casheth/auth start                  # authorization server, AUTH_PORT (default 4020)
+pnpm -F @casheth/mcp start                   # MCP server and read API, MCP_PORT (default 4030)
+pnpm demo                                    # drives the eight steps, the duplicate and two rejections
+```
+
+`pnpm demo` starts and stops the three servers itself (or expects them with `DEMO_SERVERS=external`), prints a HashScan link for each step, appends the run to `docs/EVIDENCE.md` under a dated "Demo run" heading, and exits non-zero if a step has no Hedera transaction id. For a demo run the MCP server may sign for the demo agents (`AGENT_KEYS_IN_PROCESS=true`, `LENDER_KEYS_IN_PROCESS=true`); in normal operation agents sign their own transactions and the server returns calldata.
+
+<!-- TODO(8.2-final): confirm that the root `pnpm demo` script has landed (Task 7.2) and that its flags and output match the paragraph above. -->
+
+### Frontend
+
+The UI is a separate Next.js app on the branch `feat/nextjs-frontend` (`frontend/`: landing and docs pages). It is integrated last and consumes the read API: `GET /events`, `/agents`, `/lenders`, `/receivables/:id` (types in [docs/API.md](docs/API.md)). The MCP server allows the frontend's origin through `CORS_ORIGINS`.
+
+## 7. Evidence index
+
+Everything is recorded in [docs/EVIDENCE.md](docs/EVIDENCE.md) and the run records under `deployments/testnet/`. Headline links:
+
+| What | Where |
 | --- | --- |
-| `GET /events` | lifecycle and audit events |
-| `GET /agents` | agents and their stats |
-| `GET /lenders` | lenders and measured yield |
-| `GET /receivables/:id` | one receivable with evidence links |
+| First Aqua-funded facility (`openAndFund` through the modified router, A and B filled) | TODO (see section 2) |
+| Settled x402 payment, final run | TODO (see section 2) |
+| x402 mechanism, single-key and 2-of-2 settlements | [A](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214), [B](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) |
+| 2-of-2 spend wallets (threshold key read back from the mirror node) | [research](https://hashscan.io/testnet/account/0.0.11339484), [compute](https://hashscan.io/testnet/account/0.0.11339486) |
+| Scheduled lifecycle: network-executed schedule and a deleted one | [executed](https://hashscan.io/testnet/schedule/0.0.11338268), [deleted](https://hashscan.io/testnet/schedule/0.0.11338283) |
+| Why the stack was redeployed (HIP-1215 one schedule per transaction) | [failed tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793976431.091663990) |
+| Duplicate rejection on the current stack | [0.0.7314364@1793980736.789329045](https://hashscan.io/testnet/transaction/0.0.7314364@1793980736.789329045) |
+| Registration, NFT and HCS audit events for PO-1002 | [section 4.1](#41-receivables) |
+| Lender strategies (credit and base, tiers) | [section 4.2](#42-funding-through-aqua-shared-liquidity), `deployments/testnet/strategies.json` |
+| Aqua and SwapVM running on Hedera with real HTS USDC (spike S1) | [ship](https://hashscan.io/testnet/transaction/0.0.7314364@1793963071.121512471), [fill](https://hashscan.io/testnet/transaction/0.0.7314364@1793963078.419965153) |
+| Contract sizes | `forge build --sizes`; router 23,759 B ([section 5](#5-the-modified-swapvm)) |
+| HCS audit topic and NFT collection | [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927), [0.0.11338934](https://hashscan.io/testnet/token/0.0.11338934) |
 
-Request and response types are documented in [docs/API.md](docs/API.md). That file lives on the MCP server branch and arrives with its merge.
+<!-- TODO(8.2-final): once the demo run is recorded, replace the two TODO rows with links and add the repayment transaction (Repaid) and the measured base-yield table ("scripted volume"). -->
 
-<!-- TODO(8.2-final): after the frontend is merged, add run instructions (`pnpm -F @casheth/frontend dev`, `NEXT_PUBLIC_API_URL`) and confirm that docs/API.md is on main. -->
+## 8. Known limitations and rulings
 
-## Attribution and licenses
+- **Base yield is scripted volume.** The base-yield APR comes from swaps made by our own trader agent, not from organic volume. It is labelled as such and is not a promised rate.
+- **Testnet and relay flakiness.** Transactions go through the Hashio JSON-RPC relay. It cannot estimate gas for a creation that carries value, so contracts are funded in a second transaction; gas limits are explicit; transaction ids of EVM transactions show the relay account as payer.
+- **One HSS schedule per transaction.** The first facility design violated this and was redeployed (section 3). Overdue and default checks are chained, and both are also permissionless.
+- **HCS topic contains test probes.** Messages marked `"test": true` (and without `agentUaid`) come from live tests of `@casheth/hedera`; consumers can skip them.
+- **Trusted parties.** The coordinator submits `openAndFund` and `reserve` and the policy co-signer approves payments; the contracts re-check every limit, and the co-signer can refuse but cannot move funds alone. Keys are demo `.env` keys, not a KMS.
+- **Demo identity is an allowlist.** KYA levels are set by one issuer account. There is no sybil resistance beyond owner-group separation between buyer and seller.
+- **`maxPerBuyer` is cumulative.** `exposure(maker, buyer)` only grows; it caps lifetime advances to a buyer, not outstanding principal.
+- **No concentrated-liquidity strategies.** `XYCConcentrateSwap` was removed to fit EIP-170.
+- **Fixed base rate is out of scope.** A guaranteed base yield would need a subsidy pot.
+- **Amounts are small.** The demo receivable is 6 USDC; lender balances are 0.5 to 3.5 USDC per strategy because the testnet USDC supply is limited.
+- **Out of scope:** production KYC, fiat rails, governance, liquidations.
+
+## 9. Next steps
+
+- **Sybil resistance.** Replace the KYA allowlist with real identity and owner-separation proofs.
+- **Cross-registry reputation (IRN).** Let repayment reputation travel across registries.
+- **GST evidence.** Accept India GST e-invoice data as additional evidence for a receivable; it would strengthen the buyer's signature, not replace it.
+- **KMS-held coordinator and co-signer keys,** and per-agent signing for every tool call.
+
+## 10. Attribution and licenses
 
 Powered by Aqua — © Degensoft Ltd 2025
 
 - `CashEthSwapVMRouter` is derived from 1inch's SwapVM `AquaSwapVMRouter`. Its source is published under `LicenseRef-Degensoft-SwapVM-1.1` terms, with our changes marked and dated 2026-11-06.
 - The Aqua registry is deployed unmodified. It is `LicenseRef-Degensoft-Aqua-Source-1.1` (source-available) and is redeployed on testnet only.
 - Full notices: [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md).
-
-## Rulings and known limitations
-
-<!-- TODO(8.2-final): rulings and known limitations, to be written by the project owner. -->
-
-## Next steps
-
-- **Sybil resistance.** The demo uses a KYA allowlist with an issuer account. A production system needs real identity and owner-separation proofs.
-- **Cross-registry reputation (IRN).** Let repayment reputation travel across registries instead of living in one `KYARegistry`.
-- **GST evidence.** Accept India GST e-invoice data as additional evidence for a receivable. It would strengthen the buyer's signature, not replace it.
-
-## Open items for the final pass
-
-These are the `TODO(8.2-final)` placeholders in this file.
-
-| Section | Missing |
-| --- | --- |
-| Payment flow | End-to-end demo run links |
-| Modified SwapVM and Aqua | Credit strategy ships and the funding transaction |
-| Shared liquidity | Measured yield table and observed A/B/C/D outcome |
-| Settled transactions | Settled x402 transaction id; Aqua funding transaction id |
-| Prize-track checklists | Final status of pending rows; Hedera Agent Kit |
-| How to run | `pnpm demo`, service start commands |
-| Frontend and read API | Run instructions after merge |
-| Rulings and known limitations | Owner to write |

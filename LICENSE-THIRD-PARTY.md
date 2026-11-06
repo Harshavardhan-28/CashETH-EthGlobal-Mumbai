@@ -11,7 +11,7 @@ CashETH builds on two components published by Degensoft Ltd (1inch). This file r
 | Upstream | 1inch SwapVM, `AquaSwapVMRouter` (`github.com/1inch/swap-vm`, pinned as the submodule `contracts/lib/swap-vm`) |
 | License terms | `LicenseRef-Degensoft-SwapVM-1.1` |
 | Our file | [contracts/src/aqua/CashEthSwapVMRouter.sol](contracts/src/aqua/CashEthSwapVMRouter.sol) and the added instruction [contracts/src/aqua/ReceivableCredit.sol](contracts/src/aqua/ReceivableCredit.sol) |
-| Deployed | Hedera testnet, `0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562` ([0.0.11339992](https://hashscan.io/testnet/contract/0.0.11339992)) |
+| Deployed | Hedera testnet, `0x458b3b7CaDec64Cd0AE0B244d582006C4E99ce1b` ([0.0.11341628](https://hashscan.io/testnet/contract/0x458b3b7CaDec64Cd0AE0B244d582006C4E99ce1b)), redeployed 2026-11-06 with the fixed core stack (the first deployment, `0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562`, is archived in `deployments/testnet/archive-2026-11-06-redeploy.json`) |
 
 The source of `CashEthSwapVMRouter` is published in this repository under `LicenseRef-Degensoft-SwapVM-1.1` terms. Our changes to the upstream router are marked and dated 2026-11-06. They are:
 
@@ -29,7 +29,7 @@ The router keeps the upstream base contracts (`Simulator`, `SwapVM`, `AquaOpcode
 | Upstream | 1inch Aqua (`github.com/1inch/aqua`, pinned as the submodule `contracts/lib/aqua`) |
 | License terms | `LicenseRef-Degensoft-Aqua-Source-1.1` (source-available) |
 | Use | Redeployed on Hedera testnet only, with no source changes |
-| Deployed | `0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c` ([0.0.11339989](https://hashscan.io/testnet/contract/0.0.11339989)) |
+| Deployed | `0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c` ([0.0.11339989](https://hashscan.io/testnet/contract/0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c), kept across the core redeploy) |
 
 Aqua is not deployed on Hedera by 1inch. This registry is a separate CashETH deployment for the ETHGlobal Mumbai hackathon and is not production use.
 
