@@ -1,0 +1,526 @@
+/* Agent dashboard: builds on the admin console's layout and tokens (Admin.module.css), single column, no side nav. */
+
+.main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 24px 28px 56px;
+}
+
+/* ---------- top bar extras ---------- */
+.switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 12.5px;
+  min-width: 0;
+}
+.switcher select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  max-width: 220px;
+  cursor: pointer;
+}
+.switcher select option {
+  background: var(--surface);
+  color: var(--ink);
+}
+.barLink {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.barLink:hover {
+  color: var(--accent);
+}
+
+/* ---------- picker ---------- */
+.pickHero {
+  padding: 28px 28px 24px;
+  margin-bottom: 22px;
+  background:
+    radial-gradient(120% 140% at 100% 0%, var(--accent-tint), transparent 55%),
+    var(--card);
+}
+.pickHero h1 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.pickHero p {
+  margin-top: 6px;
+  color: var(--muted);
+  max-width: 680px;
+}
+.pickForm {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  max-width: 640px;
+}
+.pickForm input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.pickForm input:focus {
+  outline: 0;
+  border-color: var(--accent);
+}
+.btn {
+  height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover {
+  filter: brightness(1.06);
+}
+.btnGhost {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btnGhost:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pickError {
+  margin-top: 10px;
+  color: var(--err);
+  font-size: 12.5px;
+}
+.pickNote {
+  margin-top: 12px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* ---------- identity header ---------- */
+.identity {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.idMain {
+  display: flex;
+  gap: 16px;
+  padding: 20px 22px;
+  min-width: 0;
+}
+.idName {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.rolePill {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--on-accent);
+}
+.idJob {
+  margin-top: 2px;
+  color: var(--muted);
+}
+.idFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--faint);
+}
+.idFacts b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.idFacts a {
+  color: var(--accent);
+}
+.wallet {
+  border-left: 1px solid var(--line);
+  padding: 20px 22px;
+  background: var(--card-2);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.walletLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.walletUsdc {
+  margin-top: 6px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+.walletUsdc small {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--faint);
+  margin-left: 6px;
+  letter-spacing: 0;
+}
+.walletMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--faint);
+}
+.walletMeta a {
+  color: var(--accent);
+}
+
+/* ---------- grids ---------- */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.section {
+  margin-bottom: 14px;
+}
+.body {
+  padding: 14px 18px 18px;
+}
+
+/* ---------- meters ---------- */
+.meter {
+  height: 8px;
+  border-radius: 99px;
+  background: var(--line-2);
+  overflow: hidden;
+  display: flex;
+}
+.meter i {
+  display: block;
+  height: 100%;
+}
+.meterLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.meterLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.meterLegend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+}
+
+/* ---------- key/value rows ---------- */
+.kv {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.kv li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.kv li:last-child {
+  border-bottom: 0;
+}
+.kv span {
+  color: var(--muted);
+}
+.kv b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.kvStrong b {
+  font-size: 15px;
+}
+.kvHint {
+  display: block;
+  color: var(--faint);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+/* ---------- workers ---------- */
+.workers {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+.worker {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.worker:last-child {
+  border-bottom: 0;
+}
+.workerTop {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 10px;
+}
+.workerTop > div {
+  flex: 1;
+  min-width: 0;
+}
+.workerNums {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+}
+.workerNums b {
+  display: block;
+  font-size: 14px;
+}
+.workerNums span {
+  color: var(--faint);
+}
+
+/* ---------- strategy tiles ---------- */
+.strategies {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+.strategy {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 12px 14px;
+  background: var(--card-2);
+}
+.strategy h3 {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.strategy p {
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+.strategyApr {
+  margin-top: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- tables ---------- */
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sub {
+  display: block;
+  color: var(--faint);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.due {
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.dueSoon {
+  color: var(--warn);
+}
+.duePast {
+  color: var(--err);
+}
+.dueOk {
+  color: var(--faint);
+}
+
+/* ---------- MCP log ---------- */
+.logTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px 0;
+}
+.logTools select {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+}
+.logTools .spacer {
+  flex: 1;
+}
+.log {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+.log th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--faint);
+  font-size: 12px;
+  padding: 9px 18px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.log td {
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.logRow {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.logRow:hover,
+.logOpen {
+  background: var(--card-2);
+}
+.logRow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tool {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--ink) 7%, transparent);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.logWhat {
+  min-width: 260px;
+}
+.logWho {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.logDetail td {
+  background: var(--card-2);
+  padding: 4px 18px 16px 18px;
+}
+.logGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px 22px;
+  font-size: 12px;
+}
+.logGrid div {
+  min-width: 0;
+}
+.logGrid span {
+  display: block;
+  color: var(--faint);
+  font-size: 11px;
+}
+.logGrid code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.logGrid a {
+  color: var(--accent);
+}
+.logMore {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 1100px) {
+  .split,
+  .identity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wallet {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+@media (max-width: 720px) {
+  .main {
+    padding: 18px 16px 40px;
+  }
+  .pickForm {
+    flex-direction: column;
+  }
+  .strategies {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .switcher select {
+    max-width: 140px;
+  }
+  .hideSm {
+    display: none;
+  }
+}
