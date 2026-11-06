@@ -27,6 +27,14 @@ export type McpConfig = {
   /** Merchant account id -> URL origins `pay_x402` may fetch (`MERCHANT_ORIGINS`). */
   merchantOrigins: Record<string, string[]>;
   aquaFromBlock?: bigint;
+  /** `HFS_ENABLED=true`: also copy invoice documents to the Hedera File Service. */
+  hfsEnabled: boolean;
+  /** `CASHETH_LLM_PROVIDER`: `ollama` forces the local model on, any other value off, unset = use it if Ollama answers. */
+  llmProvider?: string;
+  /** `OLLAMA_BASE_URL`, default `http://localhost:11434`. */
+  ollamaBaseUrl: string;
+  /** `CASHETH_LLM_MODEL`, default `qwen2.5:7b`. */
+  llmModel: string;
 };
 
 const DEFAULT_DATA_DIR = fileURLToPath(new URL("../data", import.meta.url));
@@ -78,6 +86,7 @@ export function loadConfig(env: Env, fallbacks: { hcsTopicId?: string; nftTokenI
   const hcsTopicId = opt(env, "HCS_AUDIT_TOPIC_ID") ?? fallbacks.hcsTopicId;
   const nftTokenId = opt(env, "RECEIVABLE_NFT_TOKEN_ID") ?? fallbacks.nftTokenId;
   const anthropicApiKey = opt(env, "ANTHROPIC_API_KEY");
+  const llmProvider = opt(env, "CASHETH_LLM_PROVIDER");
   return {
     port,
     resource: new URL(opt(env, "MCP_RESOURCE_URL") ?? `http://localhost:${port}/mcp`),
@@ -96,5 +105,9 @@ export function loadConfig(env: Env, fallbacks: { hcsTopicId?: string; nftTokenI
     usdcTokenId: env.USDC_TOKEN_ID,
     merchantOrigins: merchantOrigins(env),
     ...(fromBlock ? { aquaFromBlock: BigInt(fromBlock) } : {}),
+    hfsEnabled: flag(env, "HFS_ENABLED"),
+    ...(llmProvider ? { llmProvider } : {}),
+    ollamaBaseUrl: opt(env, "OLLAMA_BASE_URL") ?? "http://localhost:11434",
+    llmModel: opt(env, "CASHETH_LLM_MODEL") ?? "qwen2.5:7b",
   };
 }

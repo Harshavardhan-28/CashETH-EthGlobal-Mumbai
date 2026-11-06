@@ -14,6 +14,8 @@ export type PendingReceivable = {
   dueDate: string;
   buyerRef: Hex;
   detailsCommitment: Hex;
+  /** Set when `detailsCommitment` is the keccak256 of an uploaded invoice document. */
+  documentKeccak?: Hex;
   payTo: Address;
   nonce: string;
   deadline: string;

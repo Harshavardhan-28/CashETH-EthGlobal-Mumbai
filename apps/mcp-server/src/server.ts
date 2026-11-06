@@ -1,7 +1,7 @@
 /**
  * CashETH MCP server: an OAuth 2.1 resource server (RFC 9728 metadata, audience-bound bearer tokens) exposing the
  * CashETH tools over stateless Streamable HTTP, plus the unauthenticated read API for the dashboard (Ruling R14):
- * `GET /events`, `GET /agents`, `GET /lenders`, `GET /receivables/:id`, `GET /health`.
+ * `GET /events`, `GET /agents`, `GET /lenders`, `GET /receivables/:id`, `GET /invoices/:keccak`, `GET /health`.
  */
 import { ALL_SCOPES } from "@casheth/shared";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
@@ -12,6 +12,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { OAuthMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { jsonSafe } from "./orchestrator/audit.js";
+import { bytes32 } from "./orchestrator/common.js";
 import { ToolError } from "./orchestrator/errors.js";
 import { receivableDetails } from "./orchestrator/receivables.js";
 import type { Orchestrator } from "./orchestrator/types.js";
@@ -104,6 +105,24 @@ export function createMcpApp(deps: McpAppDeps): express.Express {
       sendError(res, err, o);
     }
   });
+  // The invoice file itself, so anyone can hash it and compare with the registry's detailsCommitment.
+  read.get("/invoices/:keccak", (req, res) => {
+    try {
+      const keccak = bytes32(String(req.params.keccak), "keccak");
+      const meta = o.invoices.meta(keccak);
+      if (!meta) throw new ToolError("NOT_FOUND", `no invoice document ${keccak}`);
+      res
+        .set({
+          "Content-Type": meta.mime,
+          "Content-Disposition": `inline; filename="${encodeURIComponent(meta.filename)}"`,
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "public, max-age=31536000, immutable",
+        })
+        .send(Buffer.from(o.invoices.bytes(meta)));
+    } catch (err) {
+      sendError(res, err, o);
+    }
+  });
   app.use(read);
 
   // RFC 9728 protected resource metadata (path-specific, plus the root alias some clients probe first).
@@ -121,7 +140,7 @@ export function createMcpApp(deps: McpAppDeps): express.Express {
     expectedResource: resource,
   });
 
-  app.post(resource.pathname, bearer, express.json({ limit: "1mb" }), async (req, res) => {
+  app.post(resource.pathname, bearer, express.json({ limit: "4mb" }), async (req, res) => {
     const server = createMcpServer(o);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => {

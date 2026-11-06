@@ -1,7 +1,8 @@
 export { AgentClient, ToolCallError, freshKey, idempotencyKey } from "./mcpClient.js";
 export type { AgentClientOptions, AgentRole, ToolCaller } from "./mcpClient.js";
 export { createSellerAgent } from "./seller.js";
-export type { Invoice, UploadResult, WireTypedData } from "./seller.js";
+export type { Invoice, StoredDocument, UploadResult, WireTypedData } from "./seller.js";
+export { INVOICE_PO_1003, INVOICE_PO_1003_DUE_UNIX, INVOICE_PO_1003_PDF } from "./fixtures.js";
 export { confirmationMessage, createBuyerAgent, signConfirmation } from "./buyer.js";
 export type { BuyerOptions } from "./buyer.js";
 export { createWorkerAgent, pickOffer, PurchaseError } from "./worker.js";

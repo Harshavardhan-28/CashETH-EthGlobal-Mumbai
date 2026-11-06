@@ -76,6 +76,8 @@ Every mutating tool requires `idempotencyKey` (8–128 chars). The first success
 | Tool | Role | Scope | Mutating | On-chain / off-chain effect |
 |---|---|---|---|---|
 | `register_agent` | any (owner) | `agent:admin` | yes | `KYARegistry.register` (KYA issuer key), HCS-14 profile as `AgentRegistered` |
+| `upload_invoice_document` | seller | `receivable:write` | yes | stores the invoice file, reads its fields, `InvoiceDocumentStored` (+ optional HFS copy) |
+| `get_invoice_document` | any | `receivable:read` | no | – |
 | `upload_receivable` | seller | `receivable:write` | yes | pending record, `ReceivableUploaded` |
 | `confirm_receivable` | buyer | `receivable:confirm` | yes | `ReceivableRegistry.register` (coordinator), NFT mint, `ReceivableConfirmed` + `NftMinted` |
 | `get_receivable_status` | any | `receivable:read` | no | – |
@@ -101,17 +103,26 @@ Inputs below omit `idempotencyKey`, which every mutating tool also takes. `hex32
 In: `{ account: address, accountId: "0.0.x", name, role: "seller"|"buyer"|"worker"|"lender", level: 0..3, ownerGroup: string (label, hashed) | hex32, mandateHash?: hex32, expiresAt?: unix }`
 Out: `{ uaid, account, role, level, txHash, hashscan, hcsSeq }`. The UAID is the HCS-14 id built from the account id; `uaidHash = keccak256(uaid)` goes on-chain.
 
+### `upload_invoice_document`
+In: `{ receivableRef: string (PO reference or receivable id, recorded on HCS), filename, mime: "application/pdf" | "text/plain", content: base64 (at most 2 MB decoded), expected?: { amount: units, currency?: "USDC", dueDate: unix, buyerRef, sellerName?, buyerName? } }`
+Out: `{ keccak256, sha256, bytes, mime, filename, receivableRef, extractor: "heuristic" | "ollama", model?, extracted: { amount?: units, currency?, dueDate?: "YYYY-MM-DD", buyerRef?, sellerName?, buyerName? }, verification: { ok, mismatches: [{ field, expected, found }] } | null, hcsSeq, hashscan, hfsFileId?, downloadPath: "/invoices/<keccak256>" }` (`hcsError` / `hfsError` when those best-effort steps fail).
+
+The file's **keccak256 is the value to use as the receivable's `detailsCommitment`**: the buyer's EIP-712 signature then covers the exact file, and anyone can download it from `GET /invoices/:keccak256`, hash it and compare with `ReceivableRegistry.get(id).detailsCommitment`. The file goes to `DATA_DIR/invoices/<keccak256>.<ext>`; `{ type: "InvoiceDocumentStored", receivableRef, sha256, keccak256, bytes, mime }` is anchored on HCS (hashes only, never the content); with `HFS_ENABLED=true` the bytes are also stored on the Hedera File Service (`hfsFileId`). `extracted` is what the file prints: PDF text read by a deterministic heuristic for labelled invoices (`Amount Due`, `Due Date`, `Buyer PO Reference`, `Seller`, `Buyer`), or by a local Ollama model when `CASHETH_LLM_PROVIDER=ollama` (or Ollama answers at `OLLAMA_BASE_URL`), the heuristic filling any gap. `verification` is `null` unless `expected` is given. Only the uploading agent can attach the document to a receivable (`NOT_PARTY` otherwise); re-uploading the same file is a no-op. A non-PDF behind `application/pdf`, bad base64 or a file over 2 MB is `BAD_INPUT`.
+
+### `get_invoice_document`
+In: `{ keccak: hex32 }`. Out: the metadata above plus `verification: { storedHashMatches: boolean /* the stored bytes still hash to keccak */, onChain?: { receivableId, registered: boolean, commitment?, matches? } }`; `onChain` appears once a receivable was uploaded with this document. `NOT_FOUND` for an unknown hash.
+
 ### `upload_receivable`
-In: `{ seller?: address (must be the caller), buyer: address, amount: units, dueDate: unix, buyerRef: hex32 | text (hashed), detailsCommitment: hex32 }`
+In: `{ seller?: address (must be the caller), buyer: address, amount: units, dueDate: unix, buyerRef: hex32 | text (hashed), documentKeccak?: hex32, detailsCommitment?: hex32 }`. Give `documentKeccak` (from `upload_invoice_document`) or your own `detailsCommitment`; with a document the commitment is its keccak256 and the document's printed amount, currency, due day (UTC) and buyer reference must equal these terms, else `INVOICE_MISMATCH` (`mismatches[]`, recorded as `ReceivableRejected`) and the stored bytes must still hash to their name. The `ReceivableUploaded` event carries `documentKeccak`.
 Out: `{ pendingId, id, confirmationRequest: { typedData } }`. `typedData` is the EIP-712 `ReceivableConfirmation` (domain `AgentReceivables` v1, chain 296, `verifyingContract` = ReceivableRegistry) with `payTo` = RepaymentRouter, the buyer's current `nonce` and a 24 h `deadline`. **uint fields are decimal strings**: convert `amount`, `dueDate`, `nonce`, `deadline` to bigint before signing. `id = keccak256(abi.encode(buyer, buyerRef))`. An already registered id returns `DUPLICATE_RECEIVABLE`.
 
 ### `confirm_receivable`
 In: `{ pendingId: hex32, signature: 65-byte hex }` (caller must be the buyer)
 Checks, in order: signature recovers the buyer (`BAD_BUYER_SIG`), deadline and 1–120 day tenor (`TERM_INELIGIBLE`), nonce unchanged (`BAD_NONCE`), buyer level ≥ 3 and seller level ≥ 2, both unrevoked and unexpired (`KYA_FAIL`), different owner groups (`SELF_DEALING`), not registered (`DUPLICATE_RECEIVABLE`). Each rejection is recorded as `ReceivableRejected`. Then the credit score (`@casheth/engine` `scoreReceivable`), `register` with the coordinator, the NFT mint (metadata `{id, seq}` with the HCS sequence of `ReceivableConfirmed`).
-Out: `{ id, txHash, hashscan, nftSerial, nftError?, hcsSeq, hcsError?, decision: { approved, score, advanceBps, limit: units, reasons[] } }`. NFT and HCS failures never fail the call (the receivable is already registered); they come back as `nftError` / `hcsError`.
+Out: `{ id, txHash, hashscan, document?: { keccak, verified }, nftSerial, nftError?, hcsSeq, hcsError?, decision: { approved, score, advanceBps, limit: units, reasons[] } }`. NFT and HCS failures never fail the call (the receivable is already registered); they come back as `nftError` / `hcsError`.
 
 ### `get_receivable_status`
-In: `{ id: hex32 }`. Out: the `GET /receivables/:id` object plus `decision` when known. A receivable uploaded but not yet confirmed has `state: "Pending"`.
+In: `{ id: hex32 }`. Out: the `GET /receivables/:id` object (with `document` when there is an invoice file) plus `decision` when known. A receivable uploaded but not yet confirmed has `state: "Pending"`.
 
 ### `get_quotes`
 In: `{ id }` (caller = seller; state must be Confirmed, else `NOT_CONFIRMED`).
@@ -180,7 +191,7 @@ type AuditEvent = {
   v: 1;
   type: "AgentRegistered" | "ReceivableUploaded" | "ReceivableConfirmed" | "ReceivableRejected" | "NftMinted"
       | "StrategyShipped" | "StrategyDocked" | "FacilityFunded" | "BudgetsSet" | "SpendReserved" | "SpendCommitted"
-      | "SpendReleased" | "SpendRejected" | "Repaid" | "Overdue" | "Defaulted" | "Disputed";
+      | "SpendReleased" | "SpendRejected" | "Repaid" | "Overdue" | "Defaulted" | "Disputed" | "InvoiceDocumentStored";
   seq: number;          // 1-based, local
   prevSeq: number;      // seq - 1
   ts: string;           // ISO time
@@ -245,6 +256,9 @@ type LenderYield = {
 
 Stats come from the in-process `BasicStatsProvider` (registry, facility, router and Aqua logs via the mirror node, cached 10 s); Task 6.5 swaps in `packages/stats` behind the same shapes.
 
+### `GET /invoices/:keccak256` → the invoice file
+The stored bytes with their `Content-Type` (`application/pdf` or `text/plain`), `X-Content-Type-Options: nosniff`. No auth: keccak256 the body and compare with the registry's `detailsCommitment` (`scripts/c9-invoice-verify.ts` does this and prints VERIFIED or MISMATCH). `400` for a malformed hash, `404` for an unknown one.
+
 ### `GET /receivables/:id`
 
 ```ts
@@ -258,6 +272,7 @@ type ReceivableDetails = {
   debt: string;       // RepaymentRouter.lenderDue (principal + fee still owed to lenders)
   positions: Array<{ maker: string; principal: string; aprBps: number; fee: string /* paid + currently due */ }>;
   evidence: Array<{ label: string; url: string }>; // HashScan links of every event for this id (tx, HCS message, NFT)
+  document?: { keccak: string; verified: boolean }; // invoice file: verified = registry commitment equals the stored file's keccak256 (false while Pending)
 };
 ```
 
@@ -278,6 +293,7 @@ MCP-side codes (`McpErrorCode` in `apps/mcp-server/src/orchestrator/errors.ts`; 
 | `INSUFFICIENT_SCOPE` | token lacks the tool's scope (`reason: "scope"`) or role (`reason: "role"`); `required`, `requiredRoles` |
 | `NOT_PARTY` | the caller is not the seller / buyer / worker this call is about |
 | `BAD_INPUT` | malformed id, address, amount or URL (`field`) |
+| `INVOICE_MISMATCH` | the invoice document's printed terms differ from the submitted ones (`mismatches`), or its stored bytes no longer match its hash |
 | `NOT_FOUND` | unknown pending id, receivable or strategy |
 | `NOT_DEPLOYED` | `deployments/testnet/addresses.json` lacks a contract the call needs (read at runtime) |
 | `IDEMPOTENCY_KEY_REUSED` | same key, different arguments |
@@ -306,9 +322,12 @@ HTTP-level errors on `/mcp` come from the SDK bearer middleware: `401 { error: "
 | `COORDINATOR_KEY`, `COSIGNER_KEY` | required | coordinator writes; x402 co-signature |
 | `KYA_ISSUER_KEY` | – | `register_agent` |
 | `HCS_AUDIT_TOPIC_ID`, `RECEIVABLE_NFT_TOKEN_ID` | `deployments/testnet/hedera.json` | audit topic, receivable NFT collection (operator key submits and mints) |
-| `DATA_DIR` | `apps/mcp-server/data` | `events.jsonl`, `idempotency.json`, `pending.json` |
+| `DATA_DIR` | `apps/mcp-server/data` | `events.jsonl`, `idempotency.json`, `pending.json`, `invoices/` |
 | `CORS_ORIGINS` | `http://localhost:3000` | read API browser origins |
 | `ANTHROPIC_API_KEY` | – | `explain_decision` via `claude-haiku-5-5` |
+| `HFS_ENABLED` | `false` | also store invoice documents on the Hedera File Service (operator pays; one create plus one append per 4 KB) |
+| `CASHETH_LLM_PROVIDER` | – (probe) | `ollama` forces the local model for invoice field extraction, any other value turns it off; unset uses it only if Ollama answers `GET /api/tags` |
+| `OLLAMA_BASE_URL`, `CASHETH_LLM_MODEL` | `http://localhost:11434`, `qwen2.5:7b` | Ollama OpenAI-compatible endpoint (`/v1/chat/completions`, JSON mode) |
 | `AGENT_KEYS_IN_PROCESS` | `false` | demo: sign as seller/buyer/workers |
 | `LENDER_KEYS_IN_PROCESS` | `false` | demo: sign as lenders |
 | `AQUA_FROM_BLOCK` | swap router creation block | first block for Aqua log discovery |

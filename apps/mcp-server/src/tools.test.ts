@@ -76,7 +76,7 @@ async function signConfirmation(typed: { domain: Record<string, unknown>; messag
 }
 
 describe("tool registry", () => {
-  it("tools/list returns all 17 tools", async () => {
+  it("tools/list returns all 19 tools", async () => {
     const { app, tokens } = await setup();
     const body = await rpc(app, tokens.seller, "tools/list");
     const names = (body.result!.tools as { name: string }[]).map((t) => t.name).sort();
@@ -88,6 +88,7 @@ describe("tool registry", () => {
         "explain_decision",
         "fund_agents",
         "get_agent_stats",
+        "get_invoice_document",
         "get_lender_yield",
         "get_quotes",
         "get_receivable_status",
@@ -98,6 +99,7 @@ describe("tool registry", () => {
         "repay_receivable",
         "reserve_spend",
         "set_budgets",
+        "upload_invoice_document",
         "upload_receivable",
       ].sort(),
     );

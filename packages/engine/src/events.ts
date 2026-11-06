@@ -21,7 +21,8 @@ export type AuditType =
   | "Disputed"
   /** An LLM-driven agent called a tool (`agents/src/llm`): the audit trail of what the model did. */
   | "LlmToolCall"
-  | "LlmRunFinished";
+  | "LlmRunFinished"
+  | "InvoiceDocumentStored";
 
 export type AuditEvent = {
   v: 1;

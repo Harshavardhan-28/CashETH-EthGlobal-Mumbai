@@ -9,6 +9,8 @@ import { computeReceivableId, ReceivableRegistryAbi } from "@casheth/shared";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from "jose";
 import { decodeFunctionData, getAddress, keccak256, toHex, type Address, type Hex } from "viem";
 import { createVerifier } from "../auth.js";
+import { createInvoiceExtractor } from "../invoices/extract.js";
+import { InvoiceStore } from "../invoices/store.js";
 import { ToolError, type ToolErrorCode } from "../orchestrator/errors.js";
 import { PendingStore } from "../orchestrator/pending.js";
 import type { SpendWalletPort } from "../orchestrator/spendWallets.js";
@@ -367,6 +369,8 @@ export function fakeOrchestrator(): TestOrchestrator {
     events: new EventStore(join(dir, "events.jsonl")),
     idempotency: new IdempotencyLedger(join(dir, "idempotency.json")),
     pending: new PendingStore(),
+    invoices: new InvoiceStore(join(dir, "invoices")),
+    extractor: createInvoiceExtractor(),
     config: {
       x402Network: "hedera:testnet",
       usdcTokenId: "0.0.429274",

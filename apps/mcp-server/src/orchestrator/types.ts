@@ -7,6 +7,8 @@ import type { AquaAddresses, CreditArgs, LenderStrategy, Plan, ShipResult, Solve
 import type { EventStore, IdempotencyLedger } from "@casheth/engine";
 import type { X402Result } from "@casheth/hedera";
 import type { Address, Hex } from "viem";
+import type { InvoiceExtractorPort } from "../invoices/extract.js";
+import type { InvoiceStore } from "../invoices/store.js";
 import type { PendingStore } from "./pending.js";
 import type { SpendWalletPort } from "./spendWallets.js";
 
@@ -193,6 +195,11 @@ export interface NftPort {
   mint(p: { id: Hex; hcsSeq: number }): Promise<{ serial: number; txId: string }>;
 }
 
+/** Optional Hedera File Service copy of an invoice document (`HFS_ENABLED=true`). */
+export interface HfsPort {
+  store(bytes: Uint8Array, memo: string): Promise<{ fileId: string; txIds: string[] }>;
+}
+
 export type Explanation = { text: string; source: "anthropic" | "template"; model?: string };
 
 export interface ExplainerPort {
@@ -283,6 +290,11 @@ export interface Orchestrator {
   events: EventStore;
   idempotency: IdempotencyLedger;
   pending: PendingStore;
+  /** Uploaded invoice documents (bytes and metadata on disk). */
+  invoices: InvoiceStore;
+  extractor: InvoiceExtractorPort;
+  /** Present only when HFS storage is enabled. */
+  hfs?: HfsPort;
   config: OrchestratorConfig;
   /** Unix seconds (wall clock; on-chain checks read `chain.latestTimestamp`). */
   now(): bigint;

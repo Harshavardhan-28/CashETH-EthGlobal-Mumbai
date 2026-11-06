@@ -33,6 +33,7 @@ import {
   payX402,
   PrivateKey,
   publishAudit,
+  storeFile,
   type AuditEvent as HcsAuditEvent,
   type DecodedKey,
 } from "@casheth/hedera";
@@ -64,6 +65,8 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { hexKey, type McpConfig } from "./config.js";
+import { createInvoiceExtractor, resolveLlm } from "./invoices/extract.js";
+import { InvoiceStore } from "./invoices/store.js";
 import { ToolError } from "./orchestrator/errors.js";
 import { createAnthropicExplainer } from "./orchestrator/explain.js";
 import { PendingStore } from "./orchestrator/pending.js";
@@ -643,6 +646,8 @@ export async function createLiveOrchestrator(env: Env, cfg: McpConfig): Promise<
   const hiero = hieroClient(env);
   const directory = await demoDirectory(env, keys);
   const log = (message: string, fields: Record<string, unknown> = {}) => console.log(JSON.stringify({ t: new Date().toISOString(), msg: message, ...fields }));
+  const llm = await resolveLlm({ ...(cfg.llmProvider ? { provider: cfg.llmProvider } : {}), baseUrl: cfg.ollamaBaseUrl, model: cfg.llmModel });
+  log("invoice extraction", { extractor: llm ? `ollama (${llm.model})` : "heuristic" });
   return {
     chain,
     aqua,
@@ -675,6 +680,9 @@ export async function createLiveOrchestrator(env: Env, cfg: McpConfig): Promise<
     events,
     idempotency: new IdempotencyLedger(join(cfg.dataDir, "idempotency.json")),
     pending: new PendingStore(join(cfg.dataDir, "pending.json")),
+    invoices: new InvoiceStore(join(cfg.dataDir, "invoices")),
+    extractor: createInvoiceExtractor({ ...(llm ? { llm } : {}), log }),
+    ...(cfg.hfsEnabled ? { hfs: { store: (bytes: Uint8Array, memo: string) => storeFile(hiero, bytes, memo) } } : {}),
     config: { x402Network: cfg.x402Network, usdcTokenId: cfg.usdcTokenId, explorer: "testnet", merchantOrigins: cfg.merchantOrigins },
     now: () => BigInt(Math.floor(Date.now() / 1000)),
     log,

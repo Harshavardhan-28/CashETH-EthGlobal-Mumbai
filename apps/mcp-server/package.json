@@ -27,6 +27,7 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "express": "^5.3.0",
     "jose": "^6.2.15",
+    "pdf-parse": "2.4.5",
     "viem": "^2.57.16",
     "zod": "^4.6.7"
   },

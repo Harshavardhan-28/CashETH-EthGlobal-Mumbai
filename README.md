@@ -275,7 +275,7 @@ undrawn USDC left in the facility goes to the seller agent when the facility clo
 
 ### 4.5 Identity
 
-Every agent has an ECDSA key, a Hedera account, an HCS-14 UAID (published as `AgentRegistered` on the audit topic) and a `KYARegistry` entry (role, level, owner group, mandate hash). The MCP server is an OAuth 2.1 resource server: an agent proves itself to `apps/auth-server` with an ES256K-signed JWT (RFC 7523), the authorization server checks the registry, and issues a short-lived, audience-bound token whose scopes depend on role and level. Tokens are never passed through to other services. Details and all 17 tools: [docs/API.md](docs/API.md).
+Every agent has an ECDSA key, a Hedera account, an HCS-14 UAID (published as `AgentRegistered` on the audit topic) and a `KYARegistry` entry (role, level, owner group, mandate hash). The MCP server is an OAuth 2.1 resource server: an agent proves itself to `apps/auth-server` with an ES256K-signed JWT (RFC 7523), the authorization server checks the registry, and issues a short-lived, audience-bound token whose scopes depend on role and level. Tokens are never passed through to other services. Details and all 19 tools: [docs/API.md](docs/API.md).
 
 ### 4.6 Scheduled lifecycle
 
@@ -335,7 +335,7 @@ Spike S1 evidence that Aqua and SwapVM run on Hedera with real HTS USDC: [ship](
 | `packages/engine` | `@casheth/engine`: credit score, borrowing base, spend policy, co-signer policy, event store, idempotency |
 | `apps/merchant` | Our x402 research API |
 | `apps/auth-server` | OAuth 2.1 authorization server with KYA checks |
-| `apps/mcp-server` | MCP tools (17), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`) |
+| `apps/mcp-server` | MCP tools (19), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`) |
 | `agents/` | `AgentClient` and the seller, buyer, worker, lender and trader agents; Hedera Agent Kit wrapper; demo runner |
 | `scripts/` | Account setup, deploy and wiring drivers (`c2` to `c5`), spikes, sweep, ABI sync |
 | `deployments/testnet/` | Addresses and run records |

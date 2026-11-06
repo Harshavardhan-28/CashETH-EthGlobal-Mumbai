@@ -14,6 +14,7 @@ import { addr } from "./orchestrator/common.js";
 import { ToolError } from "./orchestrator/errors.js";
 import { explainDecision } from "./orchestrator/explain.js";
 import { getQuotes, openFacility, setBudgets } from "./orchestrator/facility.js";
+import { getInvoiceDocument, MAX_DOCUMENT_BASE64_CHARS, uploadInvoiceDocument } from "./orchestrator/invoices.js";
 import { closeStrategy, fundAgents } from "./orchestrator/lender.js";
 import { confirmReceivable, decisionFor, receivableDetails, uploadReceivable } from "./orchestrator/receivables.js";
 import { repayReceivable } from "./orchestrator/repay.js";
@@ -120,7 +121,7 @@ function register<S extends Shape>(server: McpServer, o: Orchestrator, spec: Too
 }
 
 
-/** Registers all 17 tools on `server`. */
+/** Registers all 19 tools on `server`. */
 export function registerTools(server: McpServer, o: Orchestrator): void {
   const add = <S extends Shape>(spec: ToolSpec<S>) => register(server, o, spec);
 
@@ -144,9 +145,47 @@ export function registerTools(server: McpServer, o: Orchestrator): void {
   });
 
   add({
+    name: "upload_invoice_document",
+    description:
+      "Seller: store an invoice document (PDF or plain text, at most 2 MB). Its keccak256 can become the receivable's detailsCommitment (pass it to upload_receivable as documentKeccak). Anchors the hashes on HCS and returns the fields read from the document; give `expected` to also get the field verification.",
+    roles: ["seller"],
+    scope: "receivable:write",
+    mutating: true,
+    input: {
+      receivableRef: z.string().min(1).max(66).describe("The buyer PO reference or receivable id this document belongs to (recorded on HCS)"),
+      filename: z.string().min(1).max(128),
+      mime: z.enum(["application/pdf", "text/plain"]),
+      content: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS).describe("Base64 of the file, at most 2 MB decoded"),
+      expected: z
+        .object({
+          amount,
+          currency: z.string().optional().describe("Default USDC"),
+          dueDate: z.number().int().positive(),
+          buyerRef: z.string().min(1),
+          sellerName: z.string().optional(),
+          buyerName: z.string().optional(),
+        })
+        .optional()
+        .describe("Terms to check the document's printed fields against"),
+    },
+    run: (o, c, a) => uploadInvoiceDocument(o, c, a),
+  });
+
+  add({
+    name: "get_invoice_document",
+    description:
+      "Any role: metadata, extracted fields and integrity checks of a stored invoice document (the stored bytes still hash to keccak; the registry commitment of the receivable uploaded with it). The file itself is GET /invoices/:keccak.",
+    roles: "any",
+    scope: "receivable:read",
+    mutating: false,
+    input: { keccak: hex32.describe("keccak256 of the document") },
+    run: (o, c, a) => getInvoiceDocument(o, c, a),
+  });
+
+  add({
     name: "upload_receivable",
     description:
-      "Seller: upload receivable terms. Returns a pendingId and the EIP-712 ReceivableConfirmation typed data the buyer must sign (uint fields as decimal strings).",
+      "Seller: upload receivable terms. Returns a pendingId and the EIP-712 ReceivableConfirmation typed data the buyer must sign (uint fields as decimal strings). Give documentKeccak (from upload_invoice_document) to commit to the invoice file: its printed amount, due date and buyer reference must match these terms (INVOICE_MISMATCH otherwise).",
     roles: ["seller"],
     scope: "receivable:write",
     mutating: true,
@@ -156,7 +195,8 @@ export function registerTools(server: McpServer, o: Orchestrator): void {
       amount,
       dueDate: z.number().int().positive().describe("Unix seconds, 1 to 120 days out"),
       buyerRef: z.string().min(1).describe("Buyer PO/AP reference: a 32-byte hex, or text that is hashed"),
-      detailsCommitment: hex32.describe("keccak256(invoiceDocHash, salt)"),
+      documentKeccak: hex32.optional().describe("keccak256 of an invoice document stored with upload_invoice_document; becomes the detailsCommitment"),
+      detailsCommitment: hex32.optional().describe("A 32-byte commitment of your own; required when there is no documentKeccak"),
     },
     run: (o, c, a) => uploadReceivable(o, c, a),
   });

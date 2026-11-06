@@ -46,3 +46,4 @@ export { contracts } from "./contracts.js";
 export type { ContractsOptions, CoreContracts, ReadClient, WriteClient } from "./contracts.js";
 export { cheapest, discoverServices, priceUnits } from "./x402/discover.js";
 export type { DiscoveryResult, Service } from "./x402/discover.js";
+export { HFS_CHUNK_BYTES, hfsTransactionCount, storeFile } from "./hfs.js";

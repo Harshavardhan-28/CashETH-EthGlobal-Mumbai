@@ -21,7 +21,8 @@ export type AuditType =
   | "Repaid"
   | "Overdue"
   | "Defaulted"
-  | "Disputed";
+  | "Disputed"
+  | "InvoiceDocumentStored";
 
 /** One HCS audit message: JSON, hashes and ids only, never personal data or keys. */
 export type AuditEvent = {

@@ -16,6 +16,7 @@ import { encodeAbiParameters, encodeFunctionData, isHex, keccak256, recoverTyped
 import { jsonSafe, record } from "./audit.js";
 import { actor, addr, bytes32, bytes32OrHash, sameAddress, STATE, STATE_NAMES, txLink, units, requireParty } from "./common.js";
 import { fail, ToolError, type ToolErrorCode } from "./errors.js";
+import { checkDocumentAgainstTerms, documentOfCommitment } from "./invoices.js";
 import type { PendingReceivable } from "./pending.js";
 import type { Caller, Orchestrator } from "./types.js";
 
@@ -34,8 +35,23 @@ export type UploadInput = {
   amount: string;
   dueDate: number;
   buyerRef: string;
-  detailsCommitment: string;
+  /** Exactly one of `detailsCommitment` and `documentKeccak` is needed (both may be given, when equal). */
+  detailsCommitment?: string;
+  /** keccak256 of a document stored with `upload_invoice_document`; becomes the commitment. */
+  documentKeccak?: string;
 };
+
+/** The commitment is the document's hash when a document is named; otherwise the caller's own 32 bytes. */
+function commitmentOf(input: UploadInput): { detailsCommitment: Hex; documentKeccak?: Hex } {
+  const documentKeccak = input.documentKeccak ? bytes32(input.documentKeccak, "documentKeccak") : undefined;
+  const given = input.detailsCommitment ? bytes32(input.detailsCommitment, "detailsCommitment") : undefined;
+  if (documentKeccak && given && documentKeccak !== given) {
+    fail("BAD_INPUT", "detailsCommitment must equal documentKeccak when both are given", { field: "detailsCommitment" });
+  }
+  const detailsCommitment = documentKeccak ?? given;
+  if (!detailsCommitment) fail("BAD_INPUT", "give documentKeccak (an uploaded invoice document) or detailsCommitment", { field: "documentKeccak" });
+  return { detailsCommitment, ...(documentKeccak ? { documentKeccak } : {}) };
+}
 
 function confirmationOf(p: PendingReceivable): ReceivableConfirmation {
   return {
@@ -65,13 +81,20 @@ export async function uploadReceivable(o: Orchestrator, caller: Caller, input: U
   const amount = units(input.amount, "amount");
   const dueDate = BigInt(input.dueDate);
   const buyerRef = bytes32OrHash(input.buyerRef);
-  const detailsCommitment = bytes32(input.detailsCommitment, "detailsCommitment");
+  const { detailsCommitment, documentKeccak } = commitmentOf(input);
 
   const a = o.chain.addresses();
   const id = computeReceivableId(buyer, buyerRef);
   if ((await o.chain.receivableState(id)) !== STATE.None) {
     await record(o, { type: "ReceivableRejected", id, code: "DUPLICATE_RECEIVABLE", stage: "upload", ...actor(caller) });
     fail("DUPLICATE_RECEIVABLE", "a receivable with this buyer and buyerRef is already registered", { id });
+  }
+  if (documentKeccak) {
+    const check = checkDocumentAgainstTerms(o, seller, documentKeccak, { amount: amount.toString(), dueDate: input.dueDate, buyerRef: input.buyerRef });
+    if (!check.ok) {
+      await record(o, { type: "ReceivableRejected", id, code: "INVOICE_MISMATCH", stage: "upload", documentKeccak, ...actor(caller) });
+      fail("INVOICE_MISMATCH", "the invoice document does not match the submitted terms", { id, mismatches: check.mismatches });
+    }
   }
   const now = o.now();
   const nonce = await o.chain.buyerNonce(buyer);
@@ -91,6 +114,7 @@ export async function uploadReceivable(o: Orchestrator, caller: Caller, input: U
     dueDate: dueDate.toString(),
     buyerRef,
     detailsCommitment,
+    ...(documentKeccak ? { documentKeccak } : {}),
     payTo: a.repaymentRouter,
     nonce: nonce.toString(),
     deadline: (now + CONFIRMATION_TTL_SECONDS).toString(),
@@ -107,6 +131,7 @@ export async function uploadReceivable(o: Orchestrator, caller: Caller, input: U
     buyer,
     amount: pending.amount,
     dueDate: pending.dueDate,
+    ...(documentKeccak ? { documentKeccak } : {}),
     ...actor(caller),
   });
   return { pendingId, id, confirmationRequest: { typedData: jsonSafe(typedDataOf(pending)) } };
@@ -241,10 +266,12 @@ export async function confirmReceivable(o: Orchestrator, caller: Caller, input: 
     }
   }
 
+  const document = documentOfCommitment(o, pending.detailsCommitment);
   return {
     id,
     txHash,
     hashscan: txLink(txHash),
+    ...(document ? { document } : {}),
     nftSerial: nft?.serial ?? null,
     ...(nftError ? { nftError } : {}),
     hcsSeq: hcsSeq ?? null,
@@ -290,6 +317,8 @@ export type ReceivableDetails = {
   debt: string;
   positions: { maker: Address; principal: string; aprBps: number; fee: string }[];
   evidence: { label: string; url: string }[];
+  /** The invoice document behind the receivable: `verified` = the registry commitment equals the stored file's hash. */
+  document?: { keccak: Hex; verified: boolean };
 };
 
 function evidenceFor(o: Orchestrator, id: Hex): { label: string; url: string }[] {
@@ -324,6 +353,8 @@ export async function receivableDetails(o: Orchestrator, rawId: string): Promise
       debt: "0",
       positions: [],
       evidence: evidenceFor(o, id),
+      // Not on the registry yet, so nothing can be verified against it.
+      ...(pending.documentKeccak ? { document: { keccak: pending.documentKeccak, verified: false } } : {}),
     };
   }
   const [info, makers, debt] = await Promise.all([o.chain.facilityInfo(id), o.chain.makers(id), o.chain.lenderDue(id)]);
@@ -333,6 +364,7 @@ export async function receivableDetails(o: Orchestrator, rawId: string): Promise
       return { maker, principal: p.principal.toString(), aprBps: p.aprBps, fee: (p.paidFee + due.fee).toString() };
     }),
   );
+  const document = documentOfCommitment(o, r.detailsCommitment);
   return {
     id,
     state: STATE_NAMES[r.state] ?? `Unknown(${r.state})`,
@@ -344,5 +376,6 @@ export async function receivableDetails(o: Orchestrator, rawId: string): Promise
     debt: debt.toString(),
     positions,
     evidence: evidenceFor(o, id),
+    ...(document ? { document } : {}),
   };
 }
