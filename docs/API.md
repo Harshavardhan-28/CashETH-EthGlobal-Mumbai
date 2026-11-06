@@ -348,6 +348,31 @@ Authorization server (`apps/auth-server`): `AUTH_PORT` (`4020`), `AUTH_ISSUER` (
 | `AGENT_KEYS_IN_PROCESS` | `false` | demo: sign as seller/buyer/workers |
 | `LENDER_KEYS_IN_PROCESS` | `false` | demo: sign as lenders |
 | `AQUA_FROM_BLOCK` | swap router creation block | first block for Aqua log discovery |
-| `MERCHANT_ORIGINS` | `MERCHANT_ACCOUNT_ID=http://localhost:${MERCHANT_PORT:-3003}` | `accountId=origin` pairs, comma-separated: the only origins `pay_x402` fetches |
+| `MERCHANT_ORIGINS` | – | extra `accountId=origin` pairs, comma-separated, on top of the demo merchant (`MERCHANT_ACCOUNT_ID=http://localhost:${MERCHANT_PORT:-3003}`, always admitted): the only origins `pay_x402` fetches, see [External x402 merchants](#external-x402-merchants) |
 
 Contract addresses are read from `deployments/testnet/addresses.json` on every call, never hard-coded.
+
+## 6. External x402 merchants
+
+The worker buys from any x402 merchant through the same reserve → `pay_x402` → commit flow and the same guardrails. The teammate's `casheth-paid-apis/` (a standalone service, not a workspace package) is one: live at `https://casheth-paid-apis-177290233934.asia-southeast1.run.app`, payee `0.0.11333304`, `GET /price-feed` 0.50 USDC, `GET /web-scrape` 1.00, `POST /llm-summary` 2.00 (the worker only buys GET services), and `/premium-data`, which pays a different, rogue payee and is listed only when its `ROGUE_PAY_TO` is set.
+
+**Discovery.** `discoverServices` (`@casheth/hedera`) reads both catalogue shapes into one `Service` (`name`, `path`, `method`, `price`, `priceUnits`, `payTo`, full `url`): ours at `<merchant>/catalog`, and an external merchant's root `GET /` (`services[].path`, `"$0.50"` prices, top-level `network` and `asset`). Pass the root URL of an external merchant as a catalogue URL.
+
+**Configuration** (three places, all explicit; nothing is trusted from a catalogue):
+- MCP server `MERCHANT_ORIGINS=0.0.11333304=https://casheth-paid-apis-177290233934.asia-southeast1.run.app`: the origins `pay_x402` may fetch for a reservation whose merchant is that payee account (the demo merchant stays admitted; several pairs and several origins per payee are fine). A URL on any other origin is `MERCHANT_URL_NOT_ALLOWED` and is never fetched.
+- The seller's `set_budgets` must list the payee's long-zero EVM address (`longZeroEvmAddress("0.0.11333304")`) in the research worker's `merchants`: `checkSpend` rejects any other merchant at `reserve_spend`.
+- Co-signer: nothing to configure. It signs only when the 402's `payTo` equals the reservation's merchant account.
+
+**Buy** (research worker, `maxPerTx` 0.5 USDC; prints the settlement transaction, its HashScan link and the data):
+
+```bash
+pnpm -F @casheth/agents buy -- --service price-feed --receivable <id> \
+  --catalog https://casheth-paid-apis-177290233934.asia-southeast1.run.app/
+```
+
+**Rogue-payee demo.** `--rogue` reserves 0.50 USDC for the trusted payee, then pays `<merchant>/premium-data`, whose 402 names another payee. The co-signer refuses (`COSIGNER_REFUSED`, `reason: "wrong_payee"`), nothing is signed or paid, the refusal is recorded as `SpendRejected` (`stage: "cosigner"`) in `GET /events`, and the command prints it and exits 0 (it exits 2 if the payment were not refused). The rogue payee is not on the budget's allowlist either, so reserving for it directly is `MERCHANT_NOT_ALLOWED` at `reserve_spend`; `--rogue` shows the second line of defence, the co-signer. Needs `ROGUE_PAY_TO` set on the merchant (otherwise `/premium-data` is a 404 and the run fails with `PAYMENT_FAILED` instead).
+
+```bash
+pnpm -F @casheth/agents buy -- --service price-feed --receivable <id> --rogue \
+  --catalog https://casheth-paid-apis-177290233934.asia-southeast1.run.app/
+```

@@ -1,5 +1,5 @@
-/** `list_catalog`: the worker's window onto the merchants' `/catalog`s. Only the configured catalog URLs are fetched, never one the model names. */
-import { discoverServices, longZeroEvmAddress, priceUnits } from "@casheth/hedera";
+/** `list_catalog`: the worker's window onto the merchants' catalogues (ours and external ones). Only the configured catalog URLs are fetched, never one the model names. */
+import { discoverServices, longZeroEvmAddress } from "@casheth/hedera";
 import type { LocalTool } from "./tools.js";
 
 export function catalogTool(catalogUrls: string[], fetchImpl: typeof fetch = fetch): LocalTool {
@@ -18,7 +18,7 @@ export function catalogTool(catalogUrls: string[], fetchImpl: typeof fetch = fet
           name: s.name,
           description: s.description,
           price: s.price,
-          priceUnits: priceUnits(s).toString(),
+          priceUnits: s.priceUnits.toString(),
           merchant: longZeroEvmAddress(s.payTo),
           url: s.url,
           catalog: s.catalog,

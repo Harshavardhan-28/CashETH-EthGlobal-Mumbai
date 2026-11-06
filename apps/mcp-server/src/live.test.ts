@@ -73,13 +73,33 @@ describe("enqueue (per-signer send serialisation)", () => {
 describe("merchantOrigins", () => {
   const env = (extra: Record<string, string>) => ({ MERCHANT_ACCOUNT_ID: "0.0.900", ...extra }) as unknown as Env;
 
-  it("defaults to the demo merchant on MERCHANT_PORT and parses accountId=origin pairs", () => {
+  it("always admits the demo merchant on MERCHANT_PORT, and parses accountId=origin pairs on top of it", () => {
     expect(merchantOrigins(env({ MERCHANT_PORT: "3010" }))).toEqual({ "0.0.900": ["http://localhost:3010"] });
     expect(merchantOrigins(env({ MERCHANT_ORIGINS: "0.0.1=https://a.example/x, 0.0.1=https://b.example,0.0.2=http://localhost:3003" }))).toEqual({
+      "0.0.900": ["http://localhost:3003"],
       "0.0.1": ["https://a.example", "https://b.example"],
       "0.0.2": ["http://localhost:3003"],
     });
     expect(() => merchantOrigins(env({ MERCHANT_ORIGINS: "https://a.example" }))).toThrow(/accountId=origin/);
+  });
+
+  it("admits an external merchant (casheth-paid-apis) beside ours, keyed by its payee account", () => {
+    const origins = merchantOrigins(env({ MERCHANT_ORIGINS: "0.0.11333304=https://casheth-paid-apis-177290233934.asia-southeast1.run.app/" }));
+    expect(origins).toEqual({
+      "0.0.900": ["http://localhost:3003"],
+      "0.0.11333304": ["https://casheth-paid-apis-177290233934.asia-southeast1.run.app"],
+    });
+  });
+
+  it("does not list an origin twice", () => {
+    expect(merchantOrigins(env({ MERCHANT_ORIGINS: "0.0.900=http://localhost:3003,0.0.1=https://a.example,0.0.1=https://a.example/" }))).toEqual({
+      "0.0.900": ["http://localhost:3003"],
+      "0.0.1": ["https://a.example"],
+    });
+  });
+
+  it("rejects a payee that is not an account id", () => {
+    expect(() => merchantOrigins(env({ MERCHANT_ORIGINS: "merchant=https://a.example" }))).toThrow(/account id/);
   });
 });
 

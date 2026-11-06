@@ -1,11 +1,12 @@
 /**
- * Worker agent: buys a service from the cheapest merchant. It discovers the merchants' `/catalog`s, compares prices,
+ * Worker agent: buys a service from the cheapest merchant. It discovers the merchants' catalogues (ours or an external
+ * x402 merchant's, see `discoverServices`), compares prices,
  * then runs the control plane's reserve -> pay -> commit sequence. Any rejection is logged with its error code and
  * ends the purchase: nothing is retried inside `buy`. The idempotency keys are derived from the receivable, the
  * service and the caller's `purchaseId`, so calling `buy` again with the same `purchaseId` replays the stored
  * results instead of paying twice; use a new `purchaseId` for a new purchase.
  */
-import { cheapest, discoverServices, longZeroEvmAddress, priceUnits, type Service } from "@casheth/hedera";
+import { cheapest, discoverServices, longZeroEvmAddress, type Service } from "@casheth/hedera";
 import type { Address, Hex } from "viem";
 import { consoleLog, type Log } from "./log.js";
 import { idempotencyKey, ToolCallError, type ToolCaller } from "./mcpClient.js";
@@ -16,7 +17,7 @@ export interface WorkerOptions {
   worker: Address;
   /** Long-zero EVM address of the worker's 2-of-2 spend wallet. */
   spendWallet: Address;
-  /** Merchant `/catalog` URLs to compare. */
+  /** Merchant catalogue URLs to compare: `<merchant>/catalog` for ours, the root URL of an external merchant. */
   catalogUrls: string[];
   fetch?: typeof fetch;
   log?: Log;
@@ -33,14 +34,20 @@ export interface PurchaseRequest {
   purchaseId: string;
   /** Appended to the service URL (the research topic). */
   query?: string;
+  /**
+   * Pay this URL instead of the service's. The reservation is still made for `service`'s merchant and price, so a URL
+   * whose 402 names another payee is refused by the co-signer (the rogue-payee demo).
+   */
+  payUrl?: string;
 }
 
 export type PurchaseOutcome =
-  | { status: "committed"; spendId: Hex; transactionId: string; price: bigint; merchant: string }
+  /** `body` is what the merchant returned for the payment (the purchased data). */
+  | { status: "committed"; spendId: Hex; transactionId: string; price: bigint; merchant: string; body: unknown }
   /** Nothing was paid: the control plane refused the reservation or the payment. */
   | { status: "rejected"; stage: "reserve" | "pay"; code: string }
   /** The merchant was paid (`transactionId`) but the commit failed (`reason`: error code or message); call `buy` again with the same `purchaseId` to retry the commit. */
-  | { status: "paid_uncommitted"; spendId: Hex; transactionId: string; reason: string };
+  | { status: "paid_uncommitted"; spendId: Hex; transactionId: string; reason: string; body: unknown };
 
 /** A failure after the reservation whose payment status is unknown; `spendId` identifies the reservation to reconcile. */
 export class PurchaseError extends Error {
@@ -54,7 +61,7 @@ export class PurchaseError extends Error {
 }
 
 type Reserved = { spendId: Hex };
-type Paid = { transactionId?: string };
+type Paid = { transactionId?: string; body?: unknown };
 type Attempt<T> = { ok: true; value: T } | { ok: false; code: string };
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -80,9 +87,11 @@ export function createWorkerAgent({ client, worker, spendWallet, catalogUrls, fe
   }
 
   return {
-    async buy({ id, service, budgetHint, purchaseId, query = "" }: PurchaseRequest): Promise<PurchaseOutcome> {
+    async buy({ id, service, budgetHint, purchaseId, query = "", payUrl }: PurchaseRequest): Promise<PurchaseOutcome> {
       const offer = await pickOffer(catalogUrls, service, fetchImpl);
-      const price = priceUnits(offer);
+      // `pay_x402` fetches with GET only: refuse before reserving anything.
+      if (offer.method !== "GET") throw new Error(`"${service}" is a ${offer.method} service; the worker can only buy GET services`);
+      const price = offer.priceUnits;
       log("cheapest offer", { service, price: offer.price, payTo: offer.payTo, catalog: offer.catalog });
       if (price > budgetHint) log("price is above the budget hint; the control plane decides", { price, budgetHint });
 
@@ -101,12 +110,12 @@ export function createWorkerAgent({ client, worker, spendWallet, catalogUrls, fe
       const { spendId } = reserved.value;
 
       const paid = await attempt("pay", () =>
-        client.call<Paid>("pay_x402", { spendId, url: `${offer.url}${encodeURIComponent(query)}`, idempotencyKey: key("pay") }),
+        client.call<Paid>("pay_x402", { spendId, url: payUrl ?? `${offer.url}${encodeURIComponent(query)}`, idempotencyKey: key("pay") }),
       ).catch((error: unknown) => {
         throw new PurchaseError(spendId, error);
       });
       if (!paid.ok) return { status: "rejected", stage: "pay", code: paid.code };
-      const { transactionId } = paid.value;
+      const { transactionId, body } = paid.value;
       if (!transactionId) throw new PurchaseError(spendId, new Error("payment settled with no transaction id"));
 
       const committed = await attempt("commit", () =>
@@ -115,10 +124,10 @@ export function createWorkerAgent({ client, worker, spendWallet, catalogUrls, fe
         log("commit failed after payment", { spendId, transactionId, reason: messageOf(error) });
         return { ok: false, code: messageOf(error) };
       });
-      if (!committed.ok) return { status: "paid_uncommitted", spendId, transactionId, reason: committed.code };
+      if (!committed.ok) return { status: "paid_uncommitted", spendId, transactionId, reason: committed.code, body };
 
       log("purchase committed", { spendId, transactionId });
-      return { status: "committed", spendId, transactionId, price, merchant: offer.payTo };
+      return { status: "committed", spendId, transactionId, price, merchant: offer.payTo, body };
     },
   };
 }

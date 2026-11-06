@@ -210,6 +210,66 @@ describe("workerAgent.buy", () => {
   });
 });
 
+describe("workerAgent.buy from an external x402 merchant (casheth-paid-apis)", () => {
+  const PAID_APIS = "https://paid.example.run.app/";
+  const PAYEE = "0.0.11333304";
+  const paidApis = {
+    network: "hedera:testnet",
+    asset: { id: "0.0.429274", symbol: "USDC", decimals: 6 },
+    services: [
+      { method: "GET", path: "/price-feed", price: "$0.50", payTo: PAYEE, example: "/price-feed?symbols=HBAR,ETH,BTC" },
+      { method: "POST", path: "/llm-summary", price: "$2.00", payTo: PAYEE, example: 'POST /llm-summary {"text": "..."}' },
+      { method: "GET", path: "/premium-data", price: "$5.00", payTo: "0.0.6666", example: "/premium-data" },
+    ],
+  };
+  const fetchPaidApis: typeof fetch = async (input) =>
+    String(input) === PAID_APIS ? Response.json(paidApis) : new Response("not found", { status: 404 });
+
+  function externalSetup(responses: Record<string, unknown | Error>) {
+    const calls: { tool: string; args: Record<string, unknown> }[] = [];
+    const client: ToolCaller = {
+      call: async (tool, args) => {
+        calls.push({ tool, args });
+        const response = responses[tool];
+        if (response instanceof Error) throw response;
+        return response as never;
+      },
+    };
+    const agent = createWorkerAgent({ client, worker, spendWallet, catalogUrls: [PAID_APIS], fetch: fetchPaidApis, log: () => undefined });
+    return { agent, calls };
+  }
+
+  const paid = { reserve_spend: reserved, pay_x402: { spendId: SPEND_ID, transactionId: TX_ID, status: 200, body: {} }, commit_spend: {} };
+  const request = { id: facilityId, service: "price-feed", budgetHint: 500_000n, purchaseId: "p-1" };
+
+  it("reserves 0.50 USDC for the merchant's payee and pays /price-feed?symbols=HBAR", async () => {
+    const { agent, calls } = externalSetup(paid);
+    const outcome = await agent.buy({ ...request, query: "HBAR" });
+    expect(calls.map((c) => c.tool)).toEqual(["reserve_spend", "pay_x402", "commit_spend"]);
+    expect(calls[0]!.args).toMatchObject({ merchant: longZeroEvmAddress(PAYEE), amount: "500000" });
+    expect(calls[1]!.args).toMatchObject({ url: "https://paid.example.run.app/price-feed?symbols=HBAR" });
+    expect(outcome).toMatchObject({ status: "committed", price: 500_000n, merchant: PAYEE });
+  });
+
+  it("refuses a POST service before reserving anything: pay_x402 only fetches with GET", async () => {
+    const { agent, calls } = externalSetup(paid);
+    await expect(agent.buy({ ...request, service: "llm-summary" })).rejects.toThrow(/POST/);
+    expect(calls).toEqual([]);
+  });
+
+  it("payUrl: reserves for the service but pays another URL, and the co-signer's refusal ends the purchase", async () => {
+    const { agent, calls } = externalSetup({
+      reserve_spend: reserved,
+      pay_x402: new ToolCallError("pay_x402", { code: "COSIGNER_REFUSED", reason: "wrong_payee" }),
+    });
+    const outcome = await agent.buy({ ...request, payUrl: "https://paid.example.run.app/premium-data" });
+    expect(calls[0]!.args).toMatchObject({ merchant: longZeroEvmAddress(PAYEE), amount: "500000" });
+    expect(calls[1]!.args).toMatchObject({ url: "https://paid.example.run.app/premium-data" });
+    expect(calls.map((c) => c.tool)).toEqual(["reserve_spend", "pay_x402"]);
+    expect(outcome).toEqual({ status: "rejected", stage: "pay", code: "COSIGNER_REFUSED" });
+  });
+});
+
 describe("worker against the real auth and MCP servers", () => {
   let stack: Stack;
   beforeAll(async () => {

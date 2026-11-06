@@ -65,16 +65,23 @@ export function caip2Network(value: string): string {
 }
 
 /**
- * `MERCHANT_ORIGINS` = comma-separated `accountId=origin` pairs (e.g. `0.0.123=http://localhost:3003`); default:
- * the demo merchant (`MERCHANT_ACCOUNT_ID`) at `http://localhost:${MERCHANT_PORT ?? 3003}`.
+ * The origins `pay_x402` may fetch, per merchant payee account. The demo merchant (`MERCHANT_ACCOUNT_ID`) at
+ * `http://localhost:${MERCHANT_PORT ?? 3003}` is always admitted; `MERCHANT_ORIGINS` adds external merchants as
+ * comma-separated `accountId=origin` pairs (e.g. `0.0.11333304=https://paid-apis.example`), the account being the
+ * `payTo` the merchant's 402 names. A payee still has to be on the worker's on-chain budget allowlist to be paid.
  */
 export function merchantOrigins(env: Env): Record<string, string[]> {
-  const spec = opt(env, "MERCHANT_ORIGINS") ?? `${env.MERCHANT_ACCOUNT_ID}=http://localhost:${opt(env, "MERCHANT_PORT") ?? 3003}`;
   const out: Record<string, string[]> = {};
-  for (const pair of spec.split(",").map((p) => p.trim()).filter(Boolean)) {
-    const [accountId, origin] = pair.split("=");
+  const admit = (accountId: string, origin: string) => {
+    const known = (out[accountId] ??= []);
+    if (!known.includes(origin)) known.push(origin);
+  };
+  admit(env.MERCHANT_ACCOUNT_ID, `http://localhost:${opt(env, "MERCHANT_PORT") ?? 3003}`);
+  for (const pair of (opt(env, "MERCHANT_ORIGINS") ?? "").split(",").map((p) => p.trim()).filter(Boolean)) {
+    const [accountId, origin] = pair.split("=").map((part) => part.trim());
     if (!accountId || !origin) throw new Error(`MERCHANT_ORIGINS entry "${pair}" must be accountId=origin`);
-    (out[accountId.trim()] ??= []).push(new URL(origin.trim()).origin);
+    if (!/^\d+\.\d+\.\d+$/.test(accountId)) throw new Error(`MERCHANT_ORIGINS entry "${pair}": "${accountId}" is not a Hedera account id (0.0.x)`);
+    admit(accountId, new URL(origin).origin);
   }
   return out;
 }

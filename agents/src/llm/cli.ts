@@ -2,12 +2,12 @@
  * `pnpm -F @casheth/agents llm -- --role worker --receivable <id> --goal "..."`
  * Runs one LLM-driven agent against the MCP server as a demo account (`<ACCOUNT>_KEY` / `_UAID` / `_EVM` in `.env.accounts`).
  */
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { EventStore } from "@casheth/engine";
 import { longZeroEvmAddress } from "@casheth/hedera";
-import { keccak256, parseUnits, toHex, type Address, type Hex } from "viem";
+import { parseUnits, type Address, type Hex } from "viem";
+import { mandateHashFor, spendWalletOf } from "../demoAccount.js";
 import { AgentClient } from "../mcpClient.js";
 import { LlmAgent, type LlmToolClient } from "./agent.js";
 import { eventStoreSink } from "./audit.js";
@@ -52,24 +52,6 @@ env: CASHETH_LLM_PROVIDER (ollama|anthropic), CASHETH_LLM_MODEL, OLLAMA_BASE_URL
 const DEFAULT_ACCOUNT: Record<LlmRole, string> = { worker: "WORKER_RESEARCH", seller: "SELLER", lender: "LENDER_A" };
 /** A read-only tool each role can call on its own, used by `--dry-run`. */
 const DRY_RUN_TOOL: Record<LlmRole, string> = { worker: "list_catalog", seller: "list_agents", lender: "list_agents" };
-
-const repoFile = (path: string) => new URL(`../../../${path}`, import.meta.url);
-
-/** `WORKER_RESEARCH` -> the mandate hash `scripts/c2-register-demo.ts` registered for `workerResearch`. */
-function mandateHashFor(account: string): Hex {
-  const label = account.toLowerCase().replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-  return keccak256(toHex(`mandate-v1-${label}`));
-}
-
-/** Long-zero EVM address of the worker's 2-of-2 spend wallet, from `deployments/testnet/spend-wallets.json`. */
-function spendWalletOf(account: string): Address {
-  const { wallets } = JSON.parse(readFileSync(repoFile("deployments/testnet/spend-wallets.json"), "utf8")) as {
-    wallets: Record<string, { evmAddress: Address; worker: { name: string } }>;
-  };
-  const wallet = Object.values(wallets).find((w) => w.worker.name === account);
-  if (!wallet) throw new Error(`no spend wallet registered for ${account} in deployments/testnet/spend-wallets.json`);
-  return wallet.evmAddress;
-}
 
 function dryRunModel(role: LlmRole): ChatModel {
   return scriptedModel(

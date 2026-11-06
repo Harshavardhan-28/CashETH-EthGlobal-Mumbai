@@ -15,6 +15,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "llm": "tsx src/llm/bin.ts",
+    "buy": "tsx src/buyBin.ts",
     "trader": "tsx src/traderCli.ts"
   },
   "dependencies": {
