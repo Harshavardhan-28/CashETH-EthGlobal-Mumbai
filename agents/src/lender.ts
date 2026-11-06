@@ -5,7 +5,7 @@
  */
 import type { Tier } from "@casheth/aqua";
 import type { Address, Hex } from "viem";
-import { freshKey, type ToolCaller } from "./mcpClient.js";
+import { idempotencyKey, type ToolCaller } from "./mcpClient.js";
 import { sendInOrder, type CallSender, type Calldata } from "./sendCalls.js";
 
 export interface ShipParams {
@@ -17,8 +17,19 @@ export interface ShipParams {
   /** Base-yield strategy amounts; give both or neither. */
   baseUsdc?: bigint;
   baseTusdt?: bigint;
-  /** Repeat the same key to retry a ship safely; the default is a fresh key. */
+  /**
+   * The default idempotency key is derived from the strategy (tier, amounts, seller set) and this attempt id
+   * (default "1"), so retrying a ship replays the first result; use a new attempt to ship an identical strategy again.
+   */
+  attempt?: string;
+  /** Overrides the derived key. */
   idempotencyKey?: string;
+}
+
+/** Same strategy parameters and attempt, same key. */
+function shipKey(p: ShipParams): string {
+  const sellers = (p.sellerSet ?? []).map((s) => s.toLowerCase()).sort().join(",");
+  return idempotencyKey("fund", p.tier, p.creditUsdc.toString(), sellers, String(p.baseUsdc ?? ""), String(p.baseTusdt ?? ""), p.attempt ?? "1");
 }
 
 type Strategies = { credit: Hex; base?: Hex };
@@ -35,7 +46,7 @@ function fundArguments(p: ShipParams): Record<string, unknown> {
     creditUsdc: p.creditUsdc.toString(),
     ...(p.sellerSet?.length ? { sellerSet: p.sellerSet } : {}),
     ...(p.baseUsdc !== undefined && p.baseTusdt !== undefined ? { base: { usdc: p.baseUsdc.toString(), tUsdt: p.baseTusdt.toString() } } : {}),
-    idempotencyKey: p.idempotencyKey ?? freshKey("fund"),
+    idempotencyKey: p.idempotencyKey ?? shipKey(p),
   };
 }
 

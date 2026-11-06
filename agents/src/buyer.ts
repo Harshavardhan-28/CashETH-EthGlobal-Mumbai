@@ -1,7 +1,7 @@
 /** Buyer agent: confirms an uploaded receivable with its own EIP-712 signature and repays financed ones. */
 import { receivableDomain, signReceivableConfirmation, type ReceivableConfirmation } from "@casheth/shared";
 import { getAddress, type Hex, type LocalAccount } from "viem";
-import { freshKey, idempotencyKey, type ToolCaller } from "./mcpClient.js";
+import { idempotencyKey, type ToolCaller } from "./mcpClient.js";
 import type { UploadResult, WireTypedData } from "./seller.js";
 import { sendInOrder, type CallSender, type Calldata } from "./sendCalls.js";
 
@@ -44,9 +44,14 @@ export function createBuyerAgent({ client, account, send }: BuyerOptions) {
       return client.call("confirm_receivable", { pendingId, signature, idempotencyKey: idempotencyKey("confirm", pendingId) });
     },
 
-    /** `repay_receivable`: the exact-amount approval and the repayment, sent from the buyer's wallet in order. */
-    async repay(id: Hex, amount: bigint): Promise<Sent> {
-      const result = await client.call<RepayResult>("repay_receivable", { id, amount: amount.toString(), idempotencyKey: freshKey("repay") });
+    /**
+     * `repay_receivable`: the exact-amount approval and the repayment, sent from the buyer's wallet in order. The
+     * idempotency key comes from (id, amount, attempt), so retrying after a timeout replays the first repayment
+     * instead of paying again; pass a new `attempt` only for a deliberate further payment of the same amount.
+     */
+    async repay(id: Hex, amount: bigint, { attempt = "1" }: { attempt?: string } = {}): Promise<Sent> {
+      const key = idempotencyKey("repay", id.toLowerCase(), amount.toString(), attempt);
+      const result = await client.call<RepayResult>("repay_receivable", { id, amount: amount.toString(), idempotencyKey: key });
       if (result.mode !== "calldata") return result;
       return { id, mode: "sent", txHashes: await sendInOrder(send, result.calls) };
     },

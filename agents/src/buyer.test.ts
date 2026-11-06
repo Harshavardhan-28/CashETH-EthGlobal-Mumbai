@@ -120,6 +120,18 @@ describe("buyer repay", () => {
     expect(await buyer.repay(id, 5_000_000n)).toEqual(sentResult);
   });
 
+  it("derives the idempotency key from the receivable and amount, so a retried repay replays instead of paying twice", async () => {
+    const { client, calledWith } = fakeClient({ id, mode: "sent", txHash: "0xab" });
+    const buyer = createBuyerAgent({ client, account });
+    await buyer.repay(id, 5_000_000n);
+    await buyer.repay(id, 5_000_000n);
+    await buyer.repay(id, 4_000_000n);
+    await buyer.repay(id, 5_000_000n, { attempt: "second-instalment" });
+    const keys = calledWith.map((c) => c.args.idempotencyKey);
+    expect(keys[0]).toBe(keys[1]);
+    expect(new Set(keys).size).toBe(3);
+  });
+
   it("cannot sign calldata without a sender", async () => {
     const buyer = createBuyerAgent({ client: fakeClient({ id, mode: "calldata", calls }).client, account });
     await expect(buyer.repay(id, 5_000_000n)).rejects.toThrow(/no call sender/);

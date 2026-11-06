@@ -62,7 +62,7 @@ export function idempotencyKey(scope: string, ...parts: string[]): string {
   return `${scope}:${keccak256(toHex(parts.join("|"))).slice(2, 34)}`;
 }
 
-/** Key for one attempt of an operation that may legitimately repeat with the same arguments (a purchase, a repayment). */
+/** A key that never replays: only for a call that must run again with the same arguments (prefer `idempotencyKey`). */
 export function freshKey(scope: string): string {
   return `${scope}:${randomUUID()}`;
 }

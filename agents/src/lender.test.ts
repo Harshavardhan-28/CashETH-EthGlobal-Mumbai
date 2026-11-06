@@ -35,6 +35,22 @@ describe("lenderAgent.ship", () => {
     expect(calls[0]!.args.idempotencyKey).toEqual(expect.any(String));
   });
 
+  it("derives the idempotency key from the strategy it ships, so a retried ship replays instead of shipping twice", async () => {
+    const { agent, calls } = setup({ mode: "shipped", tier: "low", aprBps: 700, credit: { strategyHash: strategies.credit } });
+    await agent.ship({ tier: "low", creditUsdc: 1_000_000n });
+    await agent.ship({ tier: "low", creditUsdc: 1_000_000n });
+    await agent.ship({ tier: "low", creditUsdc: 2_000_000n });
+    await agent.ship({ tier: "medium", creditUsdc: 1_000_000n });
+    await agent.ship({ tier: "low", creditUsdc: 1_000_000n, sellerSet: [seller] });
+    await agent.ship({ tier: "low", creditUsdc: 1_000_000n, baseUsdc: 1n, baseTusdt: 1n });
+    await agent.ship({ tier: "low", creditUsdc: 1_000_000n, attempt: "second-strategy" });
+    await agent.ship({ tier: "low", creditUsdc: 1_000_000n, idempotencyKey: "explicit-key-1" });
+    const keys = calls.map((c) => c.args.idempotencyKey);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[7]).toBe("explicit-key-1");
+    expect(new Set(keys).size).toBe(7);
+  });
+
   it("omits the base strategy and the seller set when not asked for", async () => {
     const { agent, calls } = setup({ mode: "shipped", tier: "low", aprBps: 700, credit: { strategyHash: strategies.credit } });
     await agent.ship({ tier: "low", creditUsdc: 1_000_000n });
