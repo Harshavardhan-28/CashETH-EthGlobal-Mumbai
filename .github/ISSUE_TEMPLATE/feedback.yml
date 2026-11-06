@@ -1,0 +1,67 @@
+name: Try CashETH and give feedback
+description: Ran the demo or read the docs? Tell us what worked and what did not.
+title: "[Feedback] "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying CashETH. The quickest path is the Claude Code seller (`docs/CLAUDE_CODE_DEMO.md`) or `pnpm demo` (`docs/DEMO.md`). Five minutes of answers is plenty.
+  - type: dropdown
+    id: role
+    attributes:
+      label: Which best describes you?
+      options:
+        - AI agent developer
+        - x402 / API seller
+        - DeFi lender or LP
+        - Invoice finance or lending professional
+        - Hedera developer
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: tried
+    attributes:
+      label: What did you try?
+      multiple: true
+      options:
+        - Claude Code seller (/casheth-demo)
+        - pnpm demo
+        - Read the README and docs only
+        - Looked at the contracts
+        - Browsed the landing page
+    validations:
+      required: true
+  - type: dropdown
+    id: completed
+    attributes:
+      label: Did you get through the whole flow (credit raised, request paid, loan settled)?
+      options:
+        - "Yes"
+        - Partly
+        - "No"
+        - Did not run it
+  - type: textarea
+    id: stuck
+    attributes:
+      label: Where did you get stuck or confused?
+  - type: dropdown
+    id: would-use
+    attributes:
+      label: Would you use this for a real agent or a real lending position?
+      options:
+        - "Yes, now"
+        - Yes, after the hardening on the roadmap
+        - Maybe
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What would make you say yes (or why not)?
+  - type: input
+    id: contact
+    attributes:
+      label: Optional contact for a follow-up (handle or email)

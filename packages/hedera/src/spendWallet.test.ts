@@ -125,7 +125,8 @@ describe("decodeMirrorKey (offline)", () => {
   });
 });
 
-describe("spend wallets (live testnet)", () => {
+// Live testnet suites run only with `LIVE=1` (they need .env): LIVE=1 pnpm -F @casheth/hedera test
+describe.skipIf(!process.env.LIVE)("spend wallets (live testnet)", () => {
   it("spend wallet has a 2-of-2 key list on the mirror node", async (ctx) => {
     const env = loadEnv();
     const walletId = env.SPEND_WALLET_RESEARCH_ID as string | undefined;

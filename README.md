@@ -4,6 +4,10 @@
 
 Built for ETHGlobal Mumbai. Targets: Hedera "AI Agents That Pay (x402)" and 1inch "Build an Aqua App".
 
+**Why it matters.** Selling on credit means waiting to be paid, and invoice finance (€4,039 billion of factoring turnover in 2025, [FCI](https://fci.nl/en/news/fci-releases-2025-world-industry-statistics-global-factoring-market-surpasses-eu4-trillion)) still leaves a US$5.7 trillion MSME finance gap in emerging markets ([IFC / SME Finance Forum](https://www.smefinanceforum.org/news/11526737)). AI agents now sell to each other and pay per request over x402, and an agent that has invoiced but not been paid has the same cash gap with no bank to lend to it. CashETH is that lender, with the rules enforced on Hedera. Business model, go-to-market and roadmap: [docs/BUSINESS.md](docs/BUSINESS.md). Network impact: [section 7.1](#71-network-impact).
+
+**Tried it?** [Tell us what worked and what did not](https://github.com/Harshavardhan-28/CashETH-EthGlobal-Mumbai/issues/new?template=feedback.yml). Responses are logged in [docs/FEEDBACK.md](docs/FEEDBACK.md).
+
 Powered by Aqua — © Degensoft Ltd 2025
 
 ![CashETH architecture](diagrams/architecture-hedera.png)
@@ -16,12 +20,12 @@ Powered by Aqua — © Degensoft Ltd 2025
 4. [How it works](#4-how-it-works)
 5. [The modified SwapVM](#5-the-modified-swapvm)
 6. [Repository layout and how to run](#6-repository-layout-and-how-to-run)
-7. [Evidence index](#7-evidence-index)
+7. [Evidence index](#7-evidence-index) and [network impact](#71-network-impact)
 8. [Known limitations and rulings](#8-known-limitations-and-rulings)
 9. [Next steps](#9-next-steps)
 10. [Attribution and licenses](#10-attribution-and-licenses)
 
-Related documents: [docs/EVIDENCE.md](docs/EVIDENCE.md) (every transaction), [docs/API.md](docs/API.md) (MCP tools and read API), [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md), [BUILD.md](BUILD.md) (design spec), [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md).
+Related documents: [docs/EVIDENCE.md](docs/EVIDENCE.md) (every transaction), [docs/API.md](docs/API.md) (MCP tools and read API), [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md), [docs/PITCH.md](docs/PITCH.md) (pitch outline), [docs/BUSINESS.md](docs/BUSINESS.md) (business model, GTM, roadmap), [docs/NETWORK_IMPACT.md](docs/NETWORK_IMPACT.md), [docs/FEEDBACK.md](docs/FEEDBACK.md), [BUILD.md](BUILD.md) (design spec), [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md).
 
 ## 1. The eight-step flow
 
@@ -467,7 +471,9 @@ pnpm demo                                    # drives the eight steps, the dupli
 
 `pnpm demo` (root script; walkthrough in `docs/DEMO.md` on the demo branch) starts and stops the servers itself (or expects them with `DEMO_SERVERS=external`), drives the eight steps plus the duplicate and the two rejections through the MCP tools, prints a HashScan link for each step, appends the run to [docs/EVIDENCE.md](docs/EVIDENCE.md) under a dated "Demo run" heading, and exits non-zero if a step has no Hedera transaction id. For a demo run the MCP server may sign for the demo agents (`AGENT_KEYS_IN_PROCESS=true`, `LENDER_KEYS_IN_PROCESS=true`); in normal operation agents sign their own transactions and the server returns calldata.
 
-The agent-driven run on PO-1003 (registered from the invoice PDF, section 4.7) is being recorded: its funding and repayment transaction ids are appended by the demo runner to the "Demo run" section of EVIDENCE.md. The funding, x402 and spend evidence above comes from the PO-1002 run.
+The agent-driven run on PO-1003 (registered from the invoice PDF, section 4.7) is recorded in the "Demo run 2026-11-07" section of EVIDENCE.md up to the spend reservation: upload, registration, NFT, funding, budgets and reserve. Hashio relay errors stopped it before the x402 payment and repayment. The x402 payment, commit and rejections above come from the PO-1002 run.
+
+The full lifecycle on the current stack was then recorded by the Claude Code seller agent (receivable `0xd8fc1ccb…a4ee`, PO-CC-11062242, 1.20 USDC, run through the `casheth-seller` MCP server): buyer confirmation [`0x5fba…efcc0`](https://hashscan.io/testnet/transaction/0x5fba58891b62c8fbbf13e0aae18e5b7be09231ca439d16c8ea01ee8b2a8efcc0), funding 0.50 USDC from lender C [`0xd04b…04df`](https://hashscan.io/testnet/transaction/0xd04beb759bdf890a4968be001705b71fca9e1950cc20be9d9b1d9ed38efc04df), spend reserve [`0xc1c0…47c7`](https://hashscan.io/testnet/transaction/0xc1c085bf9d28081fe334594f7b4b1933548ac414ed904d4b599199301b1147c7), x402 settlement [0.0.9185802@1794005127.517122456](https://hashscan.io/testnet/transaction/0.0.9185802@1794005127.517122456), commit [`0x2400…d3fe`](https://hashscan.io/testnet/transaction/0x2400cbe4a4e9c716d7ca84b95b93a02c01f334e05c995506635b1cde7c2cd3fe) and repayment through `RepaymentRouter` [`0x21e9…c92c`](https://hashscan.io/testnet/transaction/0x21e99be537f5673a192c6be9236aa533c699825dd4c223d161cdaab50d03c92c).
 
 ### Read API latency
 
@@ -481,13 +487,18 @@ Measured against testnet after warm-up: `/agents` and `/lenders` answer in under
 
 ### Frontend
 
-`frontend/` is a Next.js app (landing, docs, `/admin` console, public `/dashboard`); setup is in [frontend/README.md](frontend/README.md). It consumes the read API (types in [docs/API.md](docs/API.md)); the MCP server allows its origin through `CORS_ORIGINS`.
+`frontend/` is a standalone Next.js app (npm, not part of the pnpm workspace): the landing page, the docs page, a public `/dashboard` that follows one agent (live mirror-node balances, its MCP activity log with HashScan proofs, and seller, buyer, lender and worker views; see [frontend/README.md](frontend/README.md)), and an admin console. Both read the read API (`GET /health`, `/events`, `/agents`, `/lenders`, `/receivables/:id`; types in [docs/API.md](docs/API.md)). Point it at the MCP server with `NEXT_PUBLIC_API_URL` (default `http://localhost:4030`); the server allows the frontend's origin through `CORS_ORIGINS`.
 
 ```
-cd frontend && pnpm install && pnpm dev       # http://localhost:3000, NEXT_PUBLIC_API_URL defaults to http://localhost:4030
+cd frontend && npm ci && npm run dev        # http://localhost:3000
+npm test && npm run lint && npm run build
 ```
 
 The admin console and dashboard poll `/health` + `/events` every 3 s and the slower `/agents` + `/lenders` every 10 s in a separate loop, so the activity appears as soon as the server answers. The last live data is kept in the browser's localStorage and painted immediately on reload while the server is asked again.
+
+### Continuous integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to `main` and every pull request: the TypeScript build, type check and tests; `forge build --sizes`, `forge test` and the Aqua anvil tests; and the frontend lint, tests and build.
 
 ## 7. Evidence index
 
@@ -500,7 +511,8 @@ Everything is recorded in [docs/EVIDENCE.md](docs/EVIDENCE.md) and the run recor
 | Spend rejections and release | [section 2](#2-prize-tracks) table; EVIDENCE.md "C5 spend (x402)" |
 | Measured base yield, scripted volume (lender A, 4 swaps) | [section 4.2](#42-funding-through-aqua-shared-liquidity); `deployments/testnet/trades.json` |
 | Receivable registered from an invoice PDF (PO-1003) | [0.0.7314364@1793989261.174955397](https://hashscan.io/testnet/transaction/0.0.7314364@1793989261.174955397) |
-| Agent-driven end-to-end run (funding, repayment) | EVIDENCE.md "Demo run" section (appended by the demo runner, being recorded) |
+| Agent-driven run on PO-1003 (upload to spend reservation; stopped by relay errors before payment and repayment) | EVIDENCE.md "Demo run 2026-11-07" section |
+| Full lifecycle by the Claude Code seller agent (PO-CC-11062242: confirm, fund, x402 spend, repay) | [funding](https://hashscan.io/testnet/transaction/0xd04beb759bdf890a4968be001705b71fca9e1950cc20be9d9b1d9ed38efc04df), [x402](https://hashscan.io/testnet/transaction/0.0.9185802@1794005127.517122456), [repayment](https://hashscan.io/testnet/transaction/0x21e99be537f5673a192c6be9236aa533c699825dd4c223d161cdaab50d03c92c) |
 | x402 mechanism, single-key and 2-of-2 settlements | [A](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214), [B](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) |
 | 2-of-2 spend wallets (threshold key read back from the mirror node) | [research](https://hashscan.io/testnet/account/0.0.11339484), [compute](https://hashscan.io/testnet/account/0.0.11339486) |
 | Scheduled lifecycle: network-executed schedule and a deleted one | [executed](https://hashscan.io/testnet/schedule/0.0.11338268), [deleted](https://hashscan.io/testnet/schedule/0.0.11338283) |
@@ -512,6 +524,18 @@ Everything is recorded in [docs/EVIDENCE.md](docs/EVIDENCE.md) and the run recor
 | Contract sizes | `forge build --sizes`; router 23,759 B ([section 5](#5-the-modified-swapvm)) |
 | HCS audit topic and NFT collection | [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927), [0.0.11338934](https://hashscan.io/testnet/token/0.0.11338934) |
 
+
+### 7.1 Network impact
+
+Counted from the orchestrator's code paths and the recorded transactions ([docs/NETWORK_IMPACT.md](docs/NETWORK_IMPACT.md)):
+
+| Unit | Hedera transactions | New accounts |
+| --- | --- | --- |
+| One receivable, from upload to repayment | 13 (7 HCS, 1 HTS NFT mint, 5 contract calls), plus HTS and schedule child records | |
+| Each paid request a worker makes with the credit | 5 (reserve, x402 settlement, commit, and 2 HCS) | |
+| One seller with 2 workers | | 5 (seller, 2 workers, 2 co-signed spend wallets) |
+
+An illustrative 100 sellers, each financing 4 receivables a month that each pay for 50 requests, is about 105,000 Hedera transactions a month, nearly all of them agent-to-agent payments and their audit messages. That is an assumption-driven example, not traction.
 
 ## 8. Known limitations and rulings
 
@@ -548,6 +572,8 @@ Honest limits of a hackathon build on testnet. The contract-level ones (rulings 
 - **Out of scope:** production KYC, fiat rails, governance, liquidations.
 
 ## 9. Next steps
+
+The phased roadmap (hardening, pilot, scale) and the go-to-market plan are in [docs/BUSINESS.md](docs/BUSINESS.md).
 
 - **Sybil resistance.** Replace the KYA allowlist with real identity and owner-separation proofs.
 - **Cross-registry reputation (IRN).** Let repayment reputation travel across registries.

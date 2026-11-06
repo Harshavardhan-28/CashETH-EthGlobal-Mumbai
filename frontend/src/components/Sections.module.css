@@ -400,3 +400,9 @@
 .logoLight {
   display: var(--show-light);
 }
+.feedback {
+  color: var(--ink-2);
+}
+.feedback:hover {
+  color: var(--accent);
+}
