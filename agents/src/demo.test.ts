@@ -196,6 +196,13 @@ describe("checkQuotePlan", () => {
     );
   });
 
+  it("adds up a lender's fills over several strategies", () => {
+    const [first, last] = [quotes().plan.fills[0]!, quotes().plan.fills.at(-1)!];
+    const half = BigInt(last.amount) / 2n;
+    const split = [first, { ...last, amount: half.toString() }, { ...last, strategyHash: hash("older-strategy"), amount: (BigInt(last.amount) - half).toString() }];
+    expect(() => checkQuotePlan(quotes({ fills: split }), makers)).not.toThrow();
+  });
+
   it("rejects a plan that fills in another order or amount", () => {
     const [a, b] = quotes().plan.fills;
     expect(() => checkQuotePlan(quotes({ fills: [b!, a!] }), makers)).toThrow(/expected fills/);
@@ -217,7 +224,7 @@ function openStrategy(key: "A" | "B", seller: Address, overrides: Partial<Lender
     kind: "credit",
     maker: makers[key],
     strategyHash: hash(`open-${key}`),
-    args: { ...LENDER_TIERS[tier], maxPerBuyer: 0n, minReserve: 0n, sellerSet: [seller] },
+    args: { ...LENDER_TIERS[tier], maxPerBuyer: FRESH_LENDERS[key].maxPerBuyer ?? usdc("5"), minReserve: 0n, sellerSet: [seller] },
     tokens: [usdcToken, "0x0000000000000000000000000000000000000c0b"],
     virtual: { [usdcToken]: creditUsdc },
     realUsdc: creditUsdc,
@@ -244,6 +251,8 @@ describe("findShippedStrategy", () => {
     expect(findShippedStrategy([openStrategy("A", other)], planned)).toBeUndefined();
     expect(findShippedStrategy([openStrategy("A", seller)], { ...planned, aprBps: planned.aprBps + 1 })).toBeUndefined();
     expect(findShippedStrategy([openStrategy("A", seller, { kind: "base" })], planned)).toBeUndefined();
+    const smallerCap = openStrategy("A", seller);
+    expect(findShippedStrategy([{ ...smallerCap, args: { ...smallerCap.args!, maxPerBuyer: smallerCap.args!.maxPerBuyer - 1n } }], { ...planned, maxPerBuyer: smallerCap.args!.maxPerBuyer })).toBeUndefined();
   });
 });
 

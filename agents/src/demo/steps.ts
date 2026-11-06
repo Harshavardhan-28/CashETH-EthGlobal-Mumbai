@@ -93,13 +93,14 @@ function shipStep(key: "A" | "B"): Step {
     label: `1. lender ${key} ships a ${formatUsdc(creditUsdc)} USDC ${tier}-tier credit strategy`,
     async run(ctx) {
       const lender = ctx.lenders[key];
-      const planned = { maker: lender.address, seller: ctx.seller.address, creditUsdc, aprBps: LENDER_TIERS[tier].aprBps };
+      const { maxPerBuyer } = FRESH_LENDERS[key];
+      const planned = { maker: lender.address, seller: ctx.seller.address, creditUsdc, aprBps: LENDER_TIERS[tier].aprBps, ...(maxPerBuyer ? { maxPerBuyer } : {}) };
       const open = findShippedStrategy(await ctx.openStrategies(), planned);
       if (open) return shippedEarlier(ctx, open.strategyHash);
 
       // A stable key per invoice and lender: a rerun whose strategy is not yet visible replays a ship that landed.
       const idempotencyKey = stableKey("demo-ship", INVOICE.buyerRef, key);
-      const outcome = await ctx.lenders[key].agent.ship({ tier, sellerSet: [ctx.seller.address], creditUsdc, idempotencyKey });
+      const outcome = await ctx.lenders[key].agent.ship({ tier, sellerSet: [ctx.seller.address], creditUsdc, idempotencyKey, ...(maxPerBuyer ? { maxPerBuyer } : {}) });
       return { ...(await proofOfEvmTx(ctx, shipTxHash(outcome))), note: `${tier} tier at ${outcome.aprBps / 100}% APR, seller set [seller]` };
     },
   };

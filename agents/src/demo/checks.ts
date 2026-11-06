@@ -20,6 +20,8 @@ export interface PlannedShip {
   seller: Address;
   creditUsdc: bigint;
   aprBps: number;
+  /** Only compared when the demo asks for a specific per-buyer cap. */
+  maxPerBuyer?: bigint;
 }
 
 /**
@@ -33,6 +35,7 @@ export function findShippedStrategy(strategies: LenderStrategy[], planned: Plann
       same(s.maker, planned.maker) &&
       s.virtual[s.tokens[0]] === planned.creditUsdc &&
       s.args?.aprBps === planned.aprBps &&
+      (planned.maxPerBuyer === undefined || s.args.maxPerBuyer === planned.maxPerBuyer) &&
       s.args.sellerSet.some((seller) => same(seller, planned.seller)),
   );
 }
@@ -48,15 +51,27 @@ function skipReasons(quotes: Quotes, maker: Address, lender: LenderKey): string[
   });
 }
 
+/** The plan's fills added up per lender, in the order the lenders first appear (a lender may fill from several strategies). */
+function fillsByMaker(fills: Quotes["plan"]["fills"]): { maker: Address; amount: bigint }[] {
+  const totals: { maker: Address; amount: bigint }[] = [];
+  for (const fill of fills) {
+    const entry = totals.find((t) => same(t.maker, fill.maker));
+    if (entry) entry.amount += BigInt(fill.amount);
+    else totals.push({ maker: fill.maker, amount: BigInt(fill.amount) });
+  }
+  return totals;
+}
+
 /**
- * The solver's plan must be the script (`EXPECTED_FILLS`: cheapest first, the last fill possibly partial), lender C
+ * The solver's plan must be the script (`EXPECTED_FILLS` per lender, cheapest first, the last one possibly partial), lender C
  * skipped by price, lender D skipped because the seller is not in its seller set. Returns the one-line summary.
  */
 export function checkQuotePlan(quotes: Quotes, makers: Record<LenderKey, Address>): string {
-  const { fills, total } = quotes.plan;
+  const { total } = quotes.plan;
+  const fills = fillsByMaker(quotes.plan.fills);
   const wanted = EXPECTED_FILLS.map((f) => `${f.lender} ${formatUsdc(f.amount)}`).join(" + ");
-  const got = fills.map((f) => `${f.maker} ${formatUnits(BigInt(f.amount), 6)}`).join(" + ");
-  const matches = fills.length === EXPECTED_FILLS.length && EXPECTED_FILLS.every((e, i) => same(fills[i]!.maker, makers[e.lender]) && BigInt(fills[i]!.amount) === e.amount);
+  const got = fills.map((f) => `${f.maker} ${formatUsdc(f.amount)}`).join(" + ");
+  const matches = fills.length === EXPECTED_FILLS.length && EXPECTED_FILLS.every((e, i) => same(fills[i]!.maker, makers[e.lender]) && fills[i]!.amount === e.amount);
   if (!matches) throw new Error(`expected fills ${wanted}, the plan is ${got || "empty"}`);
 
   const reasonsC = skipReasons(quotes, makers.C, "C");

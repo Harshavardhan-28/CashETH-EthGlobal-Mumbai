@@ -31,8 +31,10 @@ export const BORROWING_BASE = (INVOICE.amount * BigInt(ADVANCE_BPS)) / BPS;
 export type FreshLender = "A" | "B";
 
 /** The two lenders that ship a fresh credit strategy for the seller (their earlier ones funded PO-1002). */
-export const FRESH_LENDERS: Record<FreshLender, { tier: Tier; creditUsdc: bigint }> = {
-  A: { tier: "low", creditUsdc: usdc("3.5") },
+export const FRESH_LENDERS: Record<FreshLender, { tier: Tier; creditUsdc: bigint; maxPerBuyer?: bigint }> = {
+  // The buyer already owes lender A 3.5 USDC from PO-1002: the server's default 5 USDC per-buyer cap would leave
+  // 1.5 USDC of headroom, so A's cap covers both receivables.
+  A: { tier: "low", creditUsdc: usdc("3.5"), maxPerBuyer: usdc("10") },
   B: { tier: "medium", creditUsdc: usdc("1.5") },
 };
 

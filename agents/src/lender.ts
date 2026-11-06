@@ -14,6 +14,8 @@ export interface ShipParams {
   sellerSet?: Address[];
   /** USDC base units (6 decimals) committed to the credit strategy. */
   creditUsdc: bigint;
+  /** Largest exposure to one buyer, USDC base units; the server's default is 5 USDC. */
+  maxPerBuyer?: bigint;
   /** Base-yield strategy amounts; give both or neither. */
   baseUsdc?: bigint;
   baseTusdt?: bigint;
@@ -45,6 +47,7 @@ function fundArguments(p: ShipParams): Record<string, unknown> {
     tier: p.tier,
     creditUsdc: p.creditUsdc.toString(),
     ...(p.sellerSet?.length ? { sellerSet: p.sellerSet } : {}),
+    ...(p.maxPerBuyer !== undefined ? { maxPerBuyer: p.maxPerBuyer.toString() } : {}),
     ...(p.baseUsdc !== undefined && p.baseTusdt !== undefined ? { base: { usdc: p.baseUsdc.toString(), tUsdt: p.baseTusdt.toString() } } : {}),
     idempotencyKey: p.idempotencyKey ?? shipKey(p),
   };

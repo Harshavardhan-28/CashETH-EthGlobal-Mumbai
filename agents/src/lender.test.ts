@@ -56,6 +56,13 @@ describe("lenderAgent.ship", () => {
     await agent.ship({ tier: "low", creditUsdc: 1_000_000n });
     expect(calls[0]!.args).not.toHaveProperty("base");
     expect(calls[0]!.args).not.toHaveProperty("sellerSet");
+    expect(calls[0]!.args).not.toHaveProperty("maxPerBuyer");
+  });
+
+  it("sends a per-buyer cap as a unit string when asked for", async () => {
+    const { agent, calls } = setup({ mode: "shipped", tier: "low", aprBps: 700, credit: { strategyHash: strategies.credit } });
+    await agent.ship({ tier: "low", creditUsdc: 1_000_000n, maxPerBuyer: 10_000_000n });
+    expect(calls[0]!.args).toMatchObject({ maxPerBuyer: "10000000" });
   });
 
   it("returns the server's result and sends nothing when the server shipped with the lender key", async () => {
