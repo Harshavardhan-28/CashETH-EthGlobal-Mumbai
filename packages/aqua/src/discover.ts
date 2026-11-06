@@ -2,6 +2,7 @@
  * Open-strategy discovery from Aqua's `Shipped` / `Docked` logs (decoded with `@1inch/aqua-sdk`), enriched with
  * the live Aqua virtual balances and the maker's real USDC balance and allowance.
  */
+import { limitConcurrency, RELAY_CONCURRENCY, retryEmptyResult } from "./relayRead.js";
 import { DockedEvent, ShippedEvent } from "@1inch/aqua-sdk";
 import { AquaRouterAbi } from "@casheth/shared";
 import {
@@ -142,7 +143,7 @@ async function classify(
   const pair = (a: Address, b: Address) => new Set([getAddress(a), getAddress(b)]);
   const same = (x: Set<Address>, y: Set<Address>) => x.size === y.size && [...x].every((v) => y.has(v));
   try {
-    const d = await decodeLenderOrder(client, addrs.orderBuilder, order);
+    const d = await retryEmptyResult(() => decodeLenderOrder(client, addrs.orderBuilder, order));
     if (!same(pair(d.tokenA, d.tokenB), pair(addrs.usdc, addrs.rcn))) return undefined;
     return { kind: "credit", args: d.args, salt: d.salt, tokens: [addrs.usdc, addrs.rcn] };
   } catch (err) {
@@ -150,7 +151,7 @@ async function classify(
   }
   if (!addrs.tUsdt) return undefined;
   try {
-    const d = await decodeBaseYieldOrder(client, addrs.orderBuilder, order);
+    const d = await retryEmptyResult(() => decodeBaseYieldOrder(client, addrs.orderBuilder, order));
     if (!same(pair(d.tokenA, d.tokenB), pair(addrs.usdc, addrs.tUsdt))) return undefined;
     return { kind: "base", feeBps: d.feeBps, salt: d.salt, tokens: [addrs.usdc, addrs.tUsdt] };
   } catch (err) {
@@ -192,8 +193,8 @@ export async function discoverStrategies(
   const logs = opts.cache ? await opts.cache.logs(client, addrs.aqua, from, to) : await aquaLogs(client, addrs.aqua, from, to);
   const app = getAddress(addrs.swapRouter);
 
-  // Every open strategy is inspected concurrently (each needs several relay round trips); results keep shipping order.
-  const results = await Promise.all(openFromLogs(logs, app).map((s) => inspect(client, addrs, app, s, opts.cache)));
+  // Open strategies are inspected a few at a time (each needs several relay round trips); results keep shipping order.
+  const results = await limitConcurrency(openFromLogs(logs, app), RELAY_CONCURRENCY, (s) => inspect(client, addrs, app, s, opts.cache));
   const out = results.flatMap((r) => ("strategy" in r ? [r.strategy] : []));
   const skipped = results.flatMap((r) => ("skip" in r ? [r.skip] : []));
 
@@ -229,12 +230,13 @@ async function inspect(
   const kind = cache ? await cache.kindOf(s.strategyHash, () => classify(client, addrs, order)) : await classify(client, addrs, order);
   if (!kind) return skip(DISCOVERY_SKIP.NOT_CASHETH_ORDER);
   const [balances, realUsdc, allowance] = await Promise.all([
-    client
-      .readContract({ address: addrs.aqua, abi: AquaRouterAbi, functionName: "safeBalances", args: [s.maker, app, s.strategyHash, kind.tokens[0], kind.tokens[1]] })
+    retryEmptyResult(() =>
+      client.readContract({ address: addrs.aqua, abi: AquaRouterAbi, functionName: "safeBalances", args: [s.maker, app, s.strategyHash, kind.tokens[0], kind.tokens[1]] }),
+    )
       // revertReason rethrows anything that is not a contract revert.
       .catch((err: unknown) => ({ reverted: revertReason(err) })),
-    client.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "balanceOf", args: [s.maker] }),
-    client.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "allowance", args: [s.maker, addrs.aqua] }),
+    retryEmptyResult(() => client.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "balanceOf", args: [s.maker] })),
+    retryEmptyResult(() => client.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "allowance", args: [s.maker, addrs.aqua] })),
   ]);
   if ("reverted" in balances) return skip(`${DISCOVERY_SKIP.BALANCES_REVERTED}:${balances.reverted}`);
   const [b0, b1] = balances;

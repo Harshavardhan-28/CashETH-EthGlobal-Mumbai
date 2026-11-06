@@ -6,6 +6,7 @@
  * itself: each strategy's fill is dry-run through `CreditFacility.openAndFund` (an eth_call from the
  * coordinator), so the solver never re-implements the rules and cannot disagree with the chain.
  */
+import { limitConcurrency, RELAY_CONCURRENCY, retryEmptyResult } from "./relayRead.js";
 import { AquaRouterAbi, CashEthSwapVMRouterAbi, CreditFacilityAbi } from "@casheth/shared";
 import { BaseError, ContractFunctionRevertedError, type Abi, type Address, type Hex, type PublicClient } from "viem";
 import type { AquaAddresses, Fill, LenderStrategy } from "./types.js";
@@ -183,8 +184,8 @@ export async function solve(
   const base = min(advance, input.limit);
 
   // Each strategy's check (its buyer exposure, then a dry-run of its own fill) is independent of the others, so
-  // they run concurrently; the results keep price order for the greedy, cheapest-first planner.
-  const checks = await Promise.all(byPrice(input.strategies).map((s) => checkStrategy(client, addrs, input, base, s)));
+  // they run a few at a time; the results keep price order for the greedy, cheapest-first planner.
+  const checks = await limitConcurrency(byPrice(input.strategies), RELAY_CONCURRENCY, (s) => checkStrategy(client, addrs, input, base, s));
   const skipped: Skipped[] = checks.flatMap((c) => ("skip" in c ? [c.skip] : []));
   const eligible = checks.flatMap((c) => ("headroom" in c ? [c.strategy] : []));
   const headrooms: Record<Hex, bigint> = Object.fromEntries(checks.flatMap((c) => ("headroom" in c ? [[c.strategy.strategyHash, c.headroom]] : [])));
@@ -204,12 +205,9 @@ async function checkStrategy(
   const { receivable, advanceBps, facility, now } = input;
   const pre = preCheck(s, { receivable, advanceBps, now });
   if (pre) return { skip: { strategyHash: s.strategyHash, reason: pre } };
-  const exposure = await client.readContract({
-    address: addrs.swapRouter,
-    abi: CashEthSwapVMRouterAbi,
-    functionName: "exposure",
-    args: [s.maker, receivable.buyer],
-  });
+  const exposure = await retryEmptyResult(() =>
+    client.readContract({ address: addrs.swapRouter, abi: CashEthSwapVMRouterAbi, functionName: "exposure", args: [s.maker, receivable.buyer] }),
+  );
   const headroom = clamp0(s.args!.maxPerBuyer - exposure);
   // Balance problems are reported by planFills; only dry-run strategies that could give something.
   if (!balanceCheck(s, headroom)) {
