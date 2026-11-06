@@ -1,0 +1,103 @@
+{
+  "receivableId": "0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c",
+  "decision": {
+    "score": 600,
+    "advanceBps": 7500,
+    "limit": "4500000"
+  },
+  "plan": {
+    "fills": [
+      {
+        "maker": "0xc502fe381481aBD2E56921Dc58DFC3ca3776a096",
+        "lender": "A",
+        "amount": "3500000",
+        "aprBps": 700
+      },
+      {
+        "maker": "0x502ea0745ddd16128B8f649394cd0C8c93FEd238",
+        "lender": "B",
+        "amount": "1000000",
+        "aprBps": 850
+      }
+    ],
+    "total": "4500000",
+    "skipped": [
+      {
+        "strategyHash": "0xcf1e8f290a4e6470572718fe82decffe81753d95a5f6d4e64ad7013477b0735a",
+        "lender": "D",
+        "kind": "credit",
+        "reason": "SELLER_NOT_FUNDED_BY_LENDER"
+      },
+      {
+        "strategyHash": "0x17711016ce827c6df6c0f84934c2bd69682932104b22b5781545b32e2a9166c5",
+        "lender": "C",
+        "kind": "credit",
+        "reason": "NOT_NEEDED"
+      }
+    ]
+  },
+  "fund": {
+    "label": "CreditFacility.openAndFund(PO-1002, 2 fills)",
+    "hash": "0xee74c7bccf978178770e731278c00413621a85c79f4e799126e7ea2141c2ed6a",
+    "transactionId": "0.0.7314364@1793982496.157443985",
+    "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985",
+    "gas": {
+      "limit": 3126418,
+      "used": 2088677,
+      "consumed": 2088677
+    }
+  },
+  "verified": {
+    "facility USDC (eth_call = mirror)": "4500000 units",
+    "registry state": "2 (Financed)",
+    "FacilityFunded": "funded 4500000, advanceBps 7500, makers A+B",
+    "lender A RCN": "3500000 units",
+    "lender B RCN": "1000000 units",
+    "PositionOpened": "2 events",
+    "schedule markOverdue (the only one created)": "0.0.11342318 expires 1797177674.000000000"
+  },
+  "reverts": {
+    "unregistered": {
+      "expected": "NOT_CONFIRMED",
+      "tx": {
+        "label": "openAndFund(unregistered id) from the coordinator",
+        "hash": "0x42a66c66d4f751000d6e6cd65067a2f5b83945d8f66f56dbd76114f9f97e9ab1",
+        "transactionId": "0.0.7314364@1793982511.134508238",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793982511.134508238",
+        "gas": {
+          "limit": 300000,
+          "used": 37100,
+          "consumed": 37100
+        }
+      },
+      "status": "CONTRACT_REVERT_EXECUTED",
+      "errorMessage": "0x6dc2c622",
+      "selector": "0x6dc2c622",
+      "decoded": "NOT_CONFIRMED()"
+    },
+    "notCoordinator": {
+      "expected": "NOT_COORDINATOR",
+      "tx": {
+        "label": "openAndFund(PO-1002) from the seller",
+        "hash": "0x38b67157ba7ae32c75fcb4236bece48f888e6718fc5a270f7a1c174961d684b3",
+        "transactionId": "0.0.7314364@1793982519.722396023",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793982519.722396023",
+        "gas": {
+          "limit": 300000,
+          "used": 37100,
+          "consumed": 37100
+        }
+      },
+      "status": "CONTRACT_REVERT_EXECUTED",
+      "errorMessage": "0xe5ad01f4",
+      "selector": "0xe5ad01f4",
+      "decoded": "NOT_COORDINATOR()"
+    }
+  },
+  "audit": {
+    "seq": 36,
+    "txId": "0.0.11333252@1793982667.668877640",
+    "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793982667.668877640",
+    "prevSeq": 35
+  }
+}
