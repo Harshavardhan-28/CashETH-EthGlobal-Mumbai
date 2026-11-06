@@ -20,6 +20,7 @@
  */
 import { existsSync } from "node:fs";
 import {
+  BASE_FEE_BPS,
   buildBaseYieldOrder,
   buildLenderOrder,
   listOpenStrategies,
@@ -39,7 +40,6 @@ const STRATEGIES_FILE = `${ROOT}deployments/testnet/strategies.json`;
 const USD = (units: number) => BigInt(Math.round(units * 1_000_000));
 const CREDIT_SALT = 1n;
 const BASE_SALT = 2n;
-const BASE_FEE_BPS = 30;
 const MAX_PER_BUYER = USD(5);
 const MIN_RESERVE = 0n;
 

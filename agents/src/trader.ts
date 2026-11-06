@@ -57,6 +57,8 @@ export interface TraderOptions {
   /** Round trips per strategy; default 3. */
   roundTrips?: number;
   log?: Log;
+  /** Called with each swap as soon as its fill is confirmed. */
+  onTrade?: (record: TradeRecord) => void;
 }
 
 const DEFAULT_AMOUNT = 200_000n;
@@ -89,19 +91,56 @@ interface Leg {
   amount: bigint;
 }
 
-async function trade(chain: TraderChain, leg: Leg): Promise<TradeRecord> {
+/** The leg that failed: which lender's strategy, which way, and how much was being sold. */
+export type FailedLeg = Pick<TradeRecord, "lender" | "strategyHash" | "direction" | "amountIn">;
+
+/** A leg did not complete. `cause` is the underlying error; `sweepError` is set when returning the input also failed. */
+export class TradeError extends Error {
+  readonly lender: string;
+  readonly strategyHash: Hex;
+  readonly direction: Direction;
+  readonly amountIn: bigint;
+  readonly sweepError?: unknown;
+
+  constructor(leg: FailedLeg, cause: unknown, sweepError?: unknown) {
+    const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
+    const stuck = sweepError === undefined ? "" : ` (returning the input to the operator also failed: ${reason(sweepError)})`;
+    super(`lender ${leg.lender} ${leg.direction} ${leg.amountIn} (strategy ${leg.strategyHash}) failed: ${reason(cause)}${stuck}`, { cause });
+    this.name = "TradeError";
+    this.lender = leg.lender;
+    this.strategyHash = leg.strategyHash;
+    this.direction = leg.direction;
+    this.amountIn = leg.amountIn;
+    this.sweepError = sweepError;
+  }
+}
+
+/** Sends the taker's `token` back to the operator; resolves with the error instead of throwing it. */
+async function returnToOperator(chain: TraderChain, token: Address): Promise<unknown> {
+  try {
+    await chain.sweep(token);
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+/** One swap. Reports the record as soon as the fill is confirmed, before the output is swept back. */
+async function trade(chain: TraderChain, leg: Leg, report: (record: TradeRecord) => void): Promise<TradeRecord> {
   const aToB = isAToB(leg.tokenIn, leg.tokenOut);
-  const quoted = await chain.quoteOut(leg.order, leg.amount, baseTakerData({ isAToB: aToB }));
-  await chain.fund(leg.tokenIn, leg.amount);
+  let funded = false;
   let filled;
   try {
+    const quoted = await chain.quoteOut(leg.order, leg.amount, baseTakerData({ isAToB: aToB }));
+    await chain.fund(leg.tokenIn, leg.amount);
+    funded = true;
     filled = await chain.fill(leg.order, leg.amount, baseTakerData({ isAToB: aToB, threshold: quoted }));
   } catch (error) {
-    await chain.sweep(leg.tokenIn);
-    throw error;
+    const sweepError = funded ? await returnToOperator(chain, leg.tokenIn) : undefined;
+    const { strategy, direction, amount } = leg;
+    throw new TradeError({ lender: strategy.lender, strategyHash: strategy.strategyHash, direction, amountIn: amount }, error, sweepError);
   }
-  await chain.sweep(leg.tokenOut);
-  return {
+  const record: TradeRecord = {
     lender: leg.strategy.lender,
     strategyHash: leg.strategy.strategyHash,
     direction: leg.direction,
@@ -110,41 +149,70 @@ async function trade(chain: TraderChain, leg: Leg): Promise<TradeRecord> {
     txHash: filled.txHash,
     link: hashscan.tx(filled.txHash),
   };
+  report(record);
+  await chain.sweep(leg.tokenOut);
+  return record;
 }
 
 function describeTrade(r: TradeRecord): string {
   return `${r.lender} ${r.direction} ${r.amountIn} -> ${r.amountOut} ${r.link}`;
 }
 
-/** Runs the scripted volume against every strategy in turn and returns one record per swap. */
+/**
+ * Runs the scripted volume against every strategy in turn and returns one record per swap. Stops at the first
+ * failed leg with a `TradeError`; the legs confirmed before it were already passed to `onTrade`.
+ */
 export async function runTrader(opts: TraderOptions): Promise<TradeRecord[]> {
-  const { chain, strategies, tokens, amount = DEFAULT_AMOUNT, roundTrips = DEFAULT_ROUND_TRIPS, log = consoleLog } = opts;
+  const { chain, strategies, tokens, amount = DEFAULT_AMOUNT, roundTrips = DEFAULT_ROUND_TRIPS, log = consoleLog, onTrade } = opts;
   if (amount <= 0n) throw new Error(`amount must be positive, got ${amount}`);
   if (!Number.isInteger(roundTrips) || roundTrips <= 0) throw new Error(`roundTrips must be a positive integer, got ${roundTrips}`);
 
   const records: TradeRecord[] = [];
+  const report = (record: TradeRecord) => {
+    log(describeTrade(record));
+    records.push(record);
+    onTrade?.(record);
+  };
   for (const strategy of strategies) {
     const order = await chain.orderOf(strategy);
     for (let i = 0; i < roundTrips; i++) {
-      const sell = await trade(chain, { strategy, order, direction: "usdc->tusdt", tokenIn: tokens.usdc, tokenOut: tokens.tUsdt, amount });
-      const back = await trade(chain, { strategy, order, direction: "tusdt->usdc", tokenIn: tokens.tUsdt, tokenOut: tokens.usdc, amount: sell.amountOut });
-      for (const record of [sell, back]) {
-        log(describeTrade(record));
-        records.push(record);
-      }
+      const sell = await trade(chain, { strategy, order, direction: "usdc->tusdt", tokenIn: tokens.usdc, tokenOut: tokens.tUsdt, amount }, report);
+      await trade(chain, { strategy, order, direction: "tusdt->usdc", tokenIn: tokens.tUsdt, tokenOut: tokens.usdc, amount: sell.amountOut }, report);
     }
   }
   return records;
 }
 
-/** The content of `deployments/testnet/trades.json`: amounts as decimal strings. */
+/** Like `runTrader`, but a failure does not discard the swaps confirmed before it: they come back with the error. */
+export async function collectTrades(opts: Omit<TraderOptions, "onTrade">): Promise<{ records: TradeRecord[]; failure?: unknown }> {
+  const records: TradeRecord[] = [];
+  try {
+    await runTrader({ ...opts, onTrade: (record) => records.push(record) });
+    return { records };
+  } catch (failure) {
+    return { records, failure };
+  }
+}
+
+/** The content of `deployments/testnet/trades.json`: amounts as decimal strings, plus the failed leg of an aborted run. */
 export type TradesFile = ReturnType<typeof serializeTrades>;
 
-export function serializeTrades(records: TradeRecord[]) {
+export function serializeTrades(records: TradeRecord[], failure?: TradeError) {
   return {
     network: "testnet",
     chainId: 296,
     label: "scripted volume",
     trades: records.map((r) => ({ ...r, amountIn: r.amountIn.toString(), amountOut: r.amountOut.toString() })),
+    ...(failure
+      ? {
+          failure: {
+            lender: failure.lender,
+            strategyHash: failure.strategyHash,
+            direction: failure.direction,
+            amountIn: failure.amountIn.toString(),
+            error: failure.cause instanceof Error ? failure.cause.message : String(failure.cause),
+          },
+        }
+      : {}),
   };
 }

@@ -9,7 +9,10 @@ import type { CreditArgs, Order } from "./types.js";
 /** FeeFlatIn denominates fees in 1e7 (30_000 = 0.3%); this package takes basis points (30 = 0.3%). */
 export const FEE_FLAT_IN_UNITS_PER_BPS = 1_000;
 
-type Reader = Pick<PublicClient, "readContract">;
+/** The input fee, in basis points, of the demo lenders' base-yield strategies (0.3%). */
+export const BASE_FEE_BPS = 30;
+
+type Reader =Pick<PublicClient, "readContract">;
 
 function toOrder(o: { maker: Address; traits: bigint; data: Hex }): Order {
   return { maker: o.maker, traits: o.traits, data: o.data };

@@ -76,6 +76,16 @@ describe("fetchLenders", () => {
     expect(seen).toEqual(["http://localhost:4030/lenders"]);
   });
 
+  const answering = (body: unknown) => (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
+
+  it("rejects a response that is not a list of lender yields, naming the offending field", async () => {
+    await expect(fetchLenders("http://x", answering({ lenders: [] }))).rejects.toThrow(/array/);
+    await expect(fetchLenders("http://x", answering([{ ...lender("lenderA"), capital: 6_000_000 }]))).rejects.toThrow(/capital/);
+    await expect(fetchLenders("http://x", answering([{ ...lender("lenderA"), baseApr: "3.65" }]))).rejects.toThrow(/baseApr/);
+    const { label: _label, ...noLabel } = lender("lenderA");
+    await expect(fetchLenders("http://x", answering([noLabel]))).rejects.toThrow(/label/);
+  });
+
   it("fails with the status when the API answers an error", async () => {
     const fakeFetch = (async () => new Response("nope", { status: 503 })) as unknown as typeof fetch;
     await expect(fetchLenders("http://localhost:4030", fakeFetch)).rejects.toThrow(/503/);

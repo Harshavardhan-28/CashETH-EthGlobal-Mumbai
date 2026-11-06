@@ -1,5 +1,5 @@
 /** The trader's chain access on Hedera testnet: the operator's wallet, the `CashEthTaker` and the SwapVM router. */
-import { buildBaseYieldOrder, type Order } from "@casheth/aqua";
+import { BASE_FEE_BPS, buildBaseYieldOrder, type Order } from "@casheth/aqua";
 import { CashEthSwapVMRouterAbi, CashEthTakerAbi } from "@casheth/shared";
 import {
   erc20Abi,
@@ -15,9 +15,6 @@ import {
   type WalletClient,
 } from "viem";
 import type { BaseStrategy, TraderChain } from "./trader.js";
-
-/** The fee `scripts/c4-ship-strategies.ts` ships the base-yield strategies with. */
-export const BASE_FEE_BPS = 30;
 
 /** Fixed gas limit: Hedera's gas estimation does not model the HTS calls inside the swap. */
 const FILL_GAS = 1_500_000n;

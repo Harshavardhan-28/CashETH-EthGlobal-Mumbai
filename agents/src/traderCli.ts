@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { evmClients } from "@casheth/hedera";
 import { loadAddresses, loadEnv } from "@casheth/shared";
 import type { Hex } from "viem";
-import { baseStrategies, runTrader, serializeTrades } from "./trader.js";
+import { baseStrategies, collectTrades, serializeTrades, TradeError } from "./trader.js";
 import { createTraderChain, type TraderChainClients } from "./traderChain.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -31,18 +31,21 @@ async function main(): Promise<void> {
     tUsdt: required("tUsdt", addresses.tUsdt),
   };
   const { public: reader, wallet } = evmClients(env, env.HEDERA_OPERATOR_KEY as Hex);
+  if (!wallet?.account || !wallet.chain) throw new Error("no operator wallet: set HEDERA_OPERATOR_KEY");
   const chain = createTraderChain({ public: reader, wallet } as TraderChainClients, deployment);
   const strategies = baseStrategies(JSON.parse(readFileSync(STRATEGIES_FILE, "utf8")));
 
-  const records = await runTrader({ chain, strategies, tokens: { usdc: deployment.usdc, tUsdt: deployment.tUsdt } });
-  writeFileSync(TRADES_FILE, `${JSON.stringify(serializeTrades(records), null, 2)}\n`);
+  // Confirmed swaps are written even when the run stops on a failed leg: their fee income is already on chain.
+  const { records, failure } = await collectTrades({ chain, strategies, tokens: { usdc: deployment.usdc, tUsdt: deployment.tUsdt } });
+  writeFileSync(TRADES_FILE, `${JSON.stringify(serializeTrades(records, failure instanceof TradeError ? failure : undefined), null, 2)}\n`);
   console.log(`${records.length} swaps written to deployments/testnet/trades.json`);
+  if (failure) throw failure;
 }
 
 process.exitCode = await main().then(
   () => 0,
   (error: unknown) => {
-    console.error(error);
+    console.error(error instanceof TradeError ? `FILL FAILED: ${error.message}` : error);
     return 1;
   },
 );

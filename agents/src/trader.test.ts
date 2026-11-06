@@ -1,7 +1,7 @@
 import { baseTakerData, type Order } from "@casheth/aqua";
 import { describe, expect, it } from "vitest";
 import type { Address, Hex } from "viem";
-import { baseStrategies, runTrader, serializeTrades, type BaseStrategy, type TraderChain } from "./trader.js";
+import { baseStrategies, collectTrades, runTrader, serializeTrades, TradeError, type BaseStrategy, type TradeRecord, type TraderChain } from "./trader.js";
 
 const USDC = "0x0000000000000000000000000000000000068cDa" as Address;
 const TUSDT = "0x65C25Cc145f0836C8fFAb83Bf9676e98a8a2648a" as Address;
@@ -15,7 +15,7 @@ const strategy = (lender: string, n: number): BaseStrategy => ({
 });
 
 /** Records every call in order; the pool pays 99.7% of the input, so a round trip loses the fees. */
-function fakeChain(options: { failFillAt?: number } = {}) {
+function fakeChain(options: { failFillAt?: number; failSweepAfterFail?: boolean } = {}) {
   const calls: string[] = [];
   const fills: { order: Order; amount: bigint; data: Hex }[] = [];
   const chain: TraderChain = {
@@ -38,6 +38,7 @@ function fakeChain(options: { failFillAt?: number } = {}) {
     },
     async sweep(token) {
       calls.push(`sweep ${token === USDC ? "USDC" : "tUSDT"}`);
+      if (options.failSweepAfterFail && fills.length === options.failFillAt) throw new Error("relay 502");
     },
   };
   return { chain, calls, fills };
@@ -124,6 +125,39 @@ describe("runTrader", () => {
     expect(calls.slice(-3)).toEqual(["fund tUSDT 199400", "fill 199400", "sweep tUSDT"]);
   });
 
+  it("reports each completed leg as it is confirmed, so a later failure keeps it", async () => {
+    const { chain } = fakeChain({ failFillAt: 2 });
+    const seen: TradeRecord[] = [];
+    await expect(runTrader({ chain, strategies: [strategy("A", 1)], tokens: { usdc: USDC, tUsdt: TUSDT }, roundTrips: 1, log: () => {}, onTrade: (r) => seen.push(r) })).rejects.toBeInstanceOf(TradeError);
+    expect(seen.map((r) => r.direction)).toEqual(["usdc->tusdt"]);
+  });
+
+  it("fails with a TradeError naming the lender, strategy, direction and amount, with the fill error as cause", async () => {
+    const { chain } = fakeChain({ failFillAt: 2 });
+    const error = await run(chain, [strategy("B", 7)], 1).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TradeError);
+    const failure = error as TradeError;
+    expect(failure).toMatchObject({ lender: "B", strategyHash: strategy("B", 7).strategyHash, direction: "tusdt->usdc", amountIn: 199_400n });
+    expect((failure.cause as Error).message).toBe("router reverted");
+    expect(failure.message).toMatch(/lender B tusdt->usdc 199400.*router reverted/);
+  });
+
+  it("attributes a failure before the fill (quote, funding) the same way", async () => {
+    const { chain } = fakeChain();
+    chain.quoteOut = async () => {
+      throw new Error("quote reverted");
+    };
+    await expect(run(chain, [strategy("C", 3)], 1)).rejects.toMatchObject({ lender: "C", direction: "usdc->tusdt", amountIn: AMOUNT });
+  });
+
+  it("keeps the fill error as the cause when returning the input also fails, and records the sweep error", async () => {
+    const { chain } = fakeChain({ failFillAt: 1, failSweepAfterFail: true });
+    const failure = (await run(chain, [strategy("A", 1)], 1).catch((e: unknown) => e)) as TradeError;
+    expect((failure.cause as Error).message).toBe("router reverted");
+    expect((failure.sweepError as Error).message).toBe("relay 502");
+    expect(failure.message).toMatch(/relay 502/);
+  });
+
   it("does nothing without base strategies", async () => {
     const { chain, calls } = fakeChain();
     expect(await run(chain, [])).toEqual([]);
@@ -134,6 +168,24 @@ describe("runTrader", () => {
     const { chain } = fakeChain();
     await expect(runTrader({ chain, strategies: [], tokens: { usdc: USDC, tUsdt: TUSDT }, amount: 0n })).rejects.toThrow(/amount/);
     await expect(run(chain, [], 0)).rejects.toThrow(/roundTrips/);
+  });
+});
+
+describe("collectTrades", () => {
+  const options = (chain: TraderChain) => ({ chain, strategies: [strategy("A", 1), strategy("B", 2)], tokens: { usdc: USDC, tUsdt: TUSDT }, roundTrips: 1, log: () => {} });
+
+  it("returns every record and no failure on a clean run", async () => {
+    const { records, failure } = await collectTrades(options(fakeChain().chain));
+    expect(records).toHaveLength(4);
+    expect(failure).toBeUndefined();
+  });
+
+  it("returns the swaps confirmed before a failed fill together with the TradeError, and stops there", async () => {
+    // Fill 3 is lender B's first leg: A's two swaps are kept and B's second strategy is never touched.
+    const { records, failure } = await collectTrades(options(fakeChain({ failFillAt: 3 }).chain));
+    expect(records.map((r) => r.lender)).toEqual(["A", "A"]);
+    expect(failure).toBeInstanceOf(TradeError);
+    expect(failure).toMatchObject({ lender: "B", direction: "usdc->tusdt" });
   });
 });
 
@@ -154,5 +206,20 @@ describe("serializeTrades", () => {
       label: "scripted volume",
       trades: [{ ...record, amountIn: "200000", amountOut: "199400" }],
     });
+  });
+
+  it("adds the failed leg, with the reason, when a run stopped on an error", () => {
+    const failure = new TradeError(
+      { lender: "B", strategyHash: "0xcc" as Hex, direction: "tusdt->usdc", amountIn: 199_400n },
+      new Error("router reverted"),
+    );
+    expect(serializeTrades([], failure).failure).toEqual({
+      lender: "B",
+      strategyHash: "0xcc",
+      direction: "tusdt->usdc",
+      amountIn: "199400",
+      error: "router reverted",
+    });
+    expect(serializeTrades([]).failure).toBeUndefined();
   });
 });

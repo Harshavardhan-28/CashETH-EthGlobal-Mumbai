@@ -31,7 +31,24 @@ export async function fetchLenders(baseUrl: string, fetchFn: typeof fetch = fetc
   const url = `${baseUrl.replace(/\/+$/, "")}/lenders`;
   const response = await fetchFn(url);
   if (!response.ok) throw new Error(`GET ${url} answered ${response.status}`);
-  return (await response.json()) as LenderYieldRow[];
+  return parseLenders(await response.json(), url);
+}
+
+const AMOUNT_FIELDS = ["capital", "lent", "idle", "baseFees", "creditFees"] as const;
+const PERCENT_FIELDS = ["baseApr", "boostApr", "blendedApr"] as const;
+
+/** Checks the shape the table code relies on, so a server-side rename fails here with the field named. */
+function parseLenders(json: unknown, source: string): LenderYieldRow[] {
+  if (!Array.isArray(json)) throw new Error(`${source} did not return an array of lender yields`);
+  for (const [i, row] of json.entries()) {
+    const entry = row as Record<string, unknown> | null;
+    const bad = (field: string) => new Error(`${source} lender ${i}: field ${field} is missing or has the wrong type`);
+    if (typeof entry?.label !== "string") throw bad("label");
+    if (typeof entry.tier !== "string") throw bad("tier");
+    for (const field of AMOUNT_FIELDS) if (typeof entry[field] !== "string" || !/^\d+$/.test(entry[field])) throw bad(field);
+    for (const field of PERCENT_FIELDS) if (typeof entry[field] !== "number") throw bad(field);
+  }
+  return json as LenderYieldRow[];
 }
 
 /** Markdown table, one row per lender in label order. */
