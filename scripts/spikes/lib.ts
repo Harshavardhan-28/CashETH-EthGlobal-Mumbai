@@ -47,7 +47,7 @@ export async function mirrorGet<T>(path: string): Promise<T | undefined> {
   return (await res.json()) as T;
 }
 
-interface ContractResult {
+export interface ContractResult {
   result: string;
   error_message?: string | null;
   gas_limit: number;
@@ -67,25 +67,27 @@ export async function txRecord(hash: Hex, label?: string): Promise<TxRecord> {
 }
 
 /**
- * Contract write from the operator with gas = 1.3x the relay estimate (Hedera charges at least 80%
- * of the limit) unless `gas` is given. Waits for the receipt and fails loudly with the mirror-node reason.
+ * Contract write from the operator (or `from`, a wallet client with an account) with gas = 1.3x the relay
+ * estimate (Hedera charges at least 80% of the limit) unless `gas` is given. Waits for the receipt and fails
+ * loudly with the mirror-node reason.
  */
 export async function send(
   label: string,
   request: { address: Address; abi: Abi; functionName: string; args: readonly unknown[]; gas?: bigint },
+  from: WalletClient = wallet,
 ): Promise<TxRecord & { gas: Gas }> {
   const gas =
     request.gas ??
-    ((await pub.estimateContractGas({ ...request, account: wallet.account! } as Parameters<
+    ((await pub.estimateContractGas({ ...request, account: from.account! } as Parameters<
       typeof pub.estimateContractGas
     >[0])) *
       13n) /
       10n;
-  const hash = await wallet.writeContract({
+  const hash = await from.writeContract({
     ...request,
     gas,
-    account: wallet.account!,
-    chain: operator.chain,
+    account: from.account!,
+    chain: from.chain,
   } as Parameters<WalletClient["writeContract"]>[0]);
   const receipt = await pub.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") {

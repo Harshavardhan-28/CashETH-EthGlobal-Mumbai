@@ -41,8 +41,9 @@ export function evmClients(
   privateKey?: Hex,
 ): { public: PublicClient; wallet?: WalletClient; chain: Chain } {
   const chain = hederaTestnet;
-  // Hashio regularly takes longer than viem's 10 s default to answer eth_sendRawTransaction.
-  const transport = http(env.HEDERA_JSON_RPC_URL, { timeout: 60_000 });
+  // Hashio regularly takes longer than viem's 10 s default to answer eth_sendRawTransaction and answers
+  // 502 now and then; viem resends the same signed transaction, so retrying never double-sends.
+  const transport = http(env.HEDERA_JSON_RPC_URL, { timeout: 60_000, retryCount: 5, retryDelay: 1_000 });
   return {
     public: createPublicClient({ chain, transport }),
     wallet: privateKey

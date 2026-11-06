@@ -27,8 +27,6 @@ import {
   hieroClient,
   mintReceivableNft,
   mirror,
-  publishAudit,
-  readAuditMessages,
   transferUsdc,
   type AuditEvent,
 } from "@casheth/hedera";
@@ -46,22 +44,20 @@ import {
 import {
   BaseError,
   ContractFunctionRevertedError,
-  decodeErrorResult,
   getAddress,
   keccak256,
-  toFunctionSelector,
   toHex,
   type Address,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { env, gasOf, mirrorGet, ROOT, txRecord } from "./spikes/lib.js";
-import { mintTo, readC4, TUSDT_UNIT, writeC4, type C4State, type Rejection } from "./c4-state.js";
+import { publishAuditOnce, proveRevert } from "./lib/c4.js";
+import { mintTo, readC4, TUSDT_UNIT, writeC4, type C4State } from "./c4-state.js";
 
 const ENV_ACCOUNTS_PATH = `${ROOT}.env.accounts`;
 const DAY = 86_400n;
 const FACE = 10_000_000n; // 10 USDC
-const REVERT_GAS = 300_000n;
 const LENDER_D_USDC = 1_000_000n;
 
 function need(name: string, value: string | undefined): string {
@@ -286,30 +282,8 @@ async function readOnChain(): Promise<Record<string, string>> {
 
 // ------------------------------------------------------------------ 3. HCS + NFT
 
-async function latestSeq(): Promise<number> {
-  const msgs = await mirror.topicMessages(env, topicId, { limit: 1, order: "desc" });
-  return msgs[0]?.sequence_number ?? 0;
-}
-
-/** An already-published event of `type` for this receivable (guards against a crash between publish and save). */
-async function findPublished(type: AuditEvent["type"]) {
-  const msgs = await readAuditMessages(env, topicId, { limit: 100 });
-  return msgs.find((m) => m.message.type === type && m.message.id === receivableId);
-}
-
-async function publish(type: AuditEvent["type"], fields: Record<string, unknown>) {
-  const prior = await findPublished(type);
-  if (prior) {
-    console.log(`  ${type}: already on the topic at seq ${prior.sequenceNumber}`);
-    const txId = prior.txId ?? prior.consensusTimestamp;
-    return { seq: prior.sequenceNumber, txId, hashscan: hashscan.tx(txId), prevSeq: prior.message.prevSeq };
-  }
-  const prevSeq = await latestSeq();
-  const event: AuditEvent = { v: 1, type, id: receivableId, ...fields, prevSeq, ts: new Date().toISOString() };
-  const { sequenceNumber, txId } = await publishAudit(client, topicId, event);
-  console.log(`  ${type}: seq ${sequenceNumber} ${hashscan.tx(txId)}`);
-  return { seq: sequenceNumber, txId, hashscan: hashscan.tx(txId), prevSeq };
-}
+const publish = (type: AuditEvent["type"], fields: Record<string, unknown>) =>
+  publishAuditOnce(client, topicId, type, receivableId, fields);
 
 function nftMetadata(seq: number): string {
   return JSON.stringify({ id: receivableId, seq });
@@ -359,30 +333,12 @@ async function duplicate(): Promise<NonNullable<C4State["duplicate"]>> {
   if (controlId !== computeReceivableId(buyer, control.buyerRef)) throw new Error("control dry run returned the wrong id");
   console.log(`  dry run: ${dup}; same confirmation with buyerRef keccak("PO-1002-control") passes (id ${controlId})`);
 
-  // Explicit gas: estimation would surface the revert and block the send.
-  const hash = await registry.write.register([c, sig], { gas: REVERT_GAS, chain: clients.chain, account: clients.wallet.account! });
-  const receipt = await clients.public.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "reverted") throw new Error(`duplicate register: expected a revert, got ${receipt.status} (${hash})`);
-  const result = await mirror.waitFor(
-    () => mirrorGet<{ result: string; error_message: Hex | null }>(`/contracts/results/${hash}`),
-    { attempts: 15, delayMs: 2000 },
+  const rejection = await proveRevert(
+    clients.wallet,
+    { address: registryAddress, abi: ReceivableRegistryAbi, functionName: "register", args: [c, sig] },
+    "DUPLICATE_RECEIVABLE",
+    "register(PO-1002 again, next nonce)",
   );
-  const errorMessage = result.error_message;
-  if (!errorMessage?.startsWith("0x")) throw new Error(`mirror has no revert data (${String(errorMessage)})`);
-  const selector = toFunctionSelector("DUPLICATE_RECEIVABLE()");
-  if (errorMessage.toLowerCase() !== selector) throw new Error(`error_message ${errorMessage} is not DUPLICATE_RECEIVABLE() ${selector}`);
-  const { errorName } = decodeErrorResult({ abi: ReceivableRegistryAbi, data: errorMessage });
-  if (errorName !== "DUPLICATE_RECEIVABLE") throw new Error(`decoded ${errorName}`);
-  const tx = { ...(await txRecord(hash, "register(PO-1002 again, next nonce)")), gas: await gasOf(hash) };
-  console.log(`  on-chain: ${result.result} ${errorMessage} = ${errorName}() ${tx.hashscan}`);
-  const rejection: Rejection = {
-    expected: "DUPLICATE_RECEIVABLE",
-    tx,
-    status: result.result,
-    errorMessage,
-    selector,
-    decoded: `${errorName}()`,
-  };
   return {
     confirmation: stringify(c),
     simulation: { duplicate: dup, freshRefControl: `passes, returns id ${controlId}` },

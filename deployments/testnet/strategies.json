@@ -1,0 +1,107 @@
+{
+  "network": "testnet",
+  "chainId": 296,
+  "strategies": [
+    {
+      "lender": "A",
+      "kind": "credit",
+      "maker": "0xc502fe381481aBD2E56921Dc58DFC3ca3776a096",
+      "salt": "1",
+      "usdc": "4000000",
+      "strategyHash": "0xbb373565cb358982293c8b00cd2318df8271d4d31d8baccee731878ae7159a99",
+      "tx": {
+        "label": "Aqua.ship(A credit)",
+        "hash": "0x7c6f6b8b10494d4989a5be2d02439fa9100cf24b308d518a42026ff0729d4b59",
+        "transactionId": "0.0.7314364@1793974693.355943119",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793974693.355943119"
+      }
+    },
+    {
+      "lender": "A",
+      "kind": "base",
+      "maker": "0xc502fe381481aBD2E56921Dc58DFC3ca3776a096",
+      "salt": "2",
+      "usdc": "2000000",
+      "tUsdt": "2000000",
+      "strategyHash": "0xb066774b1f5a237212a16f37982ea219648ec1e0ff11accd73846bbc286da405",
+      "tx": {
+        "label": "Aqua.ship(A base)",
+        "hash": "0x6c089d6a4f346694b1348d973184e7848c701a84960d589239846bc692969ccd",
+        "transactionId": "0.0.7314364@1793974806.917877057",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793974806.917877057"
+      }
+    },
+    {
+      "lender": "B",
+      "kind": "credit",
+      "maker": "0x502ea0745ddd16128B8f649394cd0C8c93FEd238",
+      "salt": "1",
+      "usdc": "2000000",
+      "strategyHash": "0xf08a82b952e3fc04a5ee80e44e5bbcd090ebff7ef89de5f86f850576a701daf6",
+      "tx": {
+        "label": "Aqua.ship(B credit)",
+        "hash": "0xbf63b092957cf1f19bfc962daede7d509faa13869dbc1816c6078c8d43162c1b",
+        "transactionId": "0.0.7314364@1793974867.456516923",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793974867.456516923"
+      }
+    },
+    {
+      "lender": "B",
+      "kind": "base",
+      "maker": "0x502ea0745ddd16128B8f649394cd0C8c93FEd238",
+      "salt": "2",
+      "usdc": "1000000",
+      "tUsdt": "1000000",
+      "strategyHash": "0xb34f81f5e96886d8d19946ccb47d88a9dd91f13a3c0fd4aa3b76603eaae68f71",
+      "tx": {
+        "label": "Aqua.ship(B base)",
+        "hash": "0x50615a2a9e9f20ba8aad0e21ec7f6e68b740bba9619a78f81cb678a8986dc6d2",
+        "transactionId": "0.0.7314364@1793975076.335157523",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793975076.335157523"
+      }
+    },
+    {
+      "lender": "C",
+      "kind": "credit",
+      "maker": "0xeaABAEF2DF2BD6c1e13207573B233d1D33042377",
+      "salt": "1",
+      "usdc": "3000000",
+      "strategyHash": "0x9356d49a1d6eed1a55f0c9556f1f3cbd7825d0659882b5ab29ed52c14fa82ccc",
+      "tx": {
+        "label": "Aqua.ship(C credit)",
+        "hash": "0xf5dadca2ef8ca412a69ef9c670b5b0f292171bca44d12b94efb3ec8914edaee5",
+        "transactionId": "0.0.7314364@1793975148.650273990",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793975148.650273990"
+      }
+    },
+    {
+      "lender": "C",
+      "kind": "base",
+      "maker": "0xeaABAEF2DF2BD6c1e13207573B233d1D33042377",
+      "salt": "2",
+      "usdc": "1000000",
+      "tUsdt": "1000000",
+      "strategyHash": "0x3682b06ac84ac0e8dd9126a00ac396960e204f2f329553d1b778f70da9e691a0",
+      "tx": {
+        "label": "Aqua.ship(C base)",
+        "hash": "0x49b2dc14e9fbc7bde31b32a147bbab983140d76943d5665cdab262012d37d1b2",
+        "transactionId": "0.0.7314364@1793975212.586686405",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793975212.586686405"
+      }
+    },
+    {
+      "lender": "D",
+      "kind": "credit",
+      "maker": "0x9a81f51AACA1BF584D21f44c40Be9DdB12ef5690",
+      "salt": "1",
+      "usdc": "1000000",
+      "strategyHash": "0x1781496aa4464ee7b8700c322a1d97c5407e36f74862376580dcbc032e616a6d",
+      "tx": {
+        "label": "Aqua.ship(D credit)",
+        "hash": "0x57bfa72960179f3746346cf322ab5a051885e82cc763edcf2506fb24c7a66033",
+        "transactionId": "0.0.7314364@1793975262.753059238",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793975262.753059238"
+      }
+    }
+  ]
+}

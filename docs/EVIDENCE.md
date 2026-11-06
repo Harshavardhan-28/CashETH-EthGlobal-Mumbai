@@ -493,3 +493,26 @@ The same obligation (same buyer and `buyerRef`, so the same id) was signed again
 
 `forge test`: 182 passed, 0 failed. That is the earlier 167 plus 11 for `CashEthTaker`: both directions, exact-in and exact-out (approves the router's own quote), threshold, owner-only, sweep, constructor association including `TOKEN_ALREADY_ASSOCIATED`. Another 4 cover `TestStablecoin`.
 
+
+## C4 strategies
+
+Shipped on 2026-11-06 by `scripts/c4-ship-strategies.ts` to Aqua `0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c` with the modified SwapVM router as the app. Each lender ships from one wallet, sending the exact-amount USDC (and tUSDT) approvals to Aqua first. The record, with every `Shipped` transaction and strategy hash, is `deployments/testnet/strategies.json`.
+
+Credit strategies use the tier presets (`low` 700 bps, `medium` 850 bps, `high` 1300 bps) with `maxPerBuyer` 5 USDC and `minReserve` 0. A and B accept the seller only, C accepts any seller, and D accepts only workerResearch. Base-yield strategies are USDC/tUSDT constant product with a 30 bps input fee. Lender D has no base-yield strategy, so there are seven strategies, not eight.
+
+| Lender | Kind | Shipped | Salt | Strategy hash | `Aqua.ship` tx |
+| --- | --- | --- | --- | --- | --- |
+| A (0xc502…a096) | credit | 4 USDC | salt 1 | `0xbb373565cb358982293c8b00cd2318df8271d4d31d8baccee731878ae7159a99` | [0.0.7314364@1793974693.355943119](https://hashscan.io/testnet/transaction/0.0.7314364@1793974693.355943119) |
+| A (0xc502…a096) | base | 2 USDC + 2 tUSDT | salt 2 | `0xb066774b1f5a237212a16f37982ea219648ec1e0ff11accd73846bbc286da405` | [0.0.7314364@1793974806.917877057](https://hashscan.io/testnet/transaction/0.0.7314364@1793974806.917877057) |
+| B (0x502e…d238) | credit | 2 USDC | salt 1 | `0xf08a82b952e3fc04a5ee80e44e5bbcd090ebff7ef89de5f86f850576a701daf6` | [0.0.7314364@1793974867.456516923](https://hashscan.io/testnet/transaction/0.0.7314364@1793974867.456516923) |
+| B (0x502e…d238) | base | 1 USDC + 1 tUSDT | salt 2 | `0xb34f81f5e96886d8d19946ccb47d88a9dd91f13a3c0fd4aa3b76603eaae68f71` | [0.0.7314364@1793975076.335157523](https://hashscan.io/testnet/transaction/0.0.7314364@1793975076.335157523) |
+| C (0xeaAB…2377) | credit | 3 USDC | salt 1 | `0x9356d49a1d6eed1a55f0c9556f1f3cbd7825d0659882b5ab29ed52c14fa82ccc` | [0.0.7314364@1793975148.650273990](https://hashscan.io/testnet/transaction/0.0.7314364@1793975148.650273990) |
+| C (0xeaAB…2377) | base | 1 USDC + 1 tUSDT | salt 2 | `0x3682b06ac84ac0e8dd9126a00ac396960e204f2f329553d1b778f70da9e691a0` | [0.0.7314364@1793975212.586686405](https://hashscan.io/testnet/transaction/0.0.7314364@1793975212.586686405) |
+| D (0x9a81…5690) | credit | 1 USDC | salt 1 | `0x1781496aa4464ee7b8700c322a1d97c5407e36f74862376580dcbc032e616a6d` | [0.0.7314364@1793975262.753059238](https://hashscan.io/testnet/transaction/0.0.7314364@1793975262.753059238) |
+
+Checked by discovery from the Aqua deployment block (`listOpenStrategies`, also `LIVE=1 pnpm -F @casheth/aqua exec vitest run --project unit discover.live`):
+
+- The order is credit A (700 bps), D (700 bps), B (850 bps), C (1300 bps), then base A, B, C. A and D tie and keep shipping order.
+- Virtual balances equal the shipped amounts.
+- The USDC allowance to Aqua is exactly credit + base for each lender (A 6, B 3, C 4, D 1 USDC) and the tUSDT allowance is exactly the base amount. Nothing was approved at max.
+- A re-run of the script only reads: every hash is already open.
