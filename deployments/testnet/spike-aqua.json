@@ -1,0 +1,126 @@
+{
+  "network": "testnet",
+  "chainId": 296,
+  "deployPath": "forge script --broadcast --legacy --slow --skip-simulation via Hashio JSON-RPC relay",
+  "owner": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+  "usdc": "0x0000000000000000000000000000000000068cDa",
+  "whbar": "0xb1F616b8134F602c3Bb465fB5b5e6565cCAd37Ed",
+  "aqua": "0xE696943051d272e63b02429C4449174Df73AEFEF",
+  "router": "0xad3b3E9C8569d3A98F46638706e988593a60F177",
+  "tokenB": "0x5E8D4A662506a181F92f13B227BdAe2035aFb112",
+  "builder": "0x044A0A14DcD0F43c38c2531d76579e2a089A8E83",
+  "taker": "0xCaB7F04e7AAA2780B86E5688a69ad9DeFFC7BfbA",
+  "contracts": {
+    "aqua": {
+      "address": "0xE696943051d272e63b02429C4449174Df73AEFEF",
+      "contractId": "0.0.11338088",
+      "tx": {
+        "hash": "0xc3a439800a27363ddcaff192eda3037aa9076e3736a81cebefbcf73a5ffcc034",
+        "transactionId": "0.0.7314364@1793962858.989301503",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793962858.989301503"
+      }
+    },
+    "router": {
+      "address": "0xad3b3E9C8569d3A98F46638706e988593a60F177",
+      "contractId": "0.0.11338089",
+      "tx": {
+        "hash": "0xdb921d9f32ee0401adb91576edac9cfdcb74469fd00979463f0ec0fe112b76de",
+        "transactionId": "0.0.7314364@1793962861.258758871",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793962861.258758871"
+      }
+    },
+    "tokenB": {
+      "address": "0x5E8D4A662506a181F92f13B227BdAe2035aFb112",
+      "contractId": "0.0.11338091",
+      "tx": {
+        "hash": "0xe941ad7a0063b386b888369003912186eec0a0b020e67b858f63194697334952",
+        "transactionId": "0.0.7314364@1793962867.786577686",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793962867.786577686"
+      }
+    },
+    "builder": {
+      "address": "0x044A0A14DcD0F43c38c2531d76579e2a089A8E83",
+      "contractId": "0.0.11338092",
+      "tx": {
+        "hash": "0xb2d2b55723f51c0de549e27b90094c7f9a042e480927ef473ef5272a02c1c5d7",
+        "transactionId": "0.0.7314364@1793962870.241347429",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793962870.241347429"
+      }
+    },
+    "taker": {
+      "address": "0xCaB7F04e7AAA2780B86E5688a69ad9DeFFC7BfbA",
+      "contractId": "0.0.11338095",
+      "tx": {
+        "hash": "0x56d0b598e07ad1004c104d2392596531393bef1ec76b04e54fef5b267b554910",
+        "transactionId": "0.0.7314364@1793962871.567047578",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793962871.567047578"
+      }
+    }
+  },
+  "ship": {
+    "maker": "0xc502fe381481aBD2E56921Dc58DFC3ca3776a096",
+    "strategyHash": "0xc9125dc82af7085ec0de8c18e9265f9f61f7ea3636903ef40e29f0b412f88af3",
+    "amounts": {
+      "usdc": "1000000",
+      "tokenB": "1000000"
+    },
+    "setupTxs": [
+      {
+        "label": "mint 1 TOKENB to lender A",
+        "hash": "0x969501dc749dea3371a9ed1d35caa185d51062715d43f5782f0aeee42c3bee44",
+        "transactionId": "0.0.7314364@1793963051.329017528",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963051.329017528"
+      },
+      {
+        "label": "mint 0.1 TOKENB to SpikeTaker",
+        "hash": "0x22ec075d642830ceec0933baa68ae5b6743584e19423a88ddb1234df7da799c1",
+        "transactionId": "0.0.7314364@1793963054.440703515",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963054.440703515"
+      },
+      {
+        "label": "lender A approves Aqua for 1 USDC (HTS allowance via facade)",
+        "hash": "0xb887473f500f8c749cd43a046e2212f3b1c50c84418f12272f327439864130c2",
+        "transactionId": "0.0.7314364@1793963063.234109476",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963063.234109476"
+      },
+      {
+        "label": "lender A approves Aqua for TOKENB",
+        "hash": "0x431fd486eedd2f5557e792b77836a82b780f5569b4acea97aec34af02177d417",
+        "transactionId": "0.0.7314364@1793963066.063489567",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963066.063489567"
+      }
+    ],
+    "tx": {
+      "label": "lender A ships XYC strategy",
+      "hash": "0x0aa6b10de174b2706268d1ecd113ae7ea1f0eaa7e4a6edf2eccc6414bc01f62a",
+      "transactionId": "0.0.7314364@1793963071.121512471",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963071.121512471"
+    }
+  },
+  "fill": {
+    "amountIn": "100000",
+    "quotedAmountOut": "90909",
+    "amountOut": "90909",
+    "isAToB": false,
+    "tx": {
+      "label": "SpikeTaker.fill 0.1 TOKENB -> USDC",
+      "hash": "0x21939d23b9dd6d3c3b1022ec934ce18527125e077558f6f14491a59da911e322",
+      "transactionId": "0.0.7314364@1793963078.419965153",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963078.419965153"
+    },
+    "balances": {
+      "before": {
+        "lenderUsdc": "4000000",
+        "takerUsdc": "0",
+        "lenderTokenB": "1000000",
+        "takerTokenB": "100000"
+      },
+      "after": {
+        "lenderUsdc": "3909091",
+        "takerUsdc": "90909",
+        "lenderTokenB": "1100000",
+        "takerTokenB": "0"
+      }
+    }
+  }
+}
