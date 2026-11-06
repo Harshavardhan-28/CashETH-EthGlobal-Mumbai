@@ -11,29 +11,6 @@ export const ROLE_COLOR: Record<Role, string> = {
 
 /* ---------- Landing ---------- */
 
-export type ConsoleEvent = {
-  seq: string;
-  role: string;
-  color: string;
-  type: string;
-  detail: string;
-  step: number;
-  err?: boolean;
-};
-
-export const CONSOLE_EVENTS: ConsoleEvent[] = [
-  { seq: "037", role: "SELLER", color: "var(--seller)", type: "ReceivableUploaded", detail: "INV-2207 · $10,000.00 · Net 30", step: 1 },
-  { seq: "038", role: "BUYER", color: "var(--buyer)", type: "ReceivableConfirmed", detail: "EIP-712 signed · payTo = RepaymentRouter", step: 2 },
-  { seq: "039", role: "ORCH", color: "var(--ink)", type: "Verified", detail: "KYA 3 / 2 · owner groups differ · advance 75%", step: 3 },
-  { seq: "040", role: "HEDERA", color: "var(--ink)", type: "Registered", detail: "state Confirmed · receivable NFT #1 minted", step: 4 },
-  { seq: "041", role: "SELLER", color: "var(--seller)", type: "DUPLICATE_RECEIVABLE", detail: "same buyer + buyerRef · rejected", step: 4, err: true },
-  { seq: "042", role: "LENDER", color: "var(--lender)", type: "StrategyShipped", detail: "A 7.00% · B 8.50% · C 13.00%", step: 5 },
-  { seq: "043", role: "AQUA", color: "var(--lender)", type: "FacilityFunded", detail: "A $4,000 + B $2,000 · C skipped · Financed", step: 6 },
-  { seq: "044", role: "WORKER", color: "var(--worker)", type: "SpendCommitted", detail: "research · $0.25 via x402 · settled", step: 7 },
-  { seq: "045", role: "WORKER", color: "var(--worker)", type: "AGENT_BUDGET_EXCEEDED", detail: "compute · $5,500 > $3,000 budget", step: 7, err: true },
-  { seq: "046", role: "BUYER", color: "var(--buyer)", type: "Repaid", detail: "lenders $6,036.99 · seller $3,963.01", step: 8 },
-];
-
 export type LifecycleStep = {
   n: string;
   actor: string;

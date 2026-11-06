@@ -23,6 +23,9 @@
   --shadow: rgba(0, 0, 0, 0.8);
   --show-dark: block;
   --show-light: none;
+  --blk-top: #1f2721;
+  --blk-s1: #171d19;
+  --blk-s2: #121814;
 
   --font-serif: var(--font-newsreader), Georgia, serif;
   --font-sans: var(--font-plex-sans), system-ui, sans-serif;
@@ -56,6 +59,9 @@ html[data-theme="light"] {
   --shadow: rgba(30, 40, 30, 0.16);
   --show-dark: none;
   --show-light: block;
+  --blk-top: #fdfcf8;
+  --blk-s1: #dddcd3;
+  --blk-s2: #c8c7bd;
 }
 
 * {
@@ -116,6 +122,15 @@ pre {
   }
   50% {
     opacity: 0.2;
+  }
+}
+
+@keyframes cx-wave {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
   }
 }
 

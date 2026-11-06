@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 import { PacketCanvas } from "./PacketCanvas";
-import { LiveConsole } from "./LiveConsole";
+import { LifecycleStage } from "./LifecycleStage";
 import styles from "./Hero.module.css";
 
 export function Hero() {
@@ -57,7 +57,7 @@ export function Hero() {
           </div>
         </div>
 
-        <LiveConsole />
+        <LifecycleStage />
       </div>
     </section>
   );
