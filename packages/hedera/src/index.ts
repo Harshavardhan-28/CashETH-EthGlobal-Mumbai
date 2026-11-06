@@ -1,6 +1,12 @@
 export { evmClients, hederaTestnet, hieroClient } from "./client.js";
-export { createEcdsaAccount } from "./accounts.js";
+export { createEcdsaAccount, createThresholdAccount } from "./accounts.js";
 export type { CreatedAccount } from "./accounts.js";
 export { associateUsdc, transferUsdc } from "./tokens.js";
 export { mirror } from "./mirror.js";
 export type { MirrorAccount, WaitForOptions } from "./mirror.js";
+export { addSignature, createCosignedHederaSigner } from "./x402/cosignedSigner.js";
+export type { CosignedSignerOptions } from "./x402/cosignedSigner.js";
+export { createX402Fetch, payX402 } from "./x402/client.js";
+export type { FetchLike, X402Result } from "./x402/client.js";
+export { createClientHederaSigner, PrivateKey } from "@x402/hedera";
+export type { ClientHederaSigner } from "@x402/hedera";

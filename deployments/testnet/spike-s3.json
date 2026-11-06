@@ -1,0 +1,166 @@
+{
+  "network": "testnet",
+  "merchant": "0.0.11333304",
+  "usdc": "0.0.429274",
+  "partA": {
+    "payer": "0.0.11337989",
+    "facilitator": "https://x402.org/facilitator",
+    "feePayer": "0.0.9185802",
+    "requirements": {
+      "x402Version": 2,
+      "error": "Payment required",
+      "resource": {
+        "url": "http://localhost:4021/research?topic=hedera%20x402",
+        "description": "Deterministic research note on a topic",
+        "mimeType": "application/json"
+      },
+      "accepts": [
+        {
+          "scheme": "exact",
+          "network": "hedera:testnet",
+          "amount": "250000",
+          "asset": "0.0.429274",
+          "payTo": "0.0.11333304",
+          "maxTimeoutSeconds": 300,
+          "extra": {
+            "feePayer": "0.0.9185802"
+          }
+        }
+      ]
+    },
+    "attempts": [
+      {
+        "facilitator": "https://x402.org/facilitator",
+        "status": 200,
+        "body": {
+          "topic": "hedera x402",
+          "summary": "Research note on \"hedera x402\": x402 turns HTTP 402 into a payment handshake. The server quotes PaymentRequirements, the client returns a signed Hedera TransferTransaction, and a facilitator pays the fee and settles it, so \"hedera x402\" was delivered against a settled USDC transfer.",
+          "sources": [
+            "https://docs.hedera.com/solutions/ai/x402",
+            "https://github.com/coinbase/x402/blob/main/specs/schemes/exact/scheme_exact_hedera.md"
+          ],
+          "paidWith": {
+            "transactionId": "0.0.9185802@1793964900.434830214"
+          }
+        },
+        "transactionId": "0.0.9185802@1793964900.434830214"
+      }
+    ],
+    "transactionId": "0.0.9185802@1793964900.434830214",
+    "mirrorTransactionId": "0.0.9185802-1793964900-434830214",
+    "hashscan": "https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214",
+    "consensusTimestamp": "1793964909.573589614",
+    "responseBody": {
+      "topic": "hedera x402",
+      "summary": "Research note on \"hedera x402\": x402 turns HTTP 402 into a payment handshake. The server quotes PaymentRequirements, the client returns a signed Hedera TransferTransaction, and a facilitator pays the fee and settles it, so \"hedera x402\" was delivered against a settled USDC transfer.",
+      "sources": [
+        "https://docs.hedera.com/solutions/ai/x402",
+        "https://github.com/coinbase/x402/blob/main/specs/schemes/exact/scheme_exact_hedera.md"
+      ],
+      "paidWith": {
+        "transactionId": "0.0.9185802@1793964900.434830214"
+      }
+    },
+    "usdc": {
+      "payer": {
+        "before": "300000",
+        "after": "50000"
+      },
+      "merchant": {
+        "before": "0",
+        "after": "250000"
+      }
+    },
+    "fundTx": "0.0.11333252@1793964894.571963471"
+  },
+  "spendWallet": {
+    "accountId": "0.0.11338499",
+    "threshold": 2,
+    "keys": {
+      "worker": "03992d6204ee754421f9643bf73bf1826fea6def1b2549656d9df96d3a205e2947",
+      "cosigner": "031ca1230064d86ff1e48a4825d999f30dea7f006f29c20e4f62d4af7b3397e0a1"
+    },
+    "createTx": "0.0.11333252@1793964911.818280874",
+    "associateTx": "0.0.11333252@1793964913.286550799",
+    "fundTx": "0.0.11333252@1793964912.847079064"
+  },
+  "partB": {
+    "payer": "0.0.11338499",
+    "facilitator": "https://x402.org/facilitator",
+    "feePayer": "0.0.9185802",
+    "requirements": {
+      "x402Version": 2,
+      "error": "Payment required",
+      "resource": {
+        "url": "http://localhost:4021/research?topic=hedera%20x402",
+        "description": "Deterministic research note on a topic",
+        "mimeType": "application/json"
+      },
+      "accepts": [
+        {
+          "scheme": "exact",
+          "network": "hedera:testnet",
+          "amount": "250000",
+          "asset": "0.0.429274",
+          "payTo": "0.0.11333304",
+          "maxTimeoutSeconds": 300,
+          "extra": {
+            "feePayer": "0.0.9185802"
+          }
+        }
+      ]
+    },
+    "attempts": [
+      {
+        "facilitator": "https://x402.org/facilitator",
+        "status": 200,
+        "body": {
+          "topic": "hedera x402",
+          "summary": "Research note on \"hedera x402\": x402 turns HTTP 402 into a payment handshake. The server quotes PaymentRequirements, the client returns a signed Hedera TransferTransaction, and a facilitator pays the fee and settles it, so \"hedera x402\" was delivered against a settled USDC transfer.",
+          "sources": [
+            "https://docs.hedera.com/solutions/ai/x402",
+            "https://github.com/coinbase/x402/blob/main/specs/schemes/exact/scheme_exact_hedera.md"
+          ],
+          "paidWith": {
+            "transactionId": "0.0.9185802@1793964918.249682742"
+          }
+        },
+        "transactionId": "0.0.9185802@1793964918.249682742"
+      }
+    ],
+    "transactionId": "0.0.9185802@1793964918.249682742",
+    "mirrorTransactionId": "0.0.9185802-1793964918-249682742",
+    "hashscan": "https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742",
+    "consensusTimestamp": "1793964928.840441535",
+    "responseBody": {
+      "topic": "hedera x402",
+      "summary": "Research note on \"hedera x402\": x402 turns HTTP 402 into a payment handshake. The server quotes PaymentRequirements, the client returns a signed Hedera TransferTransaction, and a facilitator pays the fee and settles it, so \"hedera x402\" was delivered against a settled USDC transfer.",
+      "sources": [
+        "https://docs.hedera.com/solutions/ai/x402",
+        "https://github.com/coinbase/x402/blob/main/specs/schemes/exact/scheme_exact_hedera.md"
+      ],
+      "paidWith": {
+        "transactionId": "0.0.9185802@1793964918.249682742"
+      }
+    },
+    "usdc": {
+      "payer": {
+        "before": "300000",
+        "after": "50000"
+      },
+      "merchant": {
+        "before": "250000",
+        "after": "500000"
+      }
+    }
+  },
+  "workerOnly": {
+    "facilitator": "https://x402.org/facilitator",
+    "status": 402,
+    "body": {
+      "error": "invalid_exact_hedera_payload_signature_invalid"
+    },
+    "usdcBefore": "50000",
+    "usdcAfter": "50000"
+  }
+}

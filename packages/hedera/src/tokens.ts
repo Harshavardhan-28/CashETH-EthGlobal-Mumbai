@@ -6,18 +6,23 @@ import {
   type Client,
 } from "@hiero-ledger/sdk";
 
-/** Associates `tokenId` (USDC) with the account, signed by its ECDSA key. Returns the transaction id. */
+/**
+ * Associates `tokenId` (USDC) with the account, signed by its ECDSA key, or by every key in the list
+ * for a threshold-key account. Returns the transaction id.
+ */
 export async function associateUsdc(
   client: Client,
   accountId: string,
-  privateKey: string,
+  privateKey: string | string[],
   tokenId: string,
 ): Promise<string> {
-  const tx = await new TokenAssociateTransaction()
+  const tx = new TokenAssociateTransaction()
     .setAccountId(accountId)
     .setTokenIds([TokenId.fromString(tokenId)])
-    .freezeWith(client)
-    .sign(PrivateKey.fromStringECDSA(privateKey));
+    .freezeWith(client);
+  for (const key of Array.isArray(privateKey) ? privateKey : [privateKey]) {
+    await tx.sign(PrivateKey.fromStringECDSA(key));
+  }
   const response = await tx.execute(client);
   await response.getReceipt(client);
   return response.transactionId.toString();

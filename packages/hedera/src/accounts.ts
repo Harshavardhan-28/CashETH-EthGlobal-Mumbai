@@ -1,4 +1,4 @@
-import { AccountCreateTransaction, Hbar, PrivateKey, type Client } from "@hiero-ledger/sdk";
+import { AccountCreateTransaction, Hbar, KeyList, PrivateKey, type Client, type PublicKey } from "@hiero-ledger/sdk";
 
 export interface CreatedAccount {
   accountId: string;
@@ -30,4 +30,28 @@ export async function createEcdsaAccount(
     privateKey: `0x${key.toStringRaw()}`,
     txId: response.transactionId.toString(),
   };
+}
+
+/**
+ * Creates an account whose key is a `threshold`-of-n KeyList over `publicKeys`, without an EVM alias
+ * (it gets the long-zero EVM address). Every transaction it pays or sends needs `threshold` signatures.
+ */
+export async function createThresholdAccount(
+  client: Client,
+  { publicKeys, threshold, initialHbar, label }: {
+    publicKeys: PublicKey[];
+    threshold: number;
+    initialHbar: number;
+    label: string;
+  },
+): Promise<{ accountId: string; txId: string }> {
+  const response = await new AccountCreateTransaction()
+    .setKeyWithoutAlias(new KeyList(publicKeys, threshold))
+    .setInitialBalance(new Hbar(initialHbar))
+    .setMaxAutomaticTokenAssociations(10)
+    .setAccountMemo(`casheth:${label}`)
+    .execute(client);
+  const receipt = await response.getReceipt(client);
+  if (!receipt.accountId) throw new Error(`Account creation for ${label} returned no account id`);
+  return { accountId: receipt.accountId.toString(), txId: response.transactionId.toString() };
 }

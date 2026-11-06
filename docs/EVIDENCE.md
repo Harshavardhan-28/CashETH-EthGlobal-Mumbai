@@ -119,3 +119,68 @@ Findings for later tasks:
 - `scheduleCall` is expensive: ~1.45M gas per call (relay estimate ×1.3 ≈ 2.1M limit). `deleteSchedule` is cheap (~40k).
 - The scheduled call ran in the first consensus round after the expiry second (46 ms after it); `block.timestamp` inside the call was 1 second earlier than the expiry second, so code run by a schedule must not require `block.timestamp >= expiry`.
 - The mirror contract result for the executed call reports `from` as the relay account (`0x…6f9bbc` = 0.0.7314364, the payer in the transaction id), but in the EVM `msg.sender` was the probe, as the passing `msg.sender == address(this)` check shows.
+
+## Spike S3: x402 payment of 0.25 USDC, single key then 2-of-2 co-signed
+
+A worker agent paid our own x402 merchant (`apps/merchant`, `GET /research?topic=hedera x402`, price "0.25") in USDC [0.0.429274](https://hashscan.io/testnet/token/0.0.429274) to merchant [0.0.11333304](https://hashscan.io/testnet/account/0.0.11333304) on `hedera:testnet`, settled by a public x402 facilitator that pays the fee. Produced by `scripts/spikes/s3-x402.ts` (`@x402/core`, `@x402/hedera`, `@x402/express`, `@x402/fetch` 2.30.0); machine-readable record in `deployments/testnet/spike-s3.json`.
+
+| Payment | Payer | Facilitator (fee payer) | Settlement transaction | HTTP |
+| --- | --- | --- | --- | --- |
+| A: single ECDSA key | WORKER_RESEARCH [0.0.11337989](https://hashscan.io/testnet/account/0.0.11337989) | https://x402.org/facilitator (0.0.9185802) | [0.0.9185802@1793964900.434830214](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214) | 200 |
+| B: 2-of-2 KeyList (worker + policy co-signer) | spend wallet [0.0.11338499](https://hashscan.io/testnet/account/0.0.11338499) | https://x402.org/facilitator (0.0.9185802) | [0.0.9185802@1793964918.249682742](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) | 200 |
+
+| USDC (6-dec units, mirror) | Before | After |
+| --- | --- | --- |
+| A payer WORKER_RESEARCH `0.0.11337989` | 300,000 | 50,000 |
+| A merchant `0.0.11333304` | 0 | 250,000 |
+| B payer spend wallet `0.0.11338499` | 300,000 | 50,000 |
+| B merchant `0.0.11333304` | 250,000 | 500,000 |
+
+402 PaymentRequirements returned by the merchant (decoded `PAYMENT-REQUIRED` header, part A):
+
+```json
+{
+  "x402Version": 2,
+  "error": "Payment required",
+  "resource": {
+    "url": "http://localhost:4021/research?topic=hedera%20x402",
+    "description": "Deterministic research note on a topic",
+    "mimeType": "application/json"
+  },
+  "accepts": [
+    {
+      "scheme": "exact",
+      "network": "hedera:testnet",
+      "amount": "250000",
+      "asset": "0.0.429274",
+      "payTo": "0.0.11333304",
+      "maxTimeoutSeconds": 300,
+      "extra": {
+        "feePayer": "0.0.9185802"
+      }
+    }
+  ]
+}
+```
+
+Spend wallet [0.0.11338499](https://hashscan.io/testnet/account/0.0.11338499): key `KeyList([worker-research 03992d6204ee…, cosigner 0.0.11337995 031ca1230064…], threshold 2)`, no EVM alias, created in [0.0.11333252@1793964911.818280874](https://hashscan.io/testnet/transaction/0.0.11333252-1793964911-818280874), USDC associated with both signatures in [0.0.11333252@1793964913.286550799](https://hashscan.io/testnet/transaction/0.0.11333252-1793964913-286550799), funded 300,000 units in [0.0.11333252@1793964912.847079064](https://hashscan.io/testnet/transaction/0.0.11333252-1793964912-847079064). The worker key signs the facilitator-paid TransferTransaction (built by `@x402/hedera`'s `createClientHederaSigner`), then the policy co-signer adds its signature only after checking `payTo`, `asset` and `amount <= 250000`. The facilitator's `/verify` accepted the two signatures against the wallet's on-chain KeyList and its `/settle` reached consensus with `SUCCESS`.
+
+Negative check: the same wallet paying with the worker signature only (no co-signer) was refused by https://x402.org/facilitator: HTTP 402 `{"error":"invalid_exact_hedera_payload_signature_invalid"}`; the wallet's USDC stayed at 50,000 → 50,000.
+
+Each settlement was checked on the mirror node (`/api/v1/transactions/<id>`, id form `0.0.x-seconds-nanos`): result `SUCCESS`, type `CRYPTOTRANSFER`, USDC −250,000 from the payer and +250,000 to the merchant; the transaction id's account is the facilitator's fee payer.
+
+Paid response body (part B), with `paidWith.transactionId` taken from the settlement:
+
+```json
+{
+  "topic": "hedera x402",
+  "summary": "Research note on \"hedera x402\": x402 turns HTTP 402 into a payment handshake. The server quotes PaymentRequirements, the client returns a signed Hedera TransferTransaction, and a facilitator pays the fee and settles it, so \"hedera x402\" was delivered against a settled USDC transfer.",
+  "sources": [
+    "https://docs.hedera.com/solutions/ai/x402",
+    "https://github.com/coinbase/x402/blob/main/specs/schemes/exact/scheme_exact_hedera.md"
+  ],
+  "paidWith": {
+    "transactionId": "0.0.9185802@1793964918.249682742"
+  }
+}
+```
