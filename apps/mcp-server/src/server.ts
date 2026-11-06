@@ -14,7 +14,8 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { jsonSafe } from "./orchestrator/audit.js";
 import { bytes32 } from "./orchestrator/common.js";
 import { ToolError } from "./orchestrator/errors.js";
-import { receivableDetails } from "./orchestrator/receivables.js";
+import { receivableDetails, type ReceivableDetails } from "./orchestrator/receivables.js";
+import { staleWhileRevalidate } from "./orchestrator/swr.js";
 import type { Orchestrator } from "./orchestrator/types.js";
 import { registerTools } from "./tools.js";
 
@@ -70,6 +71,9 @@ function sendError(res: Response, err: unknown, o: Orchestrator): void {
   res.status(500).json({ code: "INTERNAL", message: "Internal Server Error" });
 }
 
+/** Dashboards poll each receivable every few seconds; one relay read set per id per window is plenty. */
+const RECEIVABLE_CACHE_MS = 5_000;
+
 export function createMcpApp(deps: McpAppDeps): express.Express {
   const { orchestrator: o, resource, oauthMetadata, verifier } = deps;
   const app = express();
@@ -98,9 +102,11 @@ export function createMcpApp(deps: McpAppDeps): express.Express {
       sendError(res, err, o);
     }
   });
+  const receivables = staleWhileRevalidate<ReceivableDetails>(RECEIVABLE_CACHE_MS);
   read.get("/receivables/:id", async (req, res) => {
     try {
-      res.json(await receivableDetails(o, String(req.params.id)));
+      const id = String(req.params.id).toLowerCase();
+      res.json(await receivables.get(id, () => receivableDetails(o, id)));
     } catch (err) {
       sendError(res, err, o);
     }
