@@ -68,3 +68,25 @@ Strategy hash (`keccak256(abi.encode(order))` = `router.hash(order)`): `0xc9125d
 HBAR spent: operator ~11.1 HBAR (five creations, two mints, the fill); lender A ~1.06 HBAR (two approvals, ship).
 
 Findings for later tasks: HTS `approve(spender, type(uint256).max)` through the facade fails (`CONTRACT_EXECUTION_EXCEPTION` in simulation; HTS allowances are int64), so USDC approvals must be bounded. The relay's gas estimate for a facade `approve` was ~822k.
+
+## Spike S2: HTS facade from a contract
+
+`AssocProbe` associates itself with HTS USDC (`0.0.429274`) through the HIP-719 facade in its constructor, then moves USDC with the facade's ERC-20 `transferFrom` (spending the operator's HTS allowance) and `transfer`. Produced by `contracts/script/01_DeploySpikeS2.s.sol` and `scripts/spikes/s2-facade.ts`; machine-readable record in `deployments/testnet/spike-s2.json`.
+
+AssocProbe: [0.0.11338193](https://hashscan.io/testnet/contract/0.0.11338193) (`0xE51e79F36406b35a5F164b39079806EC7B10070d`). `isAssociated()` returns `true` and the mirror node lists `0.0.429274` on `0.0.11338193`.
+
+| Step | Transaction | Gas limit | Gas used |
+| --- | --- | --- | --- |
+| deploy `AssocProbe(usdc)` (constructor calls `associate()`) | [0.0.7314364@1793963631.806935109](https://hashscan.io/testnet/transaction/0.0.7314364@1793963631.806935109) | 1,448,718 | 1,006,671 |
+| operator `approve(probe, 1_000_000)` on the facade | [0.0.7314364@1793963643.076091991](https://hashscan.io/testnet/transaction/0.0.7314364@1793963643.076091991) | 1,068,485 | 727,020 |
+| `probe.pull(operator, 500_000)` (facade `transferFrom`) | [0.0.7314364@1793963646.030791456](https://hashscan.io/testnet/transaction/0.0.7314364@1793963646.030791456) | 63,174 | 42,630 |
+| `probe.push(operator, 500_000)` (facade `transfer`) | [0.0.7314364@1793963655.477482784](https://hashscan.io/testnet/transaction/0.0.7314364@1793963655.477482784) | 63,131 | 42,599 |
+
+| USDC (6-dec units, mirror) | Before | After pull | After push |
+| --- | --- | --- | --- |
+| AssocProbe `0.0.11338193` | 0 | 500,000 | 0 |
+| operator `0.0.11333252` | 3,000,000 | 2,500,000 | 3,000,000 |
+
+The pull's HTS child transfer (`1793963653.433925105`) debits the operator with `is_approval: true`, i.e. the probe spent the operator's HTS allowance; 500,000 of the 1,000,000 allowance remains.
+
+Findings for later tasks: a constructor that calls `associate()` costs ~1.0M gas in total (gas limit for deploys with association: budget ~1.5M); a facade `approve` uses ~727k gas, so set ~1.1M; `transferFrom`/`transfer` from a contract are cheap (~43k).

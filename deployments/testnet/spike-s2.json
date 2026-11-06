@@ -1,0 +1,67 @@
+{
+  "network": "testnet",
+  "chainId": 296,
+  "deployPath": "forge script --broadcast --legacy --slow --skip-simulation via Hashio JSON-RPC relay",
+  "operator": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+  "usdc": "0x0000000000000000000000000000000000068cDa",
+  "probe": {
+    "address": "0xE51e79F36406b35a5F164b39079806EC7B10070d",
+    "contractId": "0.0.11338193",
+    "tx": {
+      "hash": "0x1833eeb40b56d2b2a3225048d87a32a68077d6c69b857050bffb8a515548968e",
+      "transactionId": "0.0.7314364@1793963631.806935109",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963631.806935109"
+    },
+    "gas": {
+      "limit": 1448718,
+      "used": 1006671,
+      "consumed": 1006671
+    }
+  },
+  "flow": {
+    "approve": {
+      "label": "operator approve(probe, 1 USDC) on the facade",
+      "hash": "0x0f1d1c30894955dd4e262c72aaf229f4dfd9e1079a78738de188552813bead20",
+      "transactionId": "0.0.7314364@1793963643.076091991",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963643.076091991",
+      "gas": {
+        "limit": 1068485,
+        "used": 727020,
+        "consumed": 727020
+      }
+    },
+    "pull": {
+      "label": "probe.pull(operator, 0.5 USDC) - facade transferFrom",
+      "hash": "0x95359eb49f4ea7b9d3df15f5f420c498c25542d62f2c080762719ffe8dd37869",
+      "transactionId": "0.0.7314364@1793963646.030791456",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963646.030791456",
+      "gas": {
+        "limit": 63174,
+        "used": 42630,
+        "consumed": 42630
+      }
+    },
+    "push": {
+      "label": "probe.push(operator, 0.5 USDC) - facade transfer",
+      "hash": "0x86fb018f356e7a67185b89566e70aed4a67057977438f0aed3100d0364da7cb3",
+      "transactionId": "0.0.7314364@1793963655.477482784",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963655.477482784",
+      "gas": {
+        "limit": 63131,
+        "used": 42599,
+        "consumed": 42599
+      }
+    },
+    "isAssociated": true,
+    "probeUsdc": {
+      "before": "0",
+      "afterPull": "500000",
+      "afterPush": "0"
+    },
+    "operatorUsdc": {
+      "before": "3000000",
+      "afterPull": "2500000",
+      "afterPush": "3000000"
+    }
+  }
+}

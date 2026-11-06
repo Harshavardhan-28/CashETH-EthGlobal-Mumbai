@@ -2,7 +2,6 @@
 pragma solidity 0.8.30;
 
 import { Test } from "forge-std/Test.sol";
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { AquaRouter } from "@1inch/aqua/contracts/AquaRouter.sol";
 import { AquaSwapVMRouter } from "@1inch/swap-vm/contracts/routers/AquaSwapVMRouter.sol";
 import { ISwapVM } from "@1inch/swap-vm/contracts/interfaces/ISwapVM.sol";
@@ -11,43 +10,7 @@ import { TakerTraitsLib } from "@1inch/swap-vm/contracts/libs/TakerTraits.sol";
 import { SpikeOrderBuilder } from "../src/spikes/SpikeOrderBuilder.sol";
 import { SpikeTaker } from "../src/spikes/SpikeTaker.sol";
 import { SpikeTokenB } from "../src/spikes/SpikeTokenB.sol";
-
-/// @dev Local stand-in for the HTS USDC facade: 6 decimals, HIP-719 `associate()`, and transfers to
-///      unassociated accounts revert like HTS does.
-contract MockHtsUsdc is ERC20 {
-    mapping(address => bool) public associated;
-    uint256 public associateResponseCode = 22;
-
-    error TokenNotAssociatedToAccount(address account);
-
-    constructor() ERC20("USD Coin", "USDC") {}
-
-    function decimals() public pure override returns (uint8) {
-        return 6;
-    }
-
-    function setAssociateResponseCode(uint256 code) external {
-        associateResponseCode = code;
-    }
-
-    function associate() external returns (uint256) {
-        if (associateResponseCode == 22) associated[msg.sender] = true;
-        return associateResponseCode;
-    }
-
-    function isAssociated() external view returns (bool) {
-        return associated[msg.sender];
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-    function _update(address from, address to, uint256 value) internal override {
-        if (to != address(0)) require(associated[to], TokenNotAssociatedToAccount(to));
-        super._update(from, to, value);
-    }
-}
+import { MockHtsUsdc } from "./mocks/MockHtsUsdc.sol";
 
 /// @notice Spike S1 locally: lender ships a 1 USDC / 1 TOKENB XYC strategy into the official Aqua
 ///         registry, SpikeTaker fills 0.1 TOKENB -> USDC through the unmodified AquaSwapVMRouter.
@@ -69,7 +32,7 @@ contract SpikeAquaTest is Test {
     function setUp() public {
         aqua = new AquaRouter(address(this));
         router = new AquaSwapVMRouter(address(aqua), WHBAR, address(this), "CashETH SwapVM", "1.0.0");
-        deployCodeTo("SpikeAqua.t.sol:MockHtsUsdc", USDC_FACADE);
+        deployCodeTo("MockHtsUsdc.sol:MockHtsUsdc", USDC_FACADE);
         usdc = MockHtsUsdc(USDC_FACADE);
         tokenB = new SpikeTokenB();
         builder = new SpikeOrderBuilder();
