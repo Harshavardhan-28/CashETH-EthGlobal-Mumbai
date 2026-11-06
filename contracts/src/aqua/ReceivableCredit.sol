@@ -1,5 +1,8 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Degensoft-SwapVM-1.1
 pragma solidity 0.8.30;
+
+// Derived from the 1inch SwapVM instruction pattern (© 2025 Degensoft Ltd, LicenseRef-Degensoft-SwapVM-1.1,
+// see contracts/lib/swap-vm/LICENSE). New instruction written by CashETH on 2026-11-06.
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { CalldataParse } from "@1inch/solidity-utils/contracts/libraries/CalldataParse.sol";

@@ -38,3 +38,5 @@ Aqua is not deployed on Hedera by 1inch. This registry is a separate CashETH dep
 Powered by Aqua — © Degensoft Ltd 2025
 
 The full license texts are in the upstream repositories listed above (the submodules under `contracts/lib/`).
+
+Note: the license headers and dated change notes were added to `contracts/src/aqua/CashEthSwapVMRouter.sol` and `contracts/src/aqua/ReceivableCredit.sol` after the testnet deployment (commit 85e70d3). The change is comment-only; the deployed runtime bytecode is unchanged and only the Solidity metadata hash appended to a fresh build differs.

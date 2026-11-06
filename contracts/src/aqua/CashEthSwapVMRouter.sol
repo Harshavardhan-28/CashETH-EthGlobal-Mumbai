@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: LicenseRef-Degensoft-SwapVM-1.1
 pragma solidity 0.8.30;
 
 import { Simulator } from "@1inch/solidity-utils/contracts/mixins/Simulator.sol";
@@ -33,7 +33,9 @@ import { ReceivableCredit } from "./ReceivableCredit.sol";
 ///         `Salt ‖ ReceivableCredit(args)` becomes a credit line that sells shipped USDC 1:1 for Receivable
 ///         Credit Notes, only to the CashETH credit facility and only against a buyer-confirmed receivable
 ///         that satisfies the lender's own risk rules, read live from on-chain state on every fill.
-/// @dev Changes relative to `AquaSwapVMRouter`:
+/// @dev Derived from 1inch SwapVM (`AquaSwapVMRouter`), © 2025 Degensoft Ltd, licensed under
+///      LicenseRef-Degensoft-SwapVM-1.1 (see contracts/lib/swap-vm/LICENSE). Modified by CashETH on 2026-11-06.
+///      Changes relative to `AquaSwapVMRouter`:
 ///        - `_runOpcode` tries `ReceivableCredit` first and otherwise dispatches the Aqua opcode set exactly
 ///          as `AquaOpcodes._runOpcode` does (same opcodes, same order, `UnknownOpcode` on a miss), so
 ///          base-yield strategies such as `Salt ‖ FeeFlatIn ‖ XYCSwap` keep working on the same router.
