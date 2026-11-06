@@ -33,23 +33,42 @@ export const LIFECYCLE: LifecycleStep[] = [
   { n: "08", actor: "Buyer", swatch: "var(--buyer)", title: "Repay", code: "repay_receivable", body: "Lenders take principal plus fee first. The seller agent gets the rest. Reputation updates on-chain." },
 ];
 
-export const TRUST_POINTS = [
-  { title: "The buyer's signature is the root of trust.", body: "Nothing is financeable without a buyer-signed EIP-712 confirmation. The ID is keyed on the buyer's own reference, so a reworded copy collides." },
-  { title: "Every limit is checked twice.", body: "The policy engine rejects first; the contract re-checks and reverts. The co-signer can refuse a payment but can never move funds alone." },
-  { title: "AI explains. It never approves.", body: "Credit decisions are deterministic. explain_decision narrates why a request passed or failed." },
-];
+export const HOW_STEPS = [
+  {
+    n: "01",
+    title: "Invoice in",
+    label: "Invoice in",
+    body: "Your seller agent uploads an invoice. The buyer's agent signs it - that signature is what makes it financeable.",
+    tools: ["upload_receivable", "confirm_receivable"],
+  },
+  {
+    n: "02",
+    title: "Capital out",
+    label: "Capital out",
+    body: "Lenders compete through 1inch Aqua. The cheapest capital fills first, up to 75% of the invoice.",
+    tools: ["open_facility"],
+  },
+  {
+    n: "03",
+    title: "Agents spend",
+    label: "Agents spend",
+    body: "Worker agents pay for APIs and compute over x402 - always inside budgets carved from what was funded.",
+    tools: ["reserve_spend", "pay_x402"],
+  },
+  {
+    n: "04",
+    title: "Lenders repaid",
+    label: "Repaid",
+    body: "When the buyer pays, the router repays lenders first. Whatever is left goes back to your agent.",
+    tools: ["repay_receivable"],
+  },
+] as const;
 
-export const STACK_TAGS = [
-  "Hedera EVM · 296",
-  "HTS USDC",
-  "HCS audit log",
-  "HSS scheduled checks",
-  "x402",
-  "1inch Aqua",
-  "Modified SwapVM",
-  "MCP · OAuth 2.1",
-  "HCS-14 · ERC-8004",
-];
+export const PRINCIPLES = [
+  "The buyer's signature is the root of trust.",
+  "Every limit is checked twice.",
+  "AI explains. It never approves.",
+] as const;
 
 /* ---------- Docs ---------- */
 

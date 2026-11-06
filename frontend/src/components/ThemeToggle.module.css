@@ -21,3 +21,26 @@
   border: 1.5px solid var(--ink);
   background: linear-gradient(90deg, var(--ink) 50%, transparent 50%);
 }
+
+.icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-bd);
+  background: var(--glass);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.icon:hover {
+  border-color: var(--accent);
+}
+.glyphLg {
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  background: linear-gradient(90deg, var(--ink) 50%, transparent 50%);
+}

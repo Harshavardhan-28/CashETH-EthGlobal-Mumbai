@@ -27,9 +27,15 @@
   --blk-s1: #171d19;
   --blk-s2: #121814;
 
-  --font-serif: var(--font-newsreader), Georgia, serif;
-  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+  --glow-a: oklch(0.72 0.2 132 / 0.55);
+  --glow-b: oklch(0.52 0.16 152 / 0.55);
+  --glow-c: oklch(0.86 0.19 124 / 0.32);
+  --glass: rgb(255 255 255 / 0.035);
+  --glass-bd: rgb(255 255 255 / 0.08);
+
+  --font-sans: var(--font-geist), system-ui, sans-serif;
+  --font-serif: var(--font-sans);
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --line: rgb(var(--ink-rgb) / 0.1);
   --line-2: rgb(var(--ink-rgb) / 0.14);
 }
@@ -62,6 +68,11 @@ html[data-theme="light"] {
   --blk-top: #fdfcf8;
   --blk-s1: #dddcd3;
   --blk-s2: #c8c7bd;
+  --glow-a: oklch(0.86 0.17 130 / 0.55);
+  --glow-b: oklch(0.8 0.12 152 / 0.45);
+  --glow-c: oklch(0.92 0.15 120 / 0.55);
+  --glass: rgb(255 255 255 / 0.55);
+  --glass-bd: rgb(20 24 21 / 0.08);
 }
 
 * {
@@ -102,7 +113,7 @@ p {
 }
 
 em {
-  font-style: italic;
+  font-style: normal;
 }
 
 code,
@@ -125,6 +136,33 @@ pre {
   }
 }
 
+@keyframes cx-glow-a {
+  0% {
+    transform: translate(-50%, 0) scale(1);
+  }
+  50% {
+    transform: translate(-45%, -5%) scale(1.12);
+  }
+  100% {
+    transform: translate(-55%, 3%) scale(0.95);
+  }
+}
+@keyframes cx-glow-b {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(14%, -12%) scale(1.22);
+  }
+}
+@keyframes cx-glow-c {
+  0% {
+    transform: translate(0, 0) scale(1.05);
+  }
+  100% {
+    transform: translate(-16%, 10%) scale(0.88);
+  }
+}
 @keyframes cx-wave {
   from {
     transform: translateX(0);
@@ -143,38 +181,11 @@ pre {
 
 /* ---------- shared primitives ---------- */
 
-.container {
-  max-width: 1240px;
-  margin: 0 auto;
-  padding-left: clamp(20px, 4vw, 40px);
-  padding-right: clamp(20px, 4vw, 40px);
-}
-
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.14em;
   color: var(--faint);
-}
-
-.display {
-  font-family: var(--font-serif);
-  font-weight: 300;
-  font-size: clamp(38px, 4.6vw, 64px);
-  line-height: 1;
-  letter-spacing: -0.02em;
-  text-wrap: balance;
-}
-.display em {
-  color: var(--accent);
-}
-
-.lede {
-  font-size: 17px;
-  line-height: 1.6;
-  color: var(--ink-2);
-  max-width: 520px;
-  text-wrap: pretty;
 }
 
 .pill {

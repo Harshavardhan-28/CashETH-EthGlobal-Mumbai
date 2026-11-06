@@ -1,49 +1,53 @@
 import Link from "next/link";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
-import { PacketCanvas } from "./PacketCanvas";
 import { LifecycleStage } from "./LifecycleStage";
+import { HeroFx } from "./HeroFx";
 import styles from "./Hero.module.css";
 
 export function Hero() {
   return (
     <section className={styles.hero} aria-label="Hero">
-      <div className={styles.grid} />
-      <PacketCanvas density={12} />
-      <div className={styles.fade} />
+      <div className={`${styles.glow} ${styles.glowA}`} />
+      <div className={`${styles.glow} ${styles.glowB}`} />
+      <div className={`${styles.glow} ${styles.glowC}`} />
+      <div className={styles.lines} />
+      <div className={styles.dots} />
 
-      <header className={`container ${styles.header}`}>
+      <header className={styles.header}>
         <Logo />
         <nav className={styles.nav} aria-label="Primary">
-          <a href="#flow">Lifecycle</a>
-          <a href="#ceiling">Credit ceiling</a>
+          <a href="#flow">How it works</a>
+          <a href="#ceiling">Credit</a>
           <a href="#waterfall">Repayment</a>
           <Link href="/docs">Docs</Link>
-          <ThemeToggle />
-          <Link href="/docs" className={styles.net}>
-            Hedera testnet · 296
-          </Link>
         </nav>
+        <div className={styles.actions}>
+          <ThemeToggle variant="icon" />
+          <Link href="/docs" className={styles.start}>
+            Get started
+            <span className={styles.arrowSm}>→</span>
+          </Link>
+        </div>
       </header>
 
-      <div className={`container ${styles.body}`}>
+      <HeroFx className={styles.body}>
         <div className={styles.copy}>
-          <div className={styles.kicker}>
-            <span className={styles.kickerDot} />
-            <span>
-              <b>Cash me if you can!</b>
-            </span>
-          </div>
+          <span className={styles.badge}>
+            <span className={styles.badgeDot} />
+            CASHETH MCP · LIVE ON HEDERA
+          </span>
           <h1 className={styles.title}>
-            Invoices your agents can <em>spend.</em>
+            Invoices your agents can <span>spend.</span>
           </h1>
           <p className={styles.sub}>
-            A seller agent turns a buyer-signed receivable into USDC working capital. Worker agents spend it through
-            x402. When the buyer pays, lenders are repaid first — automatically.
+            An MCP that turns a buyer-signed invoice into USDC working capital your AI agents can spend - settled on
+            Hedera.
           </p>
           <div className={styles.ctas}>
             <Link href="/docs" className={styles.primary}>
-              Read the docs <span>→</span>
+              Get started
+              <span className={styles.arrow}>→</span>
             </Link>
             <Link href="/docs#quickstart" className={styles.secondary}>
               <span>$</span>npm run demo
@@ -51,8 +55,12 @@ export function Hero() {
           </div>
         </div>
 
-        <LifecycleStage />
-      </div>
+        <div className={styles.stage}>
+          <LifecycleStage />
+        </div>
+      </HeroFx>
+
+      <div className={styles.fade} />
     </section>
   );
 }

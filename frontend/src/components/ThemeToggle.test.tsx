@@ -39,4 +39,15 @@ describe("ThemeToggle", () => {
       Storage.prototype.setItem = orig;
     }
   });
+
+  describe("icon variant", () => {
+    it("shows no text and names the theme it will switch to in its tooltip", async () => {
+      render(<ThemeToggle variant="icon" />);
+      expect(toggle()).toHaveTextContent(/^$/);
+      expect(toggle()).toHaveAttribute("title", "Light mode");
+      await userEvent.click(toggle());
+      expect(document.documentElement).toHaveAttribute("data-theme", "light");
+      expect(toggle()).toHaveAttribute("title", "Dark mode");
+    });
+  });
 });

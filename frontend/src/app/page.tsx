@@ -1,9 +1,9 @@
 import { Intro } from "@/components/Intro";
 import { Hero } from "@/components/Hero";
-import { Lifecycle } from "@/components/Lifecycle";
+import { HowItWorks } from "@/components/HowItWorks";
 import { CreditCeiling } from "@/components/CreditCeiling";
 import { Waterfall } from "@/components/Waterfall";
-import { Trust } from "@/components/Trust";
+import { Principles } from "@/components/Principles";
 import { Footer } from "@/components/Footer";
 
 export default function Home() {
@@ -11,10 +11,10 @@ export default function Home() {
     <main>
       <Intro />
       <Hero />
-      <Lifecycle />
+      <HowItWorks />
       <CreditCeiling />
       <Waterfall />
-      <Trust />
+      <Principles />
       <Footer />
     </main>
   );

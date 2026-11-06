@@ -1,84 +1,61 @@
 "use client";
 
 import { useInView } from "@/lib/useInView";
+import { Reveal } from "./Reveal";
 import styles from "./Sections.module.css";
 
 const ease = "cubic-bezier(.2,.7,.2,1)";
+const LENDER_B = "color-mix(in oklch, var(--lender) 70%, var(--bg))";
 
-const rows = [
-  { n: "1", color: "var(--lender)", who: "Lender A", detail: "4,000.00 + 23.01 fee", amt: "4,023.01" },
-  { n: "1", color: "var(--lender-2)", who: "Lender B", detail: "2,000.00 + 13.97 fee", amt: "2,013.97" },
-  { n: "2", color: "var(--seller)", who: "Seller agent", detail: "remainder + undrawn credit", amt: "3,963.01" },
+const PAYOUTS = [
+  { who: "Lender A", color: "var(--lender)", amount: "4,023.01" },
+  { who: "Lender B", color: LENDER_B, amount: "2,013.97" },
+  { who: "Seller agent", color: "var(--seller)", amount: "3,963.01" },
 ];
 
 export function Waterfall() {
   const [ref, on] = useInView<HTMLDivElement>(0.3);
+  const w = (pct: string) => (on ? pct : "0%");
 
   return (
     <section id="waterfall" className={styles.section} aria-labelledby="wf-title">
-      <div className={`container ${styles.wfGrid}`}>
-        <div className={styles.wfCopy}>
-          <span className="eyebrow">REPAYMENT WATERFALL</span>
-          <h2 id="wf-title" className="display">
-            Lenders first. <em>Automatically.</em>
-          </h2>
-          <p className="lede">
-            The buyer pays the router named in its own signature. The router pays lenders pro rata — principal plus
-            fee — then sends the remainder to the seller agent. Partial, late and post-default payments all reach
-            lenders first.
-          </p>
-          <div className={styles.formula}>
-            <div>
-              <b>fee_i</b> = principal_i × apr_i × max(elapsed, 30d) / 365d
+      <div className={styles.inner}>
+        <Reveal>
+          <div ref={ref} className={`${styles.glass} ${styles.mono}`} style={{ gap: 24 }}>
+            <div className={styles.cardGlow} style={{ left: -140, bottom: -160, width: 380, height: 320, background: "radial-gradient(closest-side, var(--glow-a), transparent)" }} />
+            <div className={styles.payTotal}>
+              <span>Buyer pays the router</span>
+              <span>$10,000</span>
             </div>
-            <div>
-              <b>lenderDue</b> = Σ (principal_i + fee_i)
+            <div className={styles.split} aria-hidden="true">
+              <div data-testid="split-a" style={{ width: w("40.23%"), background: "var(--lender)", transition: `width .9s ${ease}` }} />
+              <div data-testid="split-b" style={{ width: w("20.14%"), background: LENDER_B, transition: `width .7s ${ease} .9s` }} />
+              <div data-testid="split-s" style={{ width: w("39.63%"), background: "var(--seller)", transition: `width .7s ${ease} 1.6s` }} />
+            </div>
+            <div className={styles.payouts}>
+              {PAYOUTS.map((p) => (
+                <div key={p.who} data-testid="payout" className={styles.payout}>
+                  <span>
+                    <i style={{ background: p.color }} />
+                    {p.who}
+                  </span>
+                  <span data-testid="payout-amount">{p.amount}</span>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
+        </Reveal>
 
-        <div ref={ref} className={styles.wf}>
-          <div className={styles.wfTotal}>
-            <span>Buyer pays router</span>
-            <span className={styles.wfAmount}>$10,000.00</span>
-          </div>
-          <div className={styles.wfBar} aria-hidden="true">
-            <div style={{ width: on ? "40.23%" : "0%", background: "var(--lender)", transition: `width .9s ${ease}` }} />
-            <div
-              style={{
-                width: on ? "20.14%" : "0%",
-                background: "var(--lender-2)",
-                borderLeft: "1px solid var(--bg)",
-                transition: `width .7s ${ease} .9s`,
-              }}
-            />
-            <div
-              style={{
-                width: on ? "39.63%" : "0%",
-                background: "var(--seller)",
-                borderLeft: "1px solid var(--bg)",
-                transition: `width .7s ${ease} 1.6s`,
-              }}
-            />
-          </div>
-          <div className={styles.wfRows}>
-            {rows.map((r) => (
-              <div key={r.who} className={styles.wfRow}>
-                <span>{r.n}</span>
-                <span className={styles.wfWho}>
-                  <i style={{ background: r.color }} />
-                  {r.who}
-                  <small>{r.detail}</small>
-                </span>
-                <span>{r.amt}</span>
-              </div>
-            ))}
-            <div className={styles.wfFoot}>
-              <span>state Repaid · debt 0</span>
-              <span>USDC 0.0.429274</span>
-            </div>
-          </div>
-        </div>
+        <Reveal className={styles.copy}>
+          <span className={styles.badge}>
+            <i />
+            REPAYMENT
+          </span>
+          <h2 id="wf-title" className={styles.title} style={{ maxWidth: "11ch" }}>
+            Lenders first. <span>Automatically.</span>
+          </h2>
+          <code className={styles.formula}>fee = principal × apr × max(elapsed, 30d) / 365d</code>
+        </Reveal>
       </div>
     </section>
   );

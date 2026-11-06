@@ -45,6 +45,7 @@
   font-size: 22px;
 }
 .word em {
+  font-style: normal;
   color: var(--accent);
 }
 .caption {
