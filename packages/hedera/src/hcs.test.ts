@@ -67,12 +67,14 @@ describe("readAuditMessages (stubbed mirror)", () => {
   });
 });
 
-describe("HCS audit topic (live testnet)", () => {
-  const env = loadEnv();
+// Live testnet suites run only with `LIVE=1` (they need .env): LIVE=1 pnpm -F @casheth/hedera test
+describe.skipIf(!process.env.LIVE)("HCS audit topic (live testnet)", () => {
+  let env: Env;
   let client: Client;
   let topicId: string;
 
   beforeAll(async () => {
+    env = loadEnv();
     client = hieroClient(env);
     topicId = existsSync(HEDERA_IDS_PATH)
       ? loadHederaIds().hcsAuditTopicId
