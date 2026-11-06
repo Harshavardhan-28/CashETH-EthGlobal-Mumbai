@@ -208,3 +208,51 @@ USDC (HTS `0.0.429274`, 6 decimals) balances read live from the mirror node on 2
 **Verdict: funds suffice, no faucet request needed.** 20,000,000 on hand against 17,500,000 needed. The only gap is that lender A is 90,909 below its 4,000,000 target (that amount sits in `SpikeTaker` after the S1 fill); lenders B, C and the buyer are already at target. To top lender A up, either run `SpikeTaker.sweep(usdc, operator)` as the contract owner (the operator) to recover the 90,909, or let the next `pnpm setup:accounts` run fund lender A's 90,909 shortfall from the operator (it falls back to the operator when the merchant is short). After either, the operator holds about 2.3 to 2.4 USDC of slack, plus the merchant's 0.5 and about 0.1 stranded in the two spike wallets (recoverable with `scripts/sweep-usdc.ts`).
 
 If a later run does need more, the fallback is: open `https://faucet.circle.com`, select Hedera Testnet, paste the operator account id `0.0.11333252` (associated with USDC), and request 10 USDC per request. Assumption: the faucet gives 10 USDC per request and is rate-limited to a few requests per day. One request would let `pnpm setup:accounts` fund everything from the operator (lenders 7, buyer 10 when the merchant is empty) with margin; `setup-accounts.ts` throws a clear shortfall error naming both sources if neither can cover a top-up.
+
+## C2: registries
+
+Deployed by `contracts/script/01_DeployCore.s.sol` through the Hashio relay from the operator (owner of both), driven by `scripts/c2-register-demo.ts`; addresses in `deployments/testnet/addresses.json`, full run record in `deployments/testnet/c2.json`. Nothing is wired yet (both `wire` calls are one-time; Tasks 3.6/4.3 wire them).
+
+### Contracts
+
+| Contract | Address | Contract id | Deploy tx |
+| --- | --- | --- | --- |
+| KYARegistry (issuer = KYA issuer 0.0.11337996) | `0xE51950be227c5A31B603e1343cD53e813C593f39` | [0.0.11338820](https://hashscan.io/testnet/contract/0.0.11338820) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966394.171576721) |
+| ReceivableRegistry (USDC facade `0x…068cDa`) | `0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b` | [0.0.11338823](https://hashscan.io/testnet/contract/0.0.11338823) | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966402.245288564) |
+
+### Agent registrations (`KYARegistry.register`, sent by the KYA issuer)
+
+`uaidHash = keccak256(evmAddress)` placeholder until Task 2.4 publishes UAIDs; `expiresAt = 0`; `mandateHash = keccak256("mandate-v1-<label>")`; `ownerGroup = keccak256(<group>)`.
+
+| Agent | EVM address | Role | Level | Owner group | Tx |
+| --- | --- | --- | --- | --- | --- |
+| seller | `0x164334EE48b6AB0c07514af2a84646b23f3dCF0f` | 1 Seller | 2 | `seller-co` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966413.731996335) |
+| buyer | `0xf5FFbCd1e9ca403Fec295127EAcE1A3674f949c9` | 2 Buyer | 3 | `buyer-co` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966426.623337776) |
+| workerResearch | `0xbeAD36C554746b00eb2a3B87cE38aDc926Ddf62F` | 3 Worker | 2 | `seller-co` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966440.862555880) |
+| workerCompute | `0x3f8960701E2Bb81869A0e64259E191cdB6790858` | 3 Worker | 2 | `seller-co` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966452.503597519) |
+| lenderA | `0xc502fe381481aBD2E56921Dc58DFC3ca3776a096` | 4 Lender | 2 | `lender-a` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966466.763342193) |
+| lenderB | `0x502ea0745ddd16128B8f649394cd0C8c93FEd238` | 4 Lender | 2 | `lender-b` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966481.534382158) |
+| lenderC | `0xeaABAEF2DF2BD6c1e13207573B233d1D33042377` | 4 Lender | 2 | `lender-c` | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966492.515648279) |
+
+### Buyer-signed confirmation rejected on-chain
+
+The buyer signed the demo `ReceivableConfirmation` with `@casheth/shared` `signReceivableConfirmation`: amount 10000000 (10 USDC), dueDate 1796558499 (now + 30 days), `buyerRef = keccak256("PO-1001")`, `detailsCommitment = keccak256("demo-invoice-1001")`, `payTo = 0x0000000000000000000000000000000000000001` (stand-in: no repayment router is wired, so no payee can match), nonce 0, deadline 1794052899 (now + 1 day). The TypeScript digest `0x32180664405580d25ddfc7cafd2083500605d6056f42ebb8b2622713bb394337` equals the deployed contract's `hashConfirmation`; receivable id `0xdc9091478f8a1d866c1c576f18099bb2c18b780ff161ee7ed283ec10950ff7e3` equals `computeId`.
+
+**Dry run (`eth_call` via viem `simulateContract`)** of the valid signed confirmation reverts `WRONG_PAYEE()`. `register` checks duplicate, signature, then payee, so the signature verified; every later check was read from chain state and passes, so the payee is the only failing check:
+
+- duplicate: state(id) = 0 (None)
+- term: dueDate - now = 30 days (1..120), deadline in 24 h
+- nonce: nonces(buyer) = 0, confirmation nonce = 0
+- currency: USDC() = 0x0000000000000000000000000000000000068cDa
+- kya: level(buyer) = 3 (>= 3), level(seller) = 2 (>= 2)
+- ownerSeparation: ownerGroup(buyer) != ownerGroup(seller): true
+- payee: repaymentRouter() = 0x0000000000000000000000000000000000000000 (unwired), payTo = 0x0000000000000000000000000000000000000001
+
+**Real reverting transactions** (submitted by the coordinator 0.0.11337994 with gas 300,000; revert data read from mirror `GET /contracts/results/{hash}` → `error_message`, matched against the error selector and decoded with the synced ABI):
+
+| Submission | Tx | Mirror result | error_message | Decoded |
+| --- | --- | --- | --- | --- |
+| signed confirmation, unwired payee | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966502.770050429) | CONTRACT_REVERT_EXECUTED | `0x9c0c203d` | `WRONG_PAYEE()` |
+| same confirmation, one byte of `r` flipped | [tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793966532.109597123) | CONTRACT_REVERT_EXECUTED | `0x48fb71e5` | `BAD_BUYER_SIG()` |
+
+`DUPLICATE_RECEIVABLE` on testnet is proven after wiring (Task 4.3).

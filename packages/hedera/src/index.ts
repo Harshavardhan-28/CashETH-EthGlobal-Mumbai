@@ -12,3 +12,5 @@ export { createX402Fetch, payX402 } from "./x402/client.js";
 export type { FetchLike, X402Result } from "./x402/client.js";
 export { createClientHederaSigner, PrivateKey } from "@x402/hedera";
 export type { ClientHederaSigner } from "@x402/hedera";
+export { contracts } from "./contracts.js";
+export type { ContractsOptions, CoreContracts, ReadClient, WriteClient } from "./contracts.js";

@@ -10,7 +10,8 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r exec tsc -p tsconfig.json --noEmit",
-    "setup:accounts": "pnpm -r build && tsx scripts/setup-accounts.ts"
+    "setup:accounts": "pnpm -r build && tsx scripts/setup-accounts.ts",
+    "abi:sync": "tsx scripts/abi-sync.ts"
   },
   "devDependencies": {
     "@casheth/hedera": "workspace:*",

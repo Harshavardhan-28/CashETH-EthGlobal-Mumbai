@@ -1,0 +1,8 @@
+{
+  "chainId": 296,
+  "kyaRegistry": "0xE51950be227c5A31B603e1343cD53e813C593f39",
+  "receivableRegistry": "0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b",
+  "usdc": "0x0000000000000000000000000000000000068cDa",
+  "deployedAt": "2026-11-06T12:00:14.512Z",
+  "deployer": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e"
+}
