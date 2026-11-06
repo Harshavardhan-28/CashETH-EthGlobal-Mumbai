@@ -9,7 +9,7 @@ import { idempotencyKey as stableKey, ToolCallError } from "../mcpClient.js";
 import type { ShipOutcome } from "../lender.js";
 import type { PurchaseOutcome } from "../worker.js";
 import { checkQuotePlan, findShippedStrategy, formatAgentTable, formatLenderTable, formatUsdc, topUpShortfall } from "./checks.js";
-import { ADVANCE_BPS, BUDGETS, EXPECTED_PAYOUTS, EXPECTED_SELLER_PAYOUT, FRESH_LENDERS, INVOICE, SPEND } from "./plan.js";
+import { ADVANCE_BPS, BUDGETS, EXPECTED_PAYOUTS, EXPECTED_SELLER_PAYOUT, FRESH_LENDERS, INVOICE, PURCHASE_ATTEMPT, SPEND } from "./plan.js";
 import { poll } from "./poll.js";
 import { findEvent, type AuditEvent } from "./readApi.js";
 import type { DemoContext, DemoWorker, Step, StepOutcome } from "./types.js";
@@ -255,7 +255,7 @@ const researchPurchaseStep: Step = {
       id: receivableId(ctx),
       service: "research",
       budgetHint: SPEND.researchPrice,
-      purchaseId: `${INVOICE.buyerRef}-research`,
+      purchaseId: `${INVOICE.buyerRef}-research-${PURCHASE_ATTEMPT}`,
       query: "agent working capital on Hedera",
     });
     if (outcome.status !== "committed") throw new Error(describeOutcome(outcome));

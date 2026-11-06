@@ -87,6 +87,12 @@ export const BUDGETS = {
   compute: { alloc: usdc("3"), maxPerTx: usdc("3"), maxDaily: usdc("3") },
 };
 
+/**
+ * Names the research purchase. A rerun with the same attempt replays its reservation, payment and commit; bump it
+ * when the reservation has expired unpaid (it lives ten minutes), so the worker reserves again.
+ */
+export const PURCHASE_ATTEMPT = "2";
+
 /** The research worker's purchase and the two over-limit asks that must be refused (Ruling R24). */
 export const SPEND = {
   researchPrice: usdc("0.25"),
