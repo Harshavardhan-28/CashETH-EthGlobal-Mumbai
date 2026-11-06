@@ -8,7 +8,9 @@ import { IReceivableCreditNote } from "./interfaces/IReceivableCreditNote.sol";
 /// @title ReceivableCreditNote
 /// @notice Transfer-restricted ERC-20 (6 decimals) minted by the facility to lenders and burned by the
 ///         repayment router on settlement. A transfer is allowed only if it is a mint or burn, or if its
-///         `from` or `to` is a peer (facility, swap router, Aqua); lender-to-lender transfers revert.
+///         `from` is a peer (facility, swap router, Aqua). A lender can never send RCN anywhere, so its
+///         balance cannot fall below its position (the repayment burn cannot be blocked) and RCN cannot
+///         be routed lender -> peer -> lender.
 contract ReceivableCreditNote is IReceivableCreditNote, ERC20, Ownable {
     address public facility;
     address public repaymentRouter;
@@ -54,7 +56,7 @@ contract ReceivableCreditNote is IReceivableCreditNote, ERC20, Ownable {
     }
 
     function _update(address from, address to, uint256 value) internal override {
-        if (from != address(0) && to != address(0) && !isPeer(from) && !isPeer(to)) {
+        if (from != address(0) && to != address(0) && !isPeer(from)) {
             revert RCN_TRANSFER_RESTRICTED();
         }
         super._update(from, to, value);

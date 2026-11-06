@@ -58,6 +58,8 @@ contract MockSwapRouter {
         (address tokenA, address tokenB) = order.traits.tokens(order.data);
         (address tokenIn, address tokenOut) = traits.isAToB() ? (tokenA, tokenB) : (tokenB, tokenA);
 
+        // Simplified order: the real router fires the credit callback inside `runLoop`, before the transfers.
+        // From = the caller (facility, an RCN peer), so the direct facility -> maker move is allowed.
         IERC20(tokenIn).safeTransferFrom(msg.sender, order.maker, amount);
         IERC20(tokenOut).safeTransfer(msg.sender, amount);
         IOnCreditFill(msg.sender).onCreditFill(id, order.maker, amount, aprOf[order.maker]);

@@ -4,8 +4,8 @@ pragma solidity 0.8.30;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @notice Receivable Credit Note: the 6-decimal claim a lender receives for USDC advanced against a
-///         receivable. Transfers are restricted to moves into or out of a protocol peer
-///         (facility, swap router, Aqua); lender-to-lender transfers revert.
+///         receivable. Besides mint and burn, a transfer is allowed only out of a protocol peer
+///         (facility, swap router, Aqua); any transfer out of a lender reverts.
 interface IReceivableCreditNote is IERC20 {
     error ALREADY_WIRED();
     error ZERO_ADDRESS();

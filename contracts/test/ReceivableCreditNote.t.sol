@@ -120,7 +120,7 @@ contract ReceivableCreditNoteTest is Test {
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         rcn.transferFrom(lender, lender2, 1_000_000);
 
-        // Nor can a peer acting as spender: only `from` and `to` count, not `msg.sender`.
+        // Nor can a peer acting as spender: only `from` counts, not `msg.sender`.
         vm.prank(lender);
         rcn.approve(swapRouter, 1_000_000);
         vm.prank(swapRouter);
@@ -128,26 +128,69 @@ contract ReceivableCreditNoteTest is Test {
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         rcn.transferFrom(lender, lender2, 1_000_000);
 
+        // Even a zero-amount transfer between lenders is restricted.
+        vm.prank(lender);
+        vm.expectRevert(IReceivableCreditNote.RCN_TRANSFER_RESTRICTED.selector);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
+        rcn.transfer(lender2, 0);
+
         assertEq(rcn.balanceOf(lender), 5_000_000);
         assertEq(rcn.balanceOf(lender2), 0);
     }
 
-    function test_transfer_lenderToFacilityAllowed() public {
+    /// @dev A lender must not be able to drop below its position principal (the repayment router burns it)
+    ///      nor route RCN to another lender through a peer, so transfers out of a lender always revert.
+    function test_transfer_lenderToPeerReverts() public {
         _mintTo(lender, 5_000_000);
+        address[3] memory peers = [facility, swapRouter, aqua];
 
-        vm.expectEmit(true, true, false, true, address(rcn));
-        emit IERC20.Transfer(lender, facility, 2_000_000);
+        for (uint256 i; i < peers.length; ++i) {
+            vm.prank(lender);
+            vm.expectRevert(IReceivableCreditNote.RCN_TRANSFER_RESTRICTED.selector);
+            // forge-lint: disable-next-line(erc20-unchecked-transfer)
+            rcn.transfer(peers[i], 1_000_000);
+
+            // The peer itself as spender cannot pull from the lender either.
+            vm.prank(lender);
+            rcn.approve(peers[i], 1_000_000);
+            vm.prank(peers[i]);
+            vm.expectRevert(IReceivableCreditNote.RCN_TRANSFER_RESTRICTED.selector);
+            // forge-lint: disable-next-line(erc20-unchecked-transfer)
+            rcn.transferFrom(lender, peers[i], 1_000_000);
+
+            // Nor can one peer move the lender's RCN into another peer.
+            address otherPeer = peers[(i + 1) % peers.length];
+            vm.prank(otherPeer);
+            vm.expectRevert(IReceivableCreditNote.RCN_TRANSFER_RESTRICTED.selector);
+            // forge-lint: disable-next-line(erc20-unchecked-transfer)
+            rcn.transferFrom(lender, peers[i], 0);
+
+            assertEq(rcn.balanceOf(peers[i]), 0);
+        }
+        assertEq(rcn.balanceOf(lender), 5_000_000);
+        assertEq(rcn.totalSupply(), 5_000_000);
+    }
+
+    function test_transfer_beforeWireReverts() public {
+        ReceivableCreditNote fresh = new ReceivableCreditNote(owner);
+        // Unwired, nobody can mint, so seed a balance directly in storage.
+        deal(address(fresh), lender, 1_000_000, true);
+        assertEq(fresh.balanceOf(lender), 1_000_000);
+        assertFalse(fresh.isPeer(address(0)));
+
         vm.prank(lender);
-        assertTrue(rcn.transfer(facility, 2_000_000));
+        vm.expectRevert(IReceivableCreditNote.RCN_TRANSFER_RESTRICTED.selector);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
+        fresh.transfer(lender2, 1_000_000);
 
-        assertEq(rcn.balanceOf(lender), 3_000_000);
-        assertEq(rcn.balanceOf(facility), 2_000_000);
+        vm.prank(lender);
+        vm.expectRevert(IReceivableCreditNote.RCN_TRANSFER_RESTRICTED.selector);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
+        fresh.transfer(facility, 0);
 
-        // ... and back out of the facility to a lender.
         vm.prank(facility);
-        assertTrue(rcn.transfer(lender2, 500_000));
-        assertEq(rcn.balanceOf(facility), 1_500_000);
-        assertEq(rcn.balanceOf(lender2), 500_000);
+        vm.expectRevert(IReceivableCreditNote.NOT_FACILITY.selector);
+        fresh.mint(facility, 1);
     }
 
     /// @dev The Aqua fill path: the router pulls from the facility (taker), then Aqua's `push`
@@ -174,14 +217,11 @@ contract ReceivableCreditNoteTest is Test {
         assertEq(rcn.balanceOf(lender), 4_000_000);
         assertEq(rcn.totalSupply(), 4_000_000);
 
-        // A lender may hand it back to the router or to Aqua.
-        vm.prank(lender);
-        assertTrue(rcn.transfer(swapRouter, 1_000_000));
-        vm.prank(lender);
-        assertTrue(rcn.transfer(aqua, 1_000_000));
-        assertEq(rcn.balanceOf(lender), 2_000_000);
-        assertEq(rcn.balanceOf(swapRouter), 1_000_000);
-        assertEq(rcn.balanceOf(aqua), 1_000_000);
+        // The maker's RCN leaves only by the repayment router's burn.
+        vm.prank(repaymentRouter);
+        rcn.burn(lender, 4_000_000);
+        assertEq(rcn.balanceOf(lender), 0);
+        assertEq(rcn.totalSupply(), 0);
     }
 
     function _mintTo(address to, uint256 amount) internal {
