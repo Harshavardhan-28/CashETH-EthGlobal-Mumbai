@@ -55,7 +55,7 @@ describe("baseStrategies", () => {
       { lender: "D", kind: "credit", maker: "0x2", salt: "1", strategyHash: "0xcc" },
       { lender: "B", kind: "base", maker: "0x00000000000000000000000000000000000000b1", salt: "2", strategyHash: "0xdd" },
     ],
-  };
+  } as Parameters<typeof baseStrategies>[0];
 
   it("keeps the base-yield strategies in file order, with the salt as a bigint", () => {
     expect(baseStrategies(file)).toEqual([
