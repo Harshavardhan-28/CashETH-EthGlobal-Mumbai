@@ -8,7 +8,7 @@ const DOC = "0x" + "d".repeat(64);
 const PENDING = "0x" + "e".repeat(64);
 const ID = "0x" + "1".repeat(64);
 const SPEND = "0x" + "5".repeat(64);
-const PAYEE_EVM = "0x0000000000000000000000000000000000acedb8";
+const PAYEE_EVM = "0x0000000000000000000000000000000000aceeb8";
 const PAID_URL = `${PAID_API}/price-feed?symbols=HBAR`;
 const SETTLEMENT = "0.0.9185802@1762500000.000000001";
 const link = (what: string) => `https://hashscan.io/testnet/transaction/${what}`;

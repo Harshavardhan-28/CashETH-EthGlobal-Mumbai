@@ -74,3 +74,16 @@ describe("http_get refusals", () => {
     expect(result.audit[0]).toMatchObject({ tool: "http_get", outcome: "error", code: "ORIGIN_NOT_ALLOWED" });
   });
 });
+
+describe("the plan node", () => {
+  it("shows the model the controller's next step, derived from state, after the conversation", async () => {
+    const model = new ScriptedChatModel([new AIMessage("stop")]);
+    const { options } = setupRun(model);
+
+    await runSellerAgent(options);
+
+    const last = model.seen[0]!.at(-1)!;
+    expect(String(last.content)).toContain("[controller] Next step: phase 1: call http_get");
+    expect(String(last.content)).toContain("https://paid.example/price-feed?symbols=HBAR");
+  });
+});
