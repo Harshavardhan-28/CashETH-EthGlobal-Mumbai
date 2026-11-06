@@ -2,10 +2,22 @@ export { evmClients, hederaTestnet, hieroClient } from "./client.js";
 export { createEcdsaAccount, createThresholdAccount } from "./accounts.js";
 export type { CreatedAccount } from "./accounts.js";
 export { associateUsdc, transferUsdc } from "./tokens.js";
+export type { SigningKeys } from "./tokens.js";
+export {
+  approveFacilityAllowance,
+  associateSpendWalletUsdc,
+  createSpendWallet,
+  decodeMirrorKey,
+  facilityAllowanceTx,
+  longZeroEvmAddress,
+  resolveContractId,
+  signWithAll,
+} from "./spendWallet.js";
+export type { DecodedKey, FacilityAllowance, MirrorKeyType, SpendWallet } from "./spendWallet.js";
 export { pickUsdcSource } from "./funding.js";
 export type { UsdcSource } from "./funding.js";
 export { mirror } from "./mirror.js";
-export type { MirrorAccount, MirrorTopicMessage, WaitForOptions } from "./mirror.js";
+export type { MirrorAccount, MirrorTokenRelationship, MirrorTopicMessage, WaitForOptions } from "./mirror.js";
 export { executeForReceipt } from "./execute.js";
 export {
   createAuditTopic,

@@ -279,3 +279,32 @@ Each agent's UAID comes from the standards SDK's HCS-14 AID generator (`createUa
 | CashETH Coordinator | 0.0.11337994 | `uaid:aid:X7NddMfvkJFiNmyAjjS4rxgLr4SJjdjES1tfqAZZzWRmsHX8SANvuF6kUZKNGuwkx;uid=0.0.11337994;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337994` | [8](https://hashscan.io/testnet/transaction/0.0.11333252@1793966918.777870704) |
 | CashETH Co-signer | 0.0.11337995 | `uaid:aid:8fqd1dSjvy8hm5eV4nQAWbaqRE378grATtuY8vjG4435g7FZGviKunwujd4AjGzuiQ;uid=0.0.11337995;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337995` | [9](https://hashscan.io/testnet/transaction/0.0.11333252@1793966943.450939777) |
 | CashETH KYA Issuer | 0.0.11337996 | `uaid:aid:8KLE1aYD6FURG1HxzCEmyJoVG7PKNQAanxWkKHaRxg5WKLfn6X9qXjsRbR3nUKwoux;uid=0.0.11337996;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337996` | [10](https://hashscan.io/testnet/transaction/0.0.11333252@1793967072.948933279) |
+
+## C5: spend wallets
+
+Produced by `scripts/c5-spend-wallets.ts` on 2026-11-06; record in `deployments/testnet/spend-wallets.json`. Each worker agent spends from its own wallet whose key is `KeyList([worker, cosigner], 2)` set with `setKeyWithoutAlias` (so its EVM address is the long-zero form of the account id), funded with 5 HBAR by the operator, `maxAutomaticTokenAssociations` 10. USDC [0.0.429274](https://hashscan.io/testnet/token/0.0.429274) was associated by a `TokenAssociateTransaction` signed by both the worker and the policy co-signer.
+
+| Wallet | Account | EVM (long-zero) | Keys (2 of 2) | Create tx | USDC association tx |
+| --- | --- | --- | --- | --- | --- |
+| SPEND_WALLET_RESEARCH | [0.0.11339484](https://hashscan.io/testnet/account/0.0.11339484) | `0x0000000000000000000000000000000000ad06dc` | WORKER_RESEARCH 0.0.11337989 + COSIGNER 0.0.11337995 | [0.0.11333252@1793969914.172231452](https://hashscan.io/testnet/transaction/0.0.11333252@1793969914.172231452) | [0.0.11333252@1793969919.209773850](https://hashscan.io/testnet/transaction/0.0.11333252@1793969919.209773850) |
+| SPEND_WALLET_COMPUTE | [0.0.11339486](https://hashscan.io/testnet/account/0.0.11339486) | `0x0000000000000000000000000000000000ad06de` | WORKER_COMPUTE 0.0.11337990 + COSIGNER 0.0.11337995 | [0.0.11333252@1793969922.674066550](https://hashscan.io/testnet/transaction/0.0.11333252@1793969922.674066550) | [0.0.11333252@1793969930.470415616](https://hashscan.io/testnet/transaction/0.0.11333252@1793969930.470415616) |
+
+The mirror node reports a threshold key as `ProtobufEncoded` (hex of the protobuf `Key`): `2a` = field 5 `thresholdKey`, `08 02` = threshold 2, `12` = its `KeyList`, each entry `0a 23 3a 21 <33-byte compressed secp256k1 key>` (field 7 `ECDSA_secp256k1`). `packages/hedera/src/spendWallet.test.ts` (live) asserts this decodes to threshold 2 over the worker's and co-signer's keys.
+
+SPEND_WALLET_RESEARCH `GET /api/v1/accounts/0.0.11339484` → `key`:
+
+```json
+{"_type":"ProtobufEncoded","key":"2a4e0802124a0a233a2103992d6204ee754421f9643bf73bf1826fea6def1b2549656d9df96d3a205e29470a233a21031ca1230064d86ff1e48a4825d999f30dea7f006f29c20e4f62d4af7b3397e0a1"}
+```
+
+Decoded (protobuf `Key.thresholdKey`): threshold 2, keys worker ECDSA_SECP256K1 `03992d6204ee754421f9643bf73bf1826fea6def1b2549656d9df96d3a205e2947`, cosigner ECDSA_SECP256K1 `031ca1230064d86ff1e48a4825d999f30dea7f006f29c20e4f62d4af7b3397e0a1`.
+
+SPEND_WALLET_COMPUTE `GET /api/v1/accounts/0.0.11339486` → `key`:
+
+```json
+{"_type":"ProtobufEncoded","key":"2a4e0802124a0a233a21027a33ace3cb59908b07d55fea1c023b22612c291faa049911f7fc604471cf71a20a233a21031ca1230064d86ff1e48a4825d999f30dea7f006f29c20e4f62d4af7b3397e0a1"}
+```
+
+Decoded (protobuf `Key.thresholdKey`): threshold 2, keys worker ECDSA_SECP256K1 `027a33ace3cb59908b07d55fea1c023b22612c291faa049911f7fc604471cf71a2`, cosigner ECDSA_SECP256K1 `031ca1230064d86ff1e48a4825d999f30dea7f006f29c20e4f62d4af7b3397e0a1`.
+
+Facility allowance: not granted yet. The `CreditFacility` is not deployed at this checkpoint, so the standing USDC allowance from each wallet to the facility contract (`AccountAllowanceApproveTransaction.approveTokenAllowance(USDC, wallet, facilityContractId, units)`, signed by worker and co-signer, `units` < 2^63) is granted in C5 spend (Task 5.3) by `approveFacilityAllowance`.

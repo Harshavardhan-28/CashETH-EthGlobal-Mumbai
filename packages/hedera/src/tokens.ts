@@ -5,6 +5,13 @@ import {
   TransferTransaction,
   type Client,
 } from "@hiero-ledger/sdk";
+import { executeForReceipt } from "./execute.js";
+
+/** ECDSA key(s) as hex strings or SDK keys; every key of a threshold-key account goes in the list. */
+export type SigningKeys = string | PrivateKey | (string | PrivateKey)[];
+
+const toKeys = (keys: SigningKeys): PrivateKey[] =>
+  (Array.isArray(keys) ? keys : [keys]).map((k) => (typeof k === "string" ? PrivateKey.fromStringECDSA(k) : k));
 
 /**
  * Associates `tokenId` (USDC) with the account, signed by its ECDSA key, or by every key in the list
@@ -13,19 +20,15 @@ import {
 export async function associateUsdc(
   client: Client,
   accountId: string,
-  privateKey: string | string[],
+  privateKey: SigningKeys,
   tokenId: string,
 ): Promise<string> {
   const tx = new TokenAssociateTransaction()
     .setAccountId(accountId)
     .setTokenIds([TokenId.fromString(tokenId)])
     .freezeWith(client);
-  for (const key of Array.isArray(privateKey) ? privateKey : [privateKey]) {
-    await tx.sign(PrivateKey.fromStringECDSA(key));
-  }
-  const response = await tx.execute(client);
-  await response.getReceipt(client);
-  return response.transactionId.toString();
+  for (const key of toKeys(privateKey)) await tx.sign(key);
+  return (await executeForReceipt(client, tx)).txId;
 }
 
 /**

@@ -1,4 +1,5 @@
 import { AccountCreateTransaction, Hbar, KeyList, PrivateKey, type Client, type PublicKey } from "@hiero-ledger/sdk";
+import { executeForReceipt } from "./execute.js";
 
 export interface CreatedAccount {
   accountId: string;
@@ -45,13 +46,15 @@ export async function createThresholdAccount(
     label: string;
   },
 ): Promise<{ accountId: string; txId: string }> {
-  const response = await new AccountCreateTransaction()
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > publicKeys.length) {
+    throw new Error(`createThresholdAccount: threshold ${threshold} must be 1..${publicKeys.length}`);
+  }
+  const tx = new AccountCreateTransaction()
     .setKeyWithoutAlias(new KeyList(publicKeys, threshold))
     .setInitialBalance(new Hbar(initialHbar))
     .setMaxAutomaticTokenAssociations(10)
-    .setAccountMemo(`casheth:${label}`)
-    .execute(client);
-  const receipt = await response.getReceipt(client);
+    .setAccountMemo(`casheth:${label}`);
+  const { receipt, txId } = await executeForReceipt(client, tx);
   if (!receipt.accountId) throw new Error(`Account creation for ${label} returned no account id`);
-  return { accountId: receipt.accountId.toString(), txId: response.transactionId.toString() };
+  return { accountId: receipt.accountId.toString(), txId };
 }

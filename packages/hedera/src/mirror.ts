@@ -4,11 +4,19 @@ export interface MirrorAccount {
   account: string;
   evm_address: string;
   key: { _type: string; key: string } | null;
+  created_timestamp?: string;
   balance: {
     balance: number;
     timestamp: string;
     tokens: { token_id: string; balance: number }[];
   };
+}
+
+export interface MirrorTokenRelationship {
+  token_id: string;
+  balance: number;
+  created_timestamp: string;
+  automatic_association: boolean;
 }
 
 export interface MirrorTopicMessage {
@@ -59,6 +67,35 @@ export const mirror = {
     return BigInt(entry?.balance ?? 0);
   },
 
+  /** The account's relationship with `tokenId` (present once associated), or undefined. */
+  async tokenRelationship(
+    env: Env,
+    accountId: string,
+    tokenId: string,
+  ): Promise<MirrorTokenRelationship | undefined> {
+    const body = await get<{ tokens: MirrorTokenRelationship[] }>(
+      env,
+      `/accounts/${accountId}/tokens?token.id=${tokenId}`,
+    );
+    return body.tokens.find((t) => t.token_id === tokenId);
+  },
+
+  /** SDK-form id (`0.0.x@s.n`) of the transaction that reached consensus at `timestamp`. */
+  async transactionIdAt(env: Env, timestamp: string): Promise<string> {
+    const { transactions } = await get<{ transactions: { transaction_id: string }[] }>(
+      env,
+      `/transactions?timestamp=${timestamp}`,
+    );
+    const tx = transactions[0];
+    if (!tx) throw new Error(`No transaction at consensus timestamp ${timestamp}`);
+    return toSdkTransactionId(tx.transaction_id);
+  },
+
+  /** Contract entity id (`0.0.x`) and EVM address for a contract id or EVM address. */
+  contract(env: Env, idOrEvm: string): Promise<{ contract_id?: string; evm_address?: string }> {
+    return get(env, `/contracts/${idOrEvm}`);
+  },
+
   /**
    * Resolves an EVM transaction hash to its Hedera transaction id. `/contracts/results/{hash}`
    * does not expose the transaction id, so its consensus timestamp is looked up in `/transactions`.
@@ -71,13 +108,7 @@ export const mirror = {
       env,
       `/contracts/results/${evmHash}`,
     );
-    const { transactions } = await get<{ transactions: { transaction_id: string }[] }>(
-      env,
-      `/transactions?timestamp=${result.timestamp}`,
-    );
-    const tx = transactions[0];
-    if (!tx) throw new Error(`No transaction at consensus timestamp ${result.timestamp}`);
-    const transactionId = toSdkTransactionId(tx.transaction_id);
+    const transactionId = await mirror.transactionIdAt(env, result.timestamp);
     return { transactionId, status: result.result, hashscanUrl: hashscan.tx(transactionId) };
   },
 

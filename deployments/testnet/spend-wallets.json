@@ -1,0 +1,92 @@
+{
+  "network": "testnet",
+  "usdcTokenId": "0.0.429274",
+  "cosigner": {
+    "accountId": "0.0.11337995"
+  },
+  "wallets": {
+    "SPEND_WALLET_RESEARCH": {
+      "accountId": "0.0.11339484",
+      "evmAddress": "0x0000000000000000000000000000000000ad06dc",
+      "hashscan": "https://hashscan.io/testnet/account/0.0.11339484",
+      "worker": {
+        "name": "WORKER_RESEARCH",
+        "accountId": "0.0.11337989"
+      },
+      "keyList": {
+        "description": "KeyList([WORKER_RESEARCH, COSIGNER], threshold 2), no EVM alias",
+        "threshold": 2,
+        "keys": [
+          {
+            "role": "worker",
+            "type": "ECDSA_SECP256K1",
+            "publicKey": "03992d6204ee754421f9643bf73bf1826fea6def1b2549656d9df96d3a205e2947"
+          },
+          {
+            "role": "cosigner",
+            "type": "ECDSA_SECP256K1",
+            "publicKey": "031ca1230064d86ff1e48a4825d999f30dea7f006f29c20e4f62d4af7b3397e0a1"
+          }
+        ],
+        "mirrorKey": {
+          "_type": "ProtobufEncoded",
+          "key": "2a4e0802124a0a233a2103992d6204ee754421f9643bf73bf1826fea6def1b2549656d9df96d3a205e29470a233a21031ca1230064d86ff1e48a4825d999f30dea7f006f29c20e4f62d4af7b3397e0a1"
+        }
+      },
+      "initialHbar": 5,
+      "maxAutomaticTokenAssociations": 10,
+      "createTx": {
+        "transactionId": "0.0.11333252@1793969914.172231452",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793969914.172231452"
+      },
+      "usdcAssociateTx": {
+        "transactionId": "0.0.11333252@1793969919.209773850",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793969919.209773850"
+      }
+    },
+    "SPEND_WALLET_COMPUTE": {
+      "accountId": "0.0.11339486",
+      "evmAddress": "0x0000000000000000000000000000000000ad06de",
+      "hashscan": "https://hashscan.io/testnet/account/0.0.11339486",
+      "worker": {
+        "name": "WORKER_COMPUTE",
+        "accountId": "0.0.11337990"
+      },
+      "keyList": {
+        "description": "KeyList([WORKER_COMPUTE, COSIGNER], threshold 2), no EVM alias",
+        "threshold": 2,
+        "keys": [
+          {
+            "role": "worker",
+            "type": "ECDSA_SECP256K1",
+            "publicKey": "027a33ace3cb59908b07d55fea1c023b22612c291faa049911f7fc604471cf71a2"
+          },
+          {
+            "role": "cosigner",
+            "type": "ECDSA_SECP256K1",
+            "publicKey": "031ca1230064d86ff1e48a4825d999f30dea7f006f29c20e4f62d4af7b3397e0a1"
+          }
+        ],
+        "mirrorKey": {
+          "_type": "ProtobufEncoded",
+          "key": "2a4e0802124a0a233a21027a33ace3cb59908b07d55fea1c023b22612c291faa049911f7fc604471cf71a20a233a21031ca1230064d86ff1e48a4825d999f30dea7f006f29c20e4f62d4af7b3397e0a1"
+        }
+      },
+      "initialHbar": 5,
+      "maxAutomaticTokenAssociations": 10,
+      "createTx": {
+        "transactionId": "0.0.11333252@1793969922.674066550",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793969922.674066550"
+      },
+      "usdcAssociateTx": {
+        "transactionId": "0.0.11333252@1793969930.470415616",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793969930.470415616"
+      }
+    }
+  },
+  "facilityAllowance": {
+    "status": "pending",
+    "note": "The standing USDC allowance to the CreditFacility contract is granted in C5 spend (Task 5.3) with approveFacilityAllowance, once the facility is deployed."
+  },
+  "updatedAt": "2026-11-06T12:59:24.716Z"
+}
