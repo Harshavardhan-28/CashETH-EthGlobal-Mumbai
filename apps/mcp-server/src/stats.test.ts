@@ -22,12 +22,12 @@ const baseHash = keccak256(toHex("base"));
 const creditHash = keccak256(toHex("credit"));
 
 /** An encoded log of `eventName` (indexed args in topics, the rest ABI-encoded in data). */
-function log(abi: Abi, address: Address, eventName: string, args: Record<string, unknown>, timestamp: number): RawLog {
+function log(abi: Abi, address: Address, eventName: string, args: Record<string, unknown>, timestamp: number, txHash?: Hex): RawLog {
   const event = abi.find((e) => e.type === "event" && e.name === eventName) as AbiEvent;
   const topics = encodeEventTopics({ abi: [event], eventName, args } as Parameters<typeof encodeEventTopics>[0]) as Hex[];
   const plain = event.inputs.filter((i) => !i.indexed);
   const data = encodeAbiParameters(plain, plain.map((i) => args[i.name!]));
-  return { address, topics, data, timestamp, txHash: keccak256(toHex(`${eventName}${timestamp}`)) };
+  return { address, topics, data, timestamp, txHash: txHash ?? keccak256(toHex(`${eventName}${timestamp}`)) };
 }
 
 function strategy(kind: "credit" | "base", hash: Hex): LenderStrategy {
@@ -45,6 +45,30 @@ function strategy(kind: "credit" | "base", hash: Hex): LenderStrategy {
     realUsdc: 5_000_000n,
     allowance: 5_000_000n,
   };
+}
+
+const baseShipTx = keccak256(toHex("ship base"));
+const creditShipTx = keccak256(toHex("ship credit"));
+
+/** Ships the credit and base strategies (deposits are `Pushed` in the ship transaction), then two base swaps. */
+function aquaLogs(): RawLog[] {
+  const aqua = AquaRouterAbi as Abi;
+  const app = AQUA_ADDRS.swapRouter;
+  const shipped = (strategyHash: Hex, tx: Hex) => log(aqua, AQUA_ADDRS.aqua, "Shipped", { maker: lender, app, strategyHash, strategy: "0x1234" }, T0, tx);
+  const pushed = (strategyHash: Hex, token: Address, amount: bigint, timestamp: number, tx?: Hex) =>
+    log(aqua, AQUA_ADDRS.aqua, "Pushed", { maker: lender, app, strategyHash, token, amount }, timestamp, tx);
+  return [
+    shipped(creditHash, creditShipTx),
+    pushed(creditHash, ADDRS.usdc, 1_000_000n, T0, creditShipTx),
+    shipped(baseHash, baseShipTx),
+    pushed(baseHash, ADDRS.usdc, 2_000_000n, T0, baseShipTx),
+    pushed(baseHash, tUsdt, 2_000_000n, T0, baseShipTx),
+    // Two swaps into the base strategy: the taker pushes its input token.
+    pushed(baseHash, ADDRS.usdc, 200_000n, T0 + DAY),
+    pushed(baseHash, tUsdt, 199_400n, T0 + 2 * DAY),
+    // USDC pushed into the credit strategy is not base volume either.
+    pushed(creditHash, ADDRS.usdc, 500_000n, T0 + 3 * DAY),
+  ];
 }
 
 function provider() {
@@ -67,11 +91,7 @@ function provider() {
       log(CreditFacilityAbi as Abi, ADDRS.creditFacility, "SpendCommitted", { spendId, hederaTxIdHash: id }, T0 + 1_600),
     ],
     [ADDRS.repaymentRouter]: [log(RepaymentRouterAbi as Abi, ADDRS.repaymentRouter, "LenderPaid", { id, maker: lender, principal: 4_000_000n, fee: 23_013n }, T0 + 1_000 + 10 * DAY)],
-    [AQUA_ADDRS.aqua]: [
-      log(AquaRouterAbi as Abi, AQUA_ADDRS.aqua, "Pushed", { maker: lender, app: AQUA_ADDRS.swapRouter, strategyHash: baseHash, token: ADDRS.usdc, amount: 200_000n }, T0),
-      // RCN pushed into a credit strategy is not base volume.
-      log(AquaRouterAbi as Abi, AQUA_ADDRS.aqua, "Pushed", { maker: lender, app: AQUA_ADDRS.swapRouter, strategyHash: creditHash, token: AQUA_ADDRS.rcn, amount: 999n }, T0),
-    ],
+    [AQUA_ADDRS.aqua]: aquaLogs(),
   };
   return new BasicStatsProvider({
     chain: o.chain,
@@ -112,7 +132,7 @@ describe("BasicStatsProvider", () => {
     expect((await provider().agentStats(worker)).spendByMerchant).toEqual({ [merchant]: "250000" });
   });
 
-  it("computes lender yield: credit fees, base fees from USDC/tUSDT pushes, APRs and strategies", async () => {
+  it("computes lender yield: base fees from the base strategy's swap pushes only (no ship deposits), APRs and strategies", async () => {
     const p = provider();
     const y = await p.lenderYield(lender);
     expect(y).toEqual({
@@ -122,14 +142,16 @@ describe("BasicStatsProvider", () => {
       capital: "5000000",
       lent: "0",
       idle: "5000000",
-      baseFees: "600",
+      // (200_000 + 199_400) x 30 bps; the base and credit ship deposits and the credit push are not fee income.
+      baseFees: "1198",
       creditFees: "23013",
-      baseApr: 0.15,
+      // 1198 / 4_000_000 virtual, annualised over the 35.5 days since the first swap (T0 + 1 day), not the ship time.
+      baseApr: 0.31,
       boostApr: 7,
-      blendedApr: 0.15,
+      blendedApr: 0.31,
       strategies: { credit: creditHash, base: baseHash },
     });
-    expect((await p.agentStats(lender)).lenderReturnPct).toBe(0.47);
+    expect((await p.agentStats(lender)).lenderReturnPct).toBe(0.48);
     expect((await p.listLenders()).map((l) => l.address)).toEqual([lender]);
   });
 });

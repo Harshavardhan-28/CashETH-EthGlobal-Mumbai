@@ -13,7 +13,7 @@
  *   worker on the seller's facilities, by merchant EVM address.
  * - lender capital = wallet USDC + outstanding principal; lent = Σ `PositionOpened.principal` - Σ
  *   `LenderPaid.principal`; idle = wallet USDC; creditFees = Σ `LenderPaid.fee`; baseFees = Σ Aqua `Pushed`
- *   amounts of USDC/tUSDT into the lender's strategies x the base fee; baseApr annualises baseFees over the base
+ *   swap inputs into the lender's base strategy (not the ship deposits) x the base fee; baseApr annualises baseFees over the base
  *   strategy's shipped balance since its first swap; boostApr = the credit strategy's aprBps / 100; blendedApr =
  *   (baseApr x idle + boostApr x lent) / capital.
  */
@@ -38,14 +38,14 @@ import type {
 const DAY = 86_400;
 const YEAR = 365 * DAY;
 
-type Decoded = { name: string; args: Record<string, unknown>; timestamp: number };
+type Decoded = { name: string; args: Record<string, unknown>; timestamp: number; txHash: Hex };
 
 function decodeAll(abi: Abi, logs: RawLog[]): Decoded[] {
   const out: Decoded[] = [];
   for (const log of logs) {
     try {
       const ev = decodeEventLog({ abi, data: log.data, topics: log.topics as [Hex, ...Hex[]] });
-      out.push({ name: String(ev.eventName), args: (ev.args ?? {}) as Record<string, unknown>, timestamp: log.timestamp });
+      out.push({ name: String(ev.eventName), args: (ev.args ?? {}) as Record<string, unknown>, timestamp: log.timestamp, txHash: log.txHash });
     } catch {
       // not one of this contract's events (or malformed): skip
     }
@@ -53,7 +53,25 @@ function decodeAll(abi: Abi, logs: RawLog[]): Decoded[] {
   return out;
 }
 
-const round = (x: number, digits = 2): number => (Number.isFinite(x) ? Number(x.toFixed(digits)) : 0);
+/**
+ * Input pushed into one strategy by swaps, and the time of the first swap. `Aqua.ship` also emits `Pushed` for the
+ * deposits, so the `Pushed` events of the strategy's own `Shipped` transaction are left out: only swap inputs carry fees.
+ */
+function swapVolume(aqua: Decoded[], maker: Address, strategyHash: Hex): { pushed: bigint; firstSwap: number | undefined } {
+  const ofStrategy = (e: Decoded) =>
+    sameAddress(String(e.args.maker), maker) && String(e.args.strategyHash).toLowerCase() === strategyHash.toLowerCase();
+  const shipTxs = new Set(aqua.filter((e) => e.name === "Shipped" && ofStrategy(e)).map((e) => e.txHash));
+  let pushed = 0n;
+  let firstSwap: number | undefined;
+  for (const e of aqua) {
+    if (e.name !== "Pushed" || !ofStrategy(e) || shipTxs.has(e.txHash)) continue;
+    pushed += e.args.amount as bigint;
+    firstSwap ??= e.timestamp;
+  }
+  return { pushed, firstSwap };
+}
+
+const round =(x: number, digits = 2): number => (Number.isFinite(x) ? Number(x.toFixed(digits)) : 0);
 
 type Snapshot = {
   at: number;
@@ -250,22 +268,8 @@ export class BasicStatsProvider implements StatsProvider {
     }
     const lent = opened > repaidPrincipal ? opened - repaidPrincipal : 0n;
 
-    let aquaAddrs: { usdc: Address; tUsdt?: Address } | undefined;
-    try {
-      aquaAddrs = this.opts.aqua.addresses();
-    } catch {
-      aquaAddrs = undefined;
-    }
-    const baseTokens = [aquaAddrs?.usdc, aquaAddrs?.tUsdt].filter((t): t is Address => !!t);
     const feeBps = base?.feeBps ?? 30;
-    let pushed = 0n;
-    let firstSwap: number | undefined;
-    for (const e of s.aqua) {
-      if (e.name !== "Pushed" || !sameAddress(String(e.args.maker), address)) continue;
-      if (!baseTokens.some((t) => sameAddress(t, String(e.args.token)))) continue;
-      pushed += e.args.amount as bigint;
-      firstSwap ??= e.timestamp;
-    }
+    const { pushed, firstSwap } = base ? swapVolume(s.aqua, address, base.strategyHash) : { pushed: 0n, firstSwap: undefined };
     const baseFees = (pushed * BigInt(Math.round(feeBps * 100))) / 1_000_000n;
 
     const idle = await this.opts.chain.usdcBalance(address).catch(() => 0n);
