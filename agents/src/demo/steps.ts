@@ -3,8 +3,8 @@
  * (which talks to the MCP server) and returns the proof it produced; none of them sends a chain call itself.
  */
 import { LENDER_TIERS } from "@casheth/aqua";
-import { hashscan } from "@casheth/shared";
-import type { Address, Hex } from "viem";
+import { computeReceivableId, hashscan } from "@casheth/shared";
+import { keccak256, toHex, type Address, type Hex } from "viem";
 import { idempotencyKey as stableKey, ToolCallError } from "../mcpClient.js";
 import type { ShipOutcome } from "../lender.js";
 import type { PurchaseOutcome } from "../worker.js";
@@ -56,6 +56,15 @@ function repayTxHash(result: Record<string, unknown>): string {
 
 // ---------------------------------------------------------------------------------------------------- 1. lenders
 
+/** Whether the receivable's facility is already funded: a rerun past step 4, when the lender steps have nothing left to do. */
+async function facilityFunded(ctx: DemoContext): Promise<boolean> {
+  const id = computeReceivableId(ctx.invoice.buyer, keccak256(toHex(ctx.invoice.buyerRef)));
+  const details = await ctx.read.receivable(id);
+  return details !== undefined && BigInt(details.funded) > 0n;
+}
+
+const FUNDED_ALREADY: StepOutcome = { skipped: true, note: "the facility is already funded: an earlier run did this step" };
+
 /** Tops an account up from the operator by exactly what it is short of `required`, or skips when it holds enough. */
 function topUpStep(label: string, account: (ctx: DemoContext) => { address: Address; accountId: string }, required: bigint, purpose: string): Step {
   return {
@@ -74,8 +83,11 @@ function topUpStep(label: string, account: (ctx: DemoContext) => { address: Addr
   };
 }
 
-const lenderTopUpStep = (key: "A" | "B"): Step =>
-  topUpStep(`1. lender ${key}: top up USDC from the operator`, (ctx) => ctx.lenders[key], FRESH_LENDERS[key].creditUsdc, "it ships");
+function lenderTopUpStep(key: "A" | "B"): Step {
+  const topUp = topUpStep(`1. lender ${key}: top up USDC from the operator`, (ctx) => ctx.lenders[key], FRESH_LENDERS[key].creditUsdc, "it ships");
+  // Once the facility is funded the lender holds less because it lent: no top-up is owed.
+  return { ...topUp, run: async (ctx) => ((await facilityFunded(ctx)) ? FUNDED_ALREADY : topUp.run(ctx)) };
+}
 
 const buyerTopUpStep: Step = topUpStep("8. buyer: top up USDC from the operator", (ctx) => ctx.buyer, INVOICE.amount, "it repays");
 
@@ -92,6 +104,7 @@ function shipStep(key: "A" | "B"): Step {
   return {
     label: `1. lender ${key} ships a ${formatUsdc(creditUsdc)} USDC ${tier}-tier credit strategy`,
     async run(ctx) {
+      if (await facilityFunded(ctx)) return FUNDED_ALREADY;
       const lender = ctx.lenders[key];
       const { maxPerBuyer } = FRESH_LENDERS[key];
       const planned = { maker: lender.address, seller: ctx.seller.address, creditUsdc, aprBps: LENDER_TIERS[tier].aprBps, ...(maxPerBuyer ? { maxPerBuyer } : {}) };
@@ -307,6 +320,7 @@ const repayStep: Step = {
     });
 
     const details = await ctx.read.receivable(id);
+    if (!details) throw new Error(`the server does not know receivable ${id}`);
     if (details.state !== "Repaid" || details.debt !== "0") throw new Error(`expected state Repaid with no debt, got ${details.state} with debt ${details.debt}`);
     await poll("the buyer's reputation update", async () => ((await buyerRepaid()) > repaidBefore ? true : undefined), ctx.poll);
 

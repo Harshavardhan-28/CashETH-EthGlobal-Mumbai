@@ -60,7 +60,8 @@ export interface ReadApi {
   events(): Promise<AuditEvent[]>;
   agents(): Promise<AgentStats[]>;
   lenders(): Promise<LenderYield[]>;
-  receivable(id: Hex): Promise<ReceivableDetails>;
+  /** `undefined` for an id the server has never seen (HTTP 404). */
+  receivable(id: Hex): Promise<ReceivableDetails | undefined>;
 }
 
 export function createReadApi(baseUrl: string, fetchImpl: typeof fetch = fetch): ReadApi {
@@ -74,7 +75,12 @@ export function createReadApi(baseUrl: string, fetchImpl: typeof fetch = fetch):
     events: () => get("/events"),
     agents: () => get("/agents"),
     lenders: () => get("/lenders"),
-    receivable: (id) => get(`/receivables/${id}`),
+    async receivable(id) {
+      const res = await fetchImpl(new URL(`/receivables/${id}`, baseUrl));
+      if (res.status === 404) return undefined;
+      if (!res.ok) throw new Error(`GET /receivables/${id} failed with HTTP ${res.status}`);
+      return (await res.json()) as ReceivableDetails;
+    },
   };
 }
 

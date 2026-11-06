@@ -548,7 +548,7 @@ function fakeContext() {
       events: async () => events,
       agents: async () => [{ address: buyerAddress, label: "buyer", role: "buyer", level: 3, score: 70, tier: "none", onTimePct: 100, receivablesFunded: 1, receivablesRepaid: repaid ? 1 : 0, receivablesDefaulted: 0, avgDaysToRepay: 0, lenderReturnPct: 0 }],
       lenders: async () => [{ address: makers.A, label: "lenderA", tier: "low", capital: "1", lent: "0", idle: "1", baseFees: "0", creditFees: "0", baseApr: 0, boostApr: 7, blendedApr: 7 }],
-      receivable: async () => ({ id, state: "Repaid", amount: INVOICE.amount.toString(), funded: BORROWING_BASE.toString(), debt: "0", positions: [] }),
+      receivable: async () => !calls.includes("open") ? undefined : ({ id, state: "Repaid", amount: INVOICE.amount.toString(), funded: BORROWING_BASE.toString(), debt: "0", positions: [] }),
     },
     usdcBalance: async (address: Address) => balances.get(address) ?? 0n,
     openStrategies: async () => open,
@@ -645,6 +645,16 @@ describe("the eight lifecycle steps against fake agents", () => {
     const results = await runSteps(STEPS, ctx);
     expect(results.find((r) => r.label.startsWith("1. lender A ships"))).toMatchObject({ skipped: true });
     expect(exitCode(results)).toBe(0);
+  });
+
+  it("skips the lender steps on a rerun once the facility is funded, whatever the lenders now hold", async () => {
+    const { ctx, calls, balances } = fakeContext();
+    calls.push("open");
+    balances.set(makers.A, 0n);
+    balances.set(makers.B, 0n);
+    const results = await runSteps(STEPS, ctx);
+    expect(results.slice(0, 4).every((r) => r.skipped)).toBe(true);
+    expect(calls.filter((c) => c.startsWith("top-up") || c.startsWith("ship-"))).toEqual([]);
   });
 
   it("proves the invoice document with the HCS anchor and the verifier's VERIFIED line", async () => {
