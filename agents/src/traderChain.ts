@@ -17,7 +17,9 @@ import {
 import type { BaseStrategy, TraderChain } from "./trader.js";
 
 /** Fixed gas limit: Hedera's gas estimation does not model the HTS calls inside the swap. */
-const FILL_GAS = 1_500_000n;
+const FILL_GAS = 4_000_000n;
+
+const RECEIPT_TIMEOUT_MS = 600_000;
 
 export interface TraderChainClients {
   public: PublicClient;
@@ -39,7 +41,8 @@ export function createTraderChain(clients: TraderChainClients, deployment: Trade
 
   async function send(request: Record<string, unknown>): Promise<{ txHash: Hex; receipt: TransactionReceipt }> {
     const txHash = await wallet.writeContract({ account: wallet.account, chain: wallet.chain, ...request } as never);
-    const receipt = await reader.waitForTransactionReceipt({ hash: txHash });
+    // Hashio can take minutes to serve a receipt; a short wait would report a landed transaction as failed.
+    const receipt = await reader.waitForTransactionReceipt({ hash: txHash, timeout: RECEIPT_TIMEOUT_MS });
     if (receipt.status !== "success") throw new Error(`transaction ${txHash} reverted`);
     return { txHash, receipt };
   }

@@ -94,6 +94,13 @@ interface Leg {
 /** The leg that failed: which lender's strategy, which way, and how much was being sold. */
 export type FailedLeg = Pick<TradeRecord, "lender" | "strategyHash" | "direction" | "amountIn">;
 
+/** One-line reason: viem's `shortMessage` when there is one (its `message` carries the whole request and response body). */
+function briefReason(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const short = (error as { shortMessage?: unknown }).shortMessage;
+  return typeof short === "string" ? short : error.message;
+}
+
 /** A leg did not complete. `cause` is the underlying error; `sweepError` is set when returning the input also failed. */
 export class TradeError extends Error {
   readonly lender: string;
@@ -103,9 +110,8 @@ export class TradeError extends Error {
   readonly sweepError?: unknown;
 
   constructor(leg: FailedLeg, cause: unknown, sweepError?: unknown) {
-    const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
-    const stuck = sweepError === undefined ? "" : ` (returning the input to the operator also failed: ${reason(sweepError)})`;
-    super(`lender ${leg.lender} ${leg.direction} ${leg.amountIn} (strategy ${leg.strategyHash}) failed: ${reason(cause)}${stuck}`, { cause });
+    const stuck = sweepError === undefined ? "" : ` (returning the input to the operator also failed: ${briefReason(sweepError)})`;
+    super(`lender ${leg.lender} ${leg.direction} ${leg.amountIn} (strategy ${leg.strategyHash}) failed: ${briefReason(cause)}${stuck}`, { cause });
     this.name = "TradeError";
     this.lender = leg.lender;
     this.strategyHash = leg.strategyHash;
@@ -210,7 +216,7 @@ export function serializeTrades(records: TradeRecord[], failure?: TradeError) {
             strategyHash: failure.strategyHash,
             direction: failure.direction,
             amountIn: failure.amountIn.toString(),
-            error: failure.cause instanceof Error ? failure.cause.message : String(failure.cause),
+            error: briefReason(failure.cause),
           },
         }
       : {}),

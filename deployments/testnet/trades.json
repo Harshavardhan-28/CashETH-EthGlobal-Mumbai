@@ -1,0 +1,44 @@
+{
+  "network": "testnet",
+  "chainId": 296,
+  "label": "scripted volume",
+  "note": "Swap 4 was confirmed on chain (Filled amounts read from the mirror node) after the trader's receipt wait timed out; the run was then stopped, so lenders B and C were not traded.",
+  "trades": [
+    {
+      "lender": "A",
+      "strategyHash": "0xb066774b1f5a237212a16f37982ea219648ec1e0ff11accd73846bbc286da405",
+      "direction": "usdc->tusdt",
+      "amountIn": "200000",
+      "amountOut": "142550",
+      "txHash": "0xc4c8d83194af6e353bde45c2ed3a4190305f432e38d88ac0fcc88eea48de8054",
+      "link": "https://hashscan.io/testnet/transaction/0xc4c8d83194af6e353bde45c2ed3a4190305f432e38d88ac0fcc88eea48de8054"
+    },
+    {
+      "lender": "A",
+      "strategyHash": "0xb066774b1f5a237212a16f37982ea219648ec1e0ff11accd73846bbc286da405",
+      "direction": "tusdt->usdc",
+      "amountIn": "142550",
+      "amountOut": "199141",
+      "txHash": "0x43bdd259db898355c076f5803f81e9d28d7e545008ae91328d0874d654a2a3b6",
+      "link": "https://hashscan.io/testnet/transaction/0x43bdd259db898355c076f5803f81e9d28d7e545008ae91328d0874d654a2a3b6"
+    },
+    {
+      "lender": "A",
+      "strategyHash": "0xb066774b1f5a237212a16f37982ea219648ec1e0ff11accd73846bbc286da405",
+      "direction": "usdc->tusdt",
+      "amountIn": "200000",
+      "amountOut": "142375",
+      "txHash": "0xc00a3dfb38387e2584a59b399021df49631848b382acd5fbc68e25cee6f76a23",
+      "link": "https://hashscan.io/testnet/transaction/0xc00a3dfb38387e2584a59b399021df49631848b382acd5fbc68e25cee6f76a23"
+    },
+    {
+      "lender": "A",
+      "strategyHash": "0xb066774b1f5a237212a16f37982ea219648ec1e0ff11accd73846bbc286da405",
+      "direction": "tusdt->usdc",
+      "amountIn": "142375",
+      "amountOut": "199140",
+      "txHash": "0x8f9dd4f67686192eab125dc8182008704165fc7908e4465affb32b3e4d37d413",
+      "link": "https://hashscan.io/testnet/transaction/0x8f9dd4f67686192eab125dc8182008704165fc7908e4465affb32b3e4d37d413"
+    }
+  ]
+}

@@ -592,3 +592,31 @@ Two real transactions that revert, decoded from the mirror node's `error_message
 | `openAndFund` for PO-1002, from the seller | `NOT_COORDINATOR()` `0xe5ad01f4` | [0.0.7314364@1793982519.722396023](https://hashscan.io/testnet/transaction/0.0.7314364@1793982519.722396023) |
 
 HCS `FacilityFunded` on the audit topic [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927): seq 36, [tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793982667.668877640). The record is `deployments/testnet/facility.json`.
+
+## C4 base yield (scripted volume)
+
+Measured 2026-11-06 from `GET /lenders`. Base APR is variable swap-fee income from the volume the scripted trader agent (`agents/src/trader.ts`) pushed through the lenders' base-yield strategies on Hedera testnet; it is not guaranteed. Boost APR is the fixed `aprBps` of the lender's credit strategy.
+
+| Lender | Tier | Capital (USDC) | Lent | Idle | Base fees | Credit fees | Base APR | Boost APR | Blended APR |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| lenderA | low | 4.01081 | 3.5 | 0.51081 | 0.002054 | 0 | 2820.05% | 7% | 365.27% |
+| lenderB | medium | 2 | 1 | 1 | 0 | 0 | 0% | 8.5% | 4.25% |
+| lenderC | high | 1 | 0 | 1 | 0 | 0 | 0% | 13% | 0% |
+| lenderD | low | 1 | 0 | 1 | 0 | 0 | 0% | 7% | 0% |
+
+Scripted swaps (4, `deployments/testnet/trades.json`):
+
+| Lender | Direction | In | Out | Transaction |
+| --- | --- | ---: | ---: | --- |
+| A | USDC -> tUSDT | 0.2 | 0.14255 | [0xc4c8d83194af6e353bde45c2ed3a4190305f432e38d88ac0fcc88eea48de8054](https://hashscan.io/testnet/transaction/0xc4c8d83194af6e353bde45c2ed3a4190305f432e38d88ac0fcc88eea48de8054) |
+| A | tUSDT -> USDC | 0.14255 | 0.199141 | [0x43bdd259db898355c076f5803f81e9d28d7e545008ae91328d0874d654a2a3b6](https://hashscan.io/testnet/transaction/0x43bdd259db898355c076f5803f81e9d28d7e545008ae91328d0874d654a2a3b6) |
+| A | USDC -> tUSDT | 0.2 | 0.142375 | [0xc00a3dfb38387e2584a59b399021df49631848b382acd5fbc68e25cee6f76a23](https://hashscan.io/testnet/transaction/0xc00a3dfb38387e2584a59b399021df49631848b382acd5fbc68e25cee6f76a23) |
+| A | tUSDT -> USDC | 0.142375 | 0.19914 | [0x8f9dd4f67686192eab125dc8182008704165fc7908e4465affb32b3e4d37d413](https://hashscan.io/testnet/transaction/0x8f9dd4f67686192eab125dc8182008704165fc7908e4465affb32b3e4d37d413) |
+
+Notes on this run:
+
+- **Only lender A was traded** (two round trips of 0.2 USDC; the third was not started). Lenders B and C were not traded because of time: the Hashio relay took 1 to 5 minutes per transaction, and the run was stopped at the controller's request. Their base APR is therefore 0, not a result.
+- **Base fees match the chain.** The four swaps pushed 0.684925 USDC-equivalent of input into A's base strategy; at 30 bps that is 0.002054, which is what `GET /lenders` reports (ship deposits are excluded since the `fix(mcp)` commit).
+- **The base APR is an annualised measurement of a short window**, about 38 minutes from the first swap to the report, over A's 1.0 (0.5 USDC + 0.5 tUSDT) virtual balance. It shows the mechanism works on real swaps; it is not a forecast and not guaranteed. Price impact is large because the pool is small: 0.2 USDC in returns 0.14255 tUSDT, and a round trip comes back as 0.199141 USDC.
+- **Swap 4 was confirmed on chain** (`Filled` amounts read from the mirror node) after the trader's receipt wait timed out; `trades.json` records it. The taker was then swept back to the operator.
+- **Router USDC auto-association (4.3 watch item): works.** The router (`0.0.11341628`) has no explicit association and `max_automatic_token_associations = -1`. The first USDC-in fill associated it automatically (mirror: `0.0.429274`, `automatic_association: true`). The fill is expensive though: about 2.26M gas for every USDC-in fill (vs 145k for tUSDT-in). The first attempt with a 1.5M gas limit reverted with `ForceApproveFailed` (out of gas inside the router's HTS `approve`), so the trader uses a 4M limit.

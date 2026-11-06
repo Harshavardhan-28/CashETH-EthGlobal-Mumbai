@@ -142,6 +142,13 @@ describe("runTrader", () => {
     expect(failure.message).toMatch(/lender B tusdt->usdc 199400.*router reverted/);
   });
 
+  it("keeps the message short for viem errors, whose full message embeds the request and response bodies", () => {
+    const viemError = Object.assign(new Error("HTTP request failed.\n\nRequest body: {...}\nDetails: <html>...</html>"), { shortMessage: "HTTP request failed." });
+    const failure = new TradeError({ lender: "A", strategyHash: "0xbb", direction: "usdc->tusdt", amountIn: 1n }, viemError);
+    expect(failure.message).toMatch(/failed: HTTP request failed\.$/);
+    expect(serializeTrades([], failure).failure?.error).toBe("HTTP request failed.");
+  });
+
   it("attributes a failure before the fill (quote, funding) the same way", async () => {
     const { chain } = fakeChain();
     chain.quoteOut = async () => {
