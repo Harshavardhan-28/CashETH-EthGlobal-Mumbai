@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import type { ReactNode } from "react";
 import { SESSION_COOKIE, isValidSession } from "@/lib/admin/session";
-import { SignOutButton } from "@/components/admin/SignOutButton";
+import { AdminApp } from "@/components/admin/AdminApp";
 
 export const metadata: Metadata = {
   title: "Admin console - CashETH",
@@ -21,21 +21,11 @@ async function AdminGate({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-// Placeholder body: replaced by <AdminApp /> in a later task.
-function AdminBody() {
-  return (
-    <main style={{ padding: 32 }}>
-      <h1>Admin console</h1>
-      <SignOutButton />
-    </main>
-  );
-}
-
 export default function AdminPage() {
   return (
     <Suspense fallback={null}>
       <AdminGate>
-        <AdminBody />
+        <AdminApp />
       </AdminGate>
     </Suspense>
   );

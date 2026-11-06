@@ -5,8 +5,19 @@
  */
 import type { AgentStats, AuditEvent, LenderYield } from "./api";
 
-const addr = (tag: string) => `0x${tag.padEnd(40, "0")}`;
-const hash = (tag: string) => `0x${tag.padEnd(64, "0")}`;
+/** Deterministic hex that looks like a real address/hash (same tag → same value). */
+function hex(tag: string, length: number): string {
+  let x = 2166136261;
+  for (const c of tag) x = Math.imul(x ^ c.charCodeAt(0), 16777619) >>> 0;
+  let out = "";
+  while (out.length < length) {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+    out += x.toString(16).padStart(8, "0");
+  }
+  return out.slice(0, length);
+}
+const addr = (tag: string) => `0x${hex(`a:${tag}`, 40)}`;
+const hash = (tag: string) => `0x${hex(`h:${tag}`, 64)}`;
 const tx = (tag: string) => `https://hashscan.io/testnet/transaction/${hash(tag)}`;
 
 const SELLER = addr("a11ce5e11e7");
