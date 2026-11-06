@@ -2,7 +2,11 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 
+// Server-only suites opt into `// @vitest-environment node`; they have no DOM to reset.
+const hasDom = typeof window !== "undefined";
+
 afterEach(() => {
+  if (!hasDom) return;
   cleanup();
   localStorage.clear();
   document.documentElement.setAttribute("data-theme", "dark");
@@ -21,4 +25,4 @@ export function mockReducedMotion(reduce: boolean) {
     dispatchEvent: () => false,
   })) as typeof window.matchMedia;
 }
-mockReducedMotion(false);
+if (hasDom) mockReducedMotion(false);
