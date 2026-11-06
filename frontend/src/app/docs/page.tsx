@@ -11,15 +11,19 @@ import {
   FAKE_BUYER_CONTROLS,
   INVARIANTS,
   KYA_LEVELS,
+  MCP_ENV,
+  MCP_ERROR_CODES,
   MCP_TOOLS,
+  READ_API,
   REGISTRY_RULES,
+  ROLE_SCOPES,
   ROLE_COLOR,
   X402_STEPS,
 } from "@/lib/content";
 
 export const metadata: Metadata = {
   title: "Docs - CashETH",
-  description: "Build spec for CashETH: contracts, MCP tools and error codes.",
+  description: "Build spec for CashETH: connecting agents to the MCP server, its 20 tools, the read API, contracts and error codes.",
 };
 
 export default function DocsPage() {
@@ -71,10 +75,77 @@ USDC_TOKEN_ID=0.0.429274
 X402_FACILITATOR_URL=https://api.testnet.blocky402.com`}
           </CodeBlock>
           <CodeBlock title="terminal">
-            <span className={styles.c}>$</span>{` forge build --root contracts/hedera
-`}<span className={styles.c}>$</span>{` npm run deploy:testnet
-`}<span className={styles.c}>$</span>{` npm run demo   `}<span className={styles.c}># writes tx IDs to docs/EVIDENCE.md</span>
+            <span className={styles.c}>$</span>{` pnpm install && pnpm -r build
+`}<span className={styles.c}>$</span>{` pnpm setup:accounts            `}<span className={styles.c}># demo accounts → .env.accounts (run once)</span>{`
+`}<span className={styles.c}>$</span>{` pnpm -F @casheth/merchant start   `}<span className={styles.c}># x402 merchant · :3003</span>{`
+`}<span className={styles.c}>$</span>{` pnpm -F @casheth/auth start       `}<span className={styles.c}># authorization server · :4020</span>{`
+`}<span className={styles.c}>$</span>{` pnpm -F @casheth/mcp start        `}<span className={styles.c}># MCP server + read API · :4030</span>{`
+`}<span className={styles.c}>$</span>{` pnpm demo                         `}<span className={styles.c}># drives all eight steps</span>
           </CodeBlock>
+        </section>
+
+        <section id="connect" data-doc-sec="connect" className={styles.sec}>
+          <h2>Connect an agent</h2>
+          <p className={styles.p}>
+            Agents reach CashETH through one MCP endpoint, <code>http://localhost:4030/mcp</code>: stateless Streamable
+            HTTP, <code>POST</code> only, JSON responses, no session id. Any MCP client works; point it at the endpoint
+            and it discovers the authorization server from the <code>401</code>.
+          </p>
+          <CodeBlock title=".mcp.json">
+{`{
+  "mcpServers": {
+    "casheth": {
+      "type": "http",
+      "url": "http://localhost:4030/mcp"
+    }
+  }
+}`}
+          </CodeBlock>
+          <p className={styles.p}>
+            The MCP server is an OAuth 2.1 resource server. An agent signs a JWT with its ECDSA secp256k1 key and
+            exchanges it (RFC 7523 JWT-bearer) at the CashETH authorization server for a 10-minute token bound to the
+            MCP audience. Identity is the token&apos;s <code>agent</code> claim; role and scopes come from its{" "}
+            <code>KYARegistry</code> entry. Tokens are never passed through to other services.
+          </p>
+          <CodeBlock title="auth flow">
+{`1  POST /mcp, no token          → `}<span className={styles.w}>401</span>{` + resource_metadata
+2  GET /.well-known/oauth-protected-resource/mcp
+3  POST {AUTH_ISSUER}/token  grant_type=jwt-bearer  assertion=<agent JWT>  resource=…/mcp
+4  ← { access_token, expires_in: 600, scope }
+5  POST /mcp  Authorization: Bearer …  → `}<span className={styles.k}>200</span>
+          </CodeBlock>
+          <div className={styles.tableWrap}>
+            <table className={styles.tableWide}>
+              <thead>
+                <tr>
+                  <th>ROLE</th>
+                  <th>SCOPES (KYA LEVEL ≥ 2)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ROLE_SCOPES.map(([role, scopes]) => (
+                  <tr key={role}>
+                    <td>
+                      <span className={styles.role}>
+                        <i style={{ background: ROLE_COLOR[role] }} />
+                        {role}
+                      </span>
+                    </td>
+                    <td className={styles.scope} style={{ whiteSpace: "normal" }}>{scopes}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className={styles.callout}>
+            <b>IDEMPOTENT BY DESIGN</b>
+            <span>
+              Every state-changing tool takes an <code>idempotencyKey</code> (8–128 chars). A repeat returns the stored
+              result with <code>_meta.replayed: true</code> and no side effects; the same key with different arguments
+              is <code>IDEMPOTENCY_KEY_REUSED</code>. Human MCP clients such as Claude Code can use the demo
+              authorization-code grant (<code>AUTH_DEMO_GRANT=true</code>, local only).
+            </span>
+          </div>
         </section>
 
         <section id="architecture" data-doc-sec="architecture" className={styles.sec}>
@@ -257,6 +328,14 @@ makerExposure(buyer) + amount <= maxPerBuyer
   amount    250000           `}<span className={styles.c}># $0.25</span>{`
   payTo     0.0.…  feePayer  facilitator`}
           </CodeBlock>
+          <h3 className={styles.h3}>External x402 merchants</h3>
+          <p className={styles.p}>
+            Workers can buy from any x402 merchant through the same reserve → <code>pay_x402</code> → commit flow and
+            guardrails. Nothing is trusted from a merchant&apos;s catalogue: the MCP server fetches only origins listed
+            in <code>MERCHANT_ORIGINS</code>, the seller&apos;s budget must allow the payee, and the co-signer signs only
+            when the 402&apos;s <code>payTo</code> equals the reservation&apos;s merchant. A rogue payee is refused as{" "}
+            <code>COSIGNER_REFUSED</code> and recorded as <code>SpendRejected</code>.
+          </p>
         </section>
 
         <section id="waterfall" data-doc-sec="waterfall" className={styles.sec}>
@@ -283,17 +362,11 @@ makerExposure(buyer) + amount <= maxPerBuyer
           <span className="eyebrow" style={{ letterSpacing: "0.12em" }}>REFERENCE</span>
           <h2>MCP tools</h2>
           <p className={styles.p}>
-            The MCP server is an OAuth 2.1 resource server. Agents exchange a JWT signed by their ECDSA key (plus
-            optional KYA evidence) at our authorization server for a 5–15 minute, audience-bound token. Third-party
-            tokens are never passed through. Every state-changing tool requires an idempotency key.
+            {MCP_TOOLS.length} tools. Each checks the token&apos;s scope, then its role, then that the caller is the
+            right party; a failure is a tool result with a <code>code</code>, not an HTTP error. Every result is one
+            JSON text item. Mutating tools also take an <code>idempotencyKey</code>. Tools that need an agent&apos;s own
+            key return calldata for the agent to sign unless the demo key flags are on.
           </p>
-          <CodeBlock title="auth flow">
-{`1  MCP call, no token          → `}<span className={styles.w}>401</span>{` + resource_metadata
-2  GET /.well-known/oauth-protected-resource
-3  POST AS /token  grant_type=jwt-bearer  resource=…/mcp
-4  ← access token { sub: UAID, role, kya_level, scope }
-5  MCP call  Authorization: Bearer …  → `}<span className={styles.k}>200</span>
-          </CodeBlock>
           <div className={styles.tableWrap}>
             <table className={styles.tableWide}>
               <thead>
@@ -301,7 +374,7 @@ makerExposure(buyer) + amount <= maxPerBuyer
                   <th>TOOL</th>
                   <th>ROLE</th>
                   <th>SCOPE</th>
-                  <th>ON-CHAIN EFFECT</th>
+                  <th>EFFECT</th>
                 </tr>
               </thead>
               <tbody>
@@ -309,10 +382,12 @@ makerExposure(buyer) + amount <= maxPerBuyer
                   <tr key={t.name}>
                     <td className={styles.tool}>{t.name}</td>
                     <td>
-                      <span className={styles.role}>
-                        <i style={{ background: ROLE_COLOR[t.role] }} />
-                        {t.role}
-                      </span>
+                      {t.roles.map((role) => (
+                        <span key={role} className={styles.role}>
+                          <i style={{ background: ROLE_COLOR[role] }} />
+                          {role}
+                        </span>
+                      ))}
                     </td>
                     <td className={styles.scope}>{t.scope}</td>
                     <td className={styles.effect}>{t.effect}</td>
@@ -321,6 +396,47 @@ makerExposure(buyer) + amount <= maxPerBuyer
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section id="read-api" data-doc-sec="read-api" className={styles.sec}>
+          <h2>Read API</h2>
+          <p className={styles.p}>
+            The same server answers unauthenticated <code>GET</code> requests on <code>http://localhost:4030</code> for
+            dashboards, including the admin console at <code>/admin</code>. It returns only hashes, addresses, amounts and
+            states. Amounts are USDC base units as strings (6 decimals: <code>&quot;250000&quot;</code> is $0.25). Browser
+            origins must be listed in <code>CORS_ORIGINS</code>.
+          </p>
+          <div className={styles.tableWrap}>
+            <table className={styles.tableWide}>
+              <thead>
+                <tr>
+                  <th>ENDPOINT</th>
+                  <th>RETURNS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {READ_API.map((r) => (
+                  <tr key={r.path}>
+                    <td className={styles.tool}>
+                      {r.method} {r.path}
+                    </td>
+                    <td className={styles.effect}>{r.returns}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <CodeBlock title="GET /events · one AuditEvent">
+{`{
+  "v": 1, "type": "SpendCommitted", "seq": 42, "prevSeq": 41,
+  "ts": "2026-11-07T12:04:31.000Z",
+  "id": "0x…",                 `}<span className={styles.c}># receivable id</span>{`
+  "spendId": "0x…", "amount": "800000", "merchant": "0.0.…",
+  "agent": "0x…",              `}<span className={styles.c}># the calling agent</span>{`
+  "hashscan": "https://hashscan.io/testnet/transaction/…",
+  "hcsSeq": 214                `}<span className={styles.c}># same message on the HCS audit topic</span>{`
+}`}
+          </CodeBlock>
         </section>
 
         <section id="errors" data-doc-sec="errors" className={styles.sec}>
@@ -337,6 +453,27 @@ makerExposure(buyer) + amount <= maxPerBuyer
               </div>
             ))}
           </div>
+          <p className={styles.p}>
+            A contract revert outside this list is <code>CONTRACT_REVERTED</code>. The MCP server adds its own codes:
+          </p>
+          <div className={styles.tableWrap}>
+            <table className={styles.tableWide}>
+              <thead>
+                <tr>
+                  <th>CODE</th>
+                  <th>MEANING</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MCP_ERROR_CODES.map(([code, meaning]) => (
+                  <tr key={code}>
+                    <td className={styles.tool}>{code}</td>
+                    <td className={styles.effect}>{meaning}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section id="config" data-doc-sec="config" className={styles.sec}>
@@ -349,6 +486,28 @@ makerExposure(buyer) + amount <= maxPerBuyer
               </div>
             ))}
           </div>
+          <h3 className={styles.h3}>MCP server environment</h3>
+          <div className={styles.tableWrap}>
+            <table className={styles.tableWide}>
+              <thead>
+                <tr>
+                  <th>VARIABLE</th>
+                  <th>DEFAULT</th>
+                  <th>USE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MCP_ENV.map(([name, dflt, use]) => (
+                  <tr key={name}>
+                    <td className={styles.tool}>{name}</td>
+                    <td className={styles.scope}>{dflt}</td>
+                    <td className={styles.effect}>{use}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className={styles.p}>Contract addresses are read from deployments/testnet/addresses.json on every call, never hard-coded.</p>
           <Link href="/" className={styles.back}>
             <span>
               <small>BACK TO</small>
