@@ -2,20 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { CONSOLE_EVENTS } from "@/lib/content";
+import { consoleStats, facilityState } from "@/lib/consoleState";
 import { usePrefersReducedMotion } from "@/lib/useInView";
 import styles from "./LiveConsole.module.css";
 
 const TOTAL = CONSOLE_EVENTS.length;
 const HOLD_TICKS = 4; // pause on the finished state before looping
 const TICK_MS = 1400;
-
-function stateFor(r: number) {
-  if (r === 0) return "—";
-  if (r < 4) return "Pending";
-  if (r < 7) return "Confirmed";
-  if (r < 10) return "Financed";
-  return "Repaid";
-}
 
 export function LiveConsole() {
   const reduce = usePrefersReducedMotion();
@@ -35,6 +28,7 @@ export function LiveConsole() {
     return () => clearInterval(id);
   }, [reduce]);
 
+  const stats = consoleStats(r);
   const maxStep = r ? CONSOLE_EVENTS[r - 1].step : 0;
 
   return (
@@ -88,10 +82,10 @@ export function LiveConsole() {
       </div>
 
       <div className={styles.stats}>
-        <Stat label="STATE" value={stateFor(r)} accent />
-        <Stat label="BORROWING BASE" value={r >= 3 ? "$7,500.00" : "—"} />
-        <Stat label="FUNDED" value={r >= 7 ? "$6,000.00" : "$0.00"} />
-        <Stat label="LENDERS OWED" value={r >= 10 ? "$0.00" : r >= 7 ? "$6,036.99" : "$0.00"} last />
+        <Stat label="STATE" value={facilityState(r)} accent />
+        <Stat label="BORROWING BASE" value={stats.base} />
+        <Stat label="FUNDED" value={stats.funded} />
+        <Stat label="LENDERS OWED" value={stats.owed} last />
       </div>
     </div>
   );
