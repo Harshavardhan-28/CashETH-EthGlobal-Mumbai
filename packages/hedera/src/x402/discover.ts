@@ -28,13 +28,14 @@ export interface DiscoveryResult {
 
 /** Decimal price string to integer units (`"0.25"`, 6 decimals => 250000n). No floats. */
 export function priceUnits(service: Pick<Service, "price" | "decimals">): bigint {
-  const [whole = "0", frac = ""] = service.price.split(".");
-  if (!/^\d+$/.test(whole) || (frac !== "" && !/^\d+$/.test(frac))) {
-    throw new Error(`invalid price "${service.price}"`);
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(service.price);
+  if (!match) throw new Error(`invalid price "${service.price}"`);
+  const whole = match[1] ?? "0";
+  const frac = match[2] ?? "";
+  if (frac.length > service.decimals) {
+    throw new Error(`price "${service.price}" has more than ${service.decimals} decimals`);
   }
-  const extra = frac.slice(service.decimals);
-  if (/[1-9]/.test(extra)) throw new Error(`price "${service.price}" has more than ${service.decimals} decimals`);
-  return BigInt(whole + frac.slice(0, service.decimals).padEnd(service.decimals, "0"));
+  return BigInt(whole + frac.padEnd(service.decimals, "0"));
 }
 
 export async function discoverServices(

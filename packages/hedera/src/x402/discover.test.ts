@@ -64,5 +64,19 @@ describe("priceUnits", () => {
   it("parses decimal prices into integer units", () => {
     expect(priceUnits({ ...svc("0.25", "x"), catalog: A })).toBe(250000n);
     expect(priceUnits({ ...svc("1", "x"), catalog: A })).toBe(1000000n);
+    expect(priceUnits({ ...svc("0.2", "x"), catalog: A })).toBe(200000n);
+    expect(priceUnits({ ...svc("0.250000", "x"), catalog: A })).toBe(250000n);
+    expect(priceUnits({ price: "7", decimals: 0 })).toBe(7n);
+  });
+
+  it.each(["0.1234567", "0.2500000", "abc", ".5", "1.", "", "-1", "1.5e3", "1,5"])(
+    "rejects %j at 6 decimals",
+    (price) => {
+      expect(() => priceUnits({ price, decimals: 6 })).toThrow();
+    },
+  );
+
+  it("rejects any fractional digit when decimals is 0", () => {
+    expect(() => priceUnits({ price: "1.0", decimals: 0 })).toThrow();
   });
 });
