@@ -5,6 +5,29 @@ import { z } from "zod";
 
 const nonEmpty = z.string().min(1);
 
+/** Demo agent accounts; `scripts/setup-accounts.ts` writes `<PREFIX>_ID/_KEY/_EVM` to `.env.accounts`. */
+export const DEMO_ACCOUNTS = [
+  "SELLER",
+  "BUYER",
+  "WORKER_RESEARCH",
+  "WORKER_COMPUTE",
+  "LENDER_A",
+  "LENDER_B",
+  "LENDER_C",
+  "COORDINATOR",
+  "COSIGNER",
+  "KYA_ISSUER",
+] as const;
+
+export type DemoAccount = (typeof DEMO_ACCOUNTS)[number];
+type DemoAccountVar = `${DemoAccount}_${"ID" | "KEY" | "EVM"}`;
+
+const demoAccountVars = Object.fromEntries(
+  DEMO_ACCOUNTS.flatMap((prefix) =>
+    (["ID", "KEY", "EVM"] as const).map((suffix) => [`${prefix}_${suffix}`, z.string().optional()]),
+  ),
+) as Record<DemoAccountVar, z.ZodOptional<z.ZodString>>;
+
 /** Required variables; anything else in the environment passes through untouched. */
 export const EnvSchema = z.looseObject({
   HEDERA_NETWORK: nonEmpty,
@@ -19,6 +42,7 @@ export const EnvSchema = z.looseObject({
   USDC_EVM_ADDRESS: nonEmpty,
   X402_FACILITATOR_URL: z.url(),
   X402_NETWORK: nonEmpty,
+  ...demoAccountVars,
 });
 
 export type Env = z.infer<typeof EnvSchema>;
