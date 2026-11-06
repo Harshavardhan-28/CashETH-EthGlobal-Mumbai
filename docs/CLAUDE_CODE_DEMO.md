@@ -68,7 +68,7 @@ Each token carries that role's scopes for its KYA level and never `agent:admin`;
 ## 4. Run the flow
 
 ```text
-/casheth-demo                 # fresh buyer reference PO-CC-<MMDDhhmm>, 2.00 USDC invoice
+/casheth-demo                 # fresh buyer reference PO-CC-<MMDDhhmm>, 1.20 USDC invoice
 /casheth-demo PO-CC-7 3.00    # your own reference and amount
 ```
 

@@ -1,12 +1,12 @@
 ---
 description: Run the CashETH end-to-end demo on Hedera testnet - new invoice, buyer signature from the local wallet, financing, a 0.50 USDC x402 purchase from the paid API, non-custodial repayment - and print every HashScan link.
-argument-hint: "[buyerRef] [amount USDC, default 2.00]"
+argument-hint: "[buyerRef] [amount USDC, default 1.20]"
 allowed-tools: Bash(curl:*), Bash(date:*), Bash(jq:*), Bash(pnpm -s tsx scripts/make-invoice-fixture.ts:*), mcp__casheth-seller__get_agent_stats, mcp__casheth-buyer__get_agent_stats, mcp__casheth-worker__get_agent_stats, mcp__casheth-seller__get_quotes, mcp__casheth-seller__get_receivable_status, mcp__casheth-buyer__get_receivable_status, mcp__casheth-wallet__list_accounts, mcp__casheth-wallet__get_balances
 ---
 
 Run the CashETH end-to-end flow on Hedera testnet. Act as the `casheth-operator` subagent describes (its phases and guardrails apply here too): one tool call per step, read each result before the next, never invent an id, address, amount, hash or signature, pass tool results through unchanged, and stop at the first refusal or error and report it verbatim.
 
-Arguments: `$ARGUMENTS`. The first is the buyer reference (if missing, use the output of `date -u +PO-CC-%m%d%H%M`); the second is the invoice amount in USDC (default `2.00`). Call the reference REF below. Every mutating call's `idempotencyKey` is `cc-REF-<step>` with the step name shown in brackets.
+Arguments: `$ARGUMENTS`. The first is the buyer reference (if missing, use the output of `date -u +PO-CC-%m%d%H%M`); the second is the invoice amount in USDC (default `1.20`, sized to the current lender liquidity). Call the reference REF below. Every mutating call's `idempotencyKey` is `cc-REF-<step>` with the step name shown in brackets.
 
 Fixed inputs of this demo (from `docs/API.md` section 6):
 - Paid API: `https://casheth-paid-apis-177290233934.asia-southeast1.run.app/price-feed?symbols=HBAR` (0.50 USDC = `500000` units), payee Hedera account `0.0.11333304`, whose long-zero EVM address is `0x0000000000000000000000000000000000aceeb8`.

@@ -10,7 +10,7 @@ describe("configFrom", () => {
       paidApiUrl: "https://casheth-paid-apis-177290233934.asia-southeast1.run.app/price-feed?symbols=HBAR",
       maxSteps: 30,
       spendCap: 1_000_000n,
-      invoiceUsdc: "2.00",
+      invoiceUsdc: "1.20",
       startServers: false,
     });
   });

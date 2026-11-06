@@ -52,7 +52,7 @@ export function configFrom(env: EnvLike, argv: string[]): SellerAgentConfig {
     paidApiUrl: values["paid-url"] ?? pick(env, "SELLER_AGENT_PAID_URL", `${LIVE_PAID_API}/price-feed?symbols=HBAR`),
     maxSteps: positiveInt(values["max-steps"] ?? pick(env, "SELLER_AGENT_MAX_STEPS", "30")),
     spendCap: BigInt(pick(env, "SELLER_AGENT_SPEND_CAP", "1000000")),
-    invoiceUsdc: pick(env, "SELLER_AGENT_INVOICE_USDC", "2.00"),
+    invoiceUsdc: pick(env, "SELLER_AGENT_INVOICE_USDC", "1.20"),
     startServers: values["start-servers"] ?? false,
   };
 }

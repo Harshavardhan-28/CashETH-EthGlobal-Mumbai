@@ -51,7 +51,7 @@ A small local model loses track of a twelve-call plan, so the plan node also sho
 - The CashETH servers with the demo key flag and the paid API admitted as a merchant origin:
   - `AGENT_KEYS_IN_PROCESS=true` (the server signs `set_budgets` and `pay_x402` for the demo agents),
   - `MERCHANT_ORIGINS=0.0.11333304=https://casheth-paid-apis-177290233934.asia-southeast1.run.app` (docs/API.md section 6).
-- Testnet balances: lender strategies that can fund the invoice (default 2.00 USDC face, 75% advance) and at least 2.00 USDC on the buyer to repay.
+- Testnet balances: lender strategies that can fund the invoice (default 1.20 USDC face, 75% advance = 0.90 USDC, sized to the current lender liquidity) and at least 1.20 USDC on the buyer to repay.
 
 ## Run
 
@@ -82,7 +82,7 @@ Options (flags win over the environment):
 | `--paid-url` | `SELLER_AGENT_PAID_URL` | `https://casheth-paid-apis-177290233934.asia-southeast1.run.app/price-feed?symbols=HBAR` |
 | `--max-steps` | `SELLER_AGENT_MAX_STEPS` | `30` |
 | | `SELLER_AGENT_SPEND_CAP` | `1000000` (1 USDC in units) |
-| | `SELLER_AGENT_INVOICE_USDC` | `2.00` |
+| | `SELLER_AGENT_INVOICE_USDC` | `1.20` |
 | | `SELLER_AGENT_NUM_CTX` | `16384` (Ollama's 4096 default would silently drop the start of the prompt) |
 | `--start-servers` | | off |
 
