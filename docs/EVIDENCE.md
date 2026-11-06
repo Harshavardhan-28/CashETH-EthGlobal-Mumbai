@@ -620,3 +620,61 @@ Notes on this run:
 - **The base APR is an annualised measurement of a short window**, about 38 minutes from the first swap to the report, over A's 1.0 (0.5 USDC + 0.5 tUSDT) virtual balance. It shows the mechanism works on real swaps; it is not a forecast and not guaranteed. Price impact is large because the pool is small: 0.2 USDC in returns 0.14255 tUSDT, and a round trip comes back as 0.199141 USDC.
 - **Swap 4 was confirmed on chain** (`Filled` amounts read from the mirror node) after the trader's receipt wait timed out; `trades.json` records it. The taker was then swept back to the operator.
 - **Router USDC auto-association (4.3 watch item): works.** The router (`0.0.11341628`) has no explicit association and `max_automatic_token_associations = -1`. The first USDC-in fill associated it automatically (mirror: `0.0.429274`, `automatic_association: true`). The fill is expensive though: about 2.26M gas for every USDC-in fill (vs 145k for tUSDT-in). The first attempt with a 1.5M gas limit reverted with `ForceApproveFailed` (out of gas inside the router's HTS `approve`), so the trader uses a 4M limit.
+
+## C5 spend (x402)
+
+Produced on 2026-11-06 by `scripts/c5-allowance.ts` and `scripts/c5-spend.ts`; the full record is `deployments/testnet/c5.json`. Everything below runs on the facility funded for PO-1002 (`0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c`, 4.5 USDC, `0x38ACd9F1FEED870b2507b1421bE887d9a751d9e0`) through the MCP server's tools (`set_budgets`, `reserve_spend`, `pay_x402`, `commit_spend`), driven by the seller and worker agents of `agents/` with `AGENT_KEYS_IN_PROCESS=true`. The MCP server, authorization server and merchant ran locally; the chain, the facilitator (`https://x402.org/facilitator`, fee payer 0.0.9185802) and HCS are live Hedera testnet.
+
+### Standing allowance (Ruling R26)
+
+Each spend wallet (2-of-2 worker + co-signer key) granted the new CreditFacility (contract 0.0.11341529) an exact USDC allowance of 1000000000 units (HTS allowances are int64; no `max`). `release` pulls an unspent reservation back through it.
+
+| Spend wallet | Allowance tx | Mirror `amount_granted` | ERC-20 `allowance` |
+| --- | --- | --- | --- |
+| SPEND_WALLET_RESEARCH 0.0.11339484 | [0.0.11333252@1793983019.448799343](https://hashscan.io/testnet/transaction/0.0.11333252@1793983019.448799343) | 1000000000 | 1000000000 |
+| SPEND_WALLET_COMPUTE 0.0.11339486 | [0.0.11333252@1793983022.085110936](https://hashscan.io/testnet/transaction/0.0.11333252@1793983022.085110936) | 1000000000 | 1000000000 |
+
+### Budgets
+
+Seller `set_budgets`: [0.0.7314364@1793984607.470410136](https://hashscan.io/testnet/transaction/0.0.7314364@1793984607.470410136). Research worker: alloc 1.00 USDC, maxPerTx 0.50, maxDaily 2.00. Compute worker: alloc 3.00 USDC, maxPerTx 10.00, maxDaily 10.00. Merchant allowlist for both: the x402 merchant (0.0.11333304).
+
+### Research purchase: reserve, x402 pay, commit
+
+The research worker's `buy` (purchase id `po1002-research-1`, spend id `0xad30d8bc605356f10f19fbf64783bc0be1f5714311b2cc28cafeae16f87b02ad`) bought `/research` for 0.25 USDC.
+
+| Leg | Transaction | USDC movement (mirror node) | Audit event |
+| --- | --- | --- | --- |
+| Reserve (facility pays the spend wallet) | [0.0.7314364@1793985356.566369946](https://hashscan.io/testnet/transaction/0.0.7314364@1793985356.566369946) | 0.0.11339484 +0.25, 0.0.11341529 -0.25 | [SpendReserved seq 44](https://hashscan.io/testnet/transaction/0.0.11333252@1793985358.022812194) |
+| **x402 settlement** (spend wallet pays the merchant, facilitator pays the fee) | **[0.0.9185802@1793985365.210563681](https://hashscan.io/testnet/transaction/0.0.9185802@1793985365.210563681)** | 0.0.11333304 +0.25, 0.0.11339484 -0.25 | n/a |
+| Commit (`keccak256(settlement tx id)` recorded) | [0.0.7314364@1793985376.841020355](https://hashscan.io/testnet/transaction/0.0.7314364@1793985376.841020355) | none | [SpendCommitted seq 45](https://hashscan.io/testnet/transaction/0.0.11333252@1793985380.874920648) |
+
+**The settlement transaction id `0.0.9185802@1793985365.210563681` is the Hedera x402 headline.** It came back in the `PAYMENT-RESPONSE` header, the merchant's body repeats it as `paidWith.transactionId`, and `SpendCommitted` carries both it and its keccak256. The payment was signed by the worker and, only after `approvePayment` and the byte-level transfer check accepted it against the open reservation, by the co-signer; a worker-only signature does not satisfy the wallet's key.
+
+Facility accounting after the purchase: reserved 0.00, committed 0.25; research budget alloc 1000000 spent 250000 reserved 0; spend wallets hold 0.00 (research) and 0.00 (compute) USDC.
+
+### Rejections
+
+| Request | Where | Result | Audit event |
+| --- | --- | --- | --- |
+| research worker asks 0.6 USDC (maxPerTx 0.5) | engine pre-flight, no transaction | `TX_LIMIT_EXCEEDED` | [SpendRejected seq 46](https://hashscan.io/testnet/transaction/0.0.11333252@1793985436.957414707) |
+| compute worker asks 5.5 USDC (budget 3.0) | engine pre-flight, no transaction | `AGENT_BUDGET_EXCEEDED` | [SpendRejected seq 47](https://hashscan.io/testnet/transaction/0.0.11333252@1793985449.903642465) |
+| compute 5.5 USDC sent straight to `CreditFacility.reserve` by the coordinator | contract | `0x7a53fcb2` = `AGENT_BUDGET_EXCEEDED()` (CONTRACT_REVERT_EXECUTED) | [0.0.7314364@1793985589.809847638](https://hashscan.io/testnet/transaction/0.0.7314364@1793985589.809847638) |
+
+The research worker's 0.6 USDC is `TX_LIMIT_EXCEEDED` (maxPerTx 0.5, Ruling R24) and the compute worker's 5.5 USDC is `AGENT_BUDGET_EXCEEDED` (budget 3.0). The contract refuses the same 5.5 USDC on-chain with the same error, so the engine's check is not the only line of defence. The selector is read from the mirror node's `error_message` of a real transaction.
+
+### Expiry: an unpaid reservation is refused late and released
+
+The research worker reserved 0.25 USDC again (spend id `0x4f5c3cfc1f2e4ddb0815775ed099d5fa2558d40a20443aa628bda4aabd30d421`, ttl 120 s, expiry 1793987403): [0.0.7314364@1793987350.504397097](https://hashscan.io/testnet/transaction/0.0.7314364@1793987350.504397097). Nothing was paid. After the expiry:
+
+- `pay_x402` is refused with `RESERVATION_EXPIRED` before anything is fetched, recorded as [SpendRejected seq 52](https://hashscan.io/testnet/transaction/0.0.11333252@1793987436.648864215) (`stage: "cosigner"`).
+- The co-signer's own policy (`approvePayment` from `@casheth/engine`, run against the merchant's real 402 quote and this reservation) answers `{"ok":false,"reason":"reservation_expired"}` after the expiry and `{"ok":true}` one second before it, so the expiry alone decides.
+- The public `release` is not open until expiry + 1 h (Ruling R25): the seller's call reverts `0xe5ad01f4` = `NOT_COORDINATOR()` (CONTRACT_REVERT_EXECUTED), [0.0.7314364@1793987454.130731925](https://hashscan.io/testnet/transaction/0.0.7314364@1793987454.130731925).
+- The coordinator's `release` works at any time: [0.0.7314364@1793987537.265152144](https://hashscan.io/testnet/transaction/0.0.7314364@1793987537.265152144), USDC movement 0.0.11339484 -0.25, 0.0.11341529 +0.25 (the facility's standing allowance pulls it back from the spend wallet). The reservation's status is 3 (Released) and the wallet is free again. Recorded on HCS as [SpendReleased seq 53](https://hashscan.io/testnet/transaction/0.0.11333252@1793987569.247562620).
+
+Final accounting: facility reserved 0.00, committed 0.25; research budget alloc 1000000 spent 250000 reserved 0; compute budget alloc 3000000 spent 0 reserved 0.
+
+Notes on this run:
+
+- The Hashio relay was degraded for part of it (502s, 5 to 13 s per call, one `eth_sendRawTransaction` failure that left no transaction on the mirror node, and an MCP request that outlived the agent client's 60 s default, now 120 s per tool call). Two earlier attempts at the expiry reservation with ttl 30 s reverted `RESERVATION_EXPIRED` in the contract (the expiry is the latest block time plus the ttl, and the relay's view lagged); the run above used ttl 120 s. Those reverted attempts are not part of the evidence. No step that had produced a transaction was repeated.
+- `pay_x402` checks the reservation's expiry before it fetches the merchant, so the live refusal of the late payment is the tool's `RESERVATION_EXPIRED` (recorded as `SpendRejected`, `stage: "cosigner"`, in the same commit as the test). The co-signer's `approvePayment` verdict is shown on the real 402 quote rather than reached through a live payment.
+- There is no MCP tool for `release`; the coordinator's release above is a direct contract call from `scripts/c5-spend.ts`, followed by a `SpendReleased` message on the audit topic.

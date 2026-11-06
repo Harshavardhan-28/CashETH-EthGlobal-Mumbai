@@ -1,0 +1,276 @@
+{
+  "network": "testnet",
+  "receivableId": "0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c",
+  "facility": "0x38ACd9F1FEED870b2507b1421bE887d9a751d9e0",
+  "budgets": {
+    "tx": {
+      "label": "CreditFacility.setBudgets(PO-1002: research 1.0, compute 3.0) via MCP set_budgets",
+      "hash": "0x7dc2ab919de325cc288b576d6915dfa603599c6980fc8f36364f4f09f1972480",
+      "transactionId": "0.0.7314364@1793984607.470410136",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793984607.470410136",
+      "gas": {
+        "limit": 501324,
+        "used": 338635,
+        "consumed": 338635
+      }
+    },
+    "research": {
+      "alloc": "1000000",
+      "maxPerTx": "500000",
+      "maxDaily": "2000000"
+    },
+    "compute": {
+      "alloc": "3000000",
+      "maxPerTx": "10000000",
+      "maxDaily": "10000000"
+    }
+  },
+  "updatedAt": "2026-11-06T17:52:57.720Z",
+  "purchase": {
+    "purchaseId": "po1002-research-1",
+    "spendId": "0xad30d8bc605356f10f19fbf64783bc0be1f5714311b2cc28cafeae16f87b02ad",
+    "amount": "250000",
+    "reserve": {
+      "tx": {
+        "label": "CreditFacility.reserve(PO-1002, research 0.25 USDC) via MCP reserve_spend",
+        "hash": "0x6cbebe6a00e86e26fc6005993fb0c5930f02915ee6a2632cd59f5a582fa04ca0",
+        "transactionId": "0.0.7314364@1793985356.566369946",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793985356.566369946",
+        "gas": {
+          "limit": 443743,
+          "used": 296368,
+          "consumed": 296368
+        }
+      },
+      "transfers": [
+        {
+          "token": "0.0.429274",
+          "account": "0.0.11339484",
+          "amount": "250000"
+        },
+        {
+          "token": "0.0.429274",
+          "account": "0.0.11341529",
+          "amount": "-250000"
+        }
+      ]
+    },
+    "settlement": {
+      "transactionId": "0.0.9185802@1793985365.210563681",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.9185802@1793985365.210563681",
+      "transfers": [
+        {
+          "token": "0.0.429274",
+          "account": "0.0.11333304",
+          "amount": "250000"
+        },
+        {
+          "token": "0.0.429274",
+          "account": "0.0.11339484",
+          "amount": "-250000"
+        }
+      ]
+    },
+    "commit": {
+      "tx": {
+        "label": "CreditFacility.commit(spendId, keccak256(settlement tx id)) via MCP commit_spend",
+        "hash": "0x993b3659d0266f08ec3d95efdbbfe412a0c38fd2d02074f6691cf4e17cf7024b",
+        "transactionId": "0.0.7314364@1793985376.841020355",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793985376.841020355",
+        "gas": {
+          "limit": 197750,
+          "used": 130465,
+          "consumed": 130465
+        }
+      },
+      "hederaTxId": "0.0.9185802@1793985365.210563681"
+    },
+    "hcs": [
+      {
+        "type": "SpendReserved",
+        "seq": 44,
+        "txId": "0.0.11333252@1793985358.022812194",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793985358.022812194"
+      },
+      {
+        "type": "SpendCommitted",
+        "seq": 45,
+        "txId": "0.0.11333252@1793985380.874920648",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793985380.874920648"
+      }
+    ],
+    "accounting": {
+      "facilityReserved": "0",
+      "facilityCommitted": "250000",
+      "walletUsdc": {
+        "research": "0",
+        "compute": "0"
+      },
+      "budget": {
+        "research": "alloc 1000000 spent 250000 reserved 0",
+        "compute": "alloc 3000000 spent 0 reserved 0"
+      }
+    }
+  },
+  "rejections": {
+    "engine": [
+      {
+        "label": "research worker asks 0.6 USDC (maxPerTx 0.5)",
+        "worker": "0xbeAD36C554746b00eb2a3B87cE38aDc926Ddf62F",
+        "amount": "600000",
+        "code": "TX_LIMIT_EXCEEDED",
+        "stage": "engine",
+        "hcs": {
+          "type": "SpendRejected",
+          "seq": 46,
+          "txId": "0.0.11333252@1793985436.957414707",
+          "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793985436.957414707"
+        }
+      },
+      {
+        "label": "compute worker asks 5.5 USDC (budget 3.0)",
+        "worker": "0x3f8960701E2Bb81869A0e64259E191cdB6790858",
+        "amount": "5500000",
+        "code": "AGENT_BUDGET_EXCEEDED",
+        "stage": "engine",
+        "hcs": {
+          "type": "SpendRejected",
+          "seq": 47,
+          "txId": "0.0.11333252@1793985449.903642465",
+          "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793985449.903642465"
+        }
+      }
+    ],
+    "contract": {
+      "expected": "AGENT_BUDGET_EXCEEDED",
+      "tx": {
+        "label": "CreditFacility.reserve(compute 5.5 USDC) from the coordinator",
+        "hash": "0x28545afe4ead3c7dafe89fea31e7f8d039c241eea8f1c4695ea2341d1ec718b0",
+        "transactionId": "0.0.7314364@1793985589.809847638",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793985589.809847638",
+        "gas": {
+          "limit": 300000,
+          "used": 43664,
+          "consumed": 43664
+        }
+      },
+      "status": "CONTRACT_REVERT_EXECUTED",
+      "errorMessage": "0x7a53fcb2",
+      "selector": "0x7a53fcb2",
+      "decoded": "AGENT_BUDGET_EXCEEDED()"
+    }
+  },
+  "expiry": {
+    "spendId": "0x4f5c3cfc1f2e4ddb0815775ed099d5fa2558d40a20443aa628bda4aabd30d421",
+    "amount": "250000",
+    "ttlSeconds": 120,
+    "reserve": {
+      "tx": {
+        "label": "CreditFacility.reserve(PO-1002, research 0.25 USDC, ttl 120 s) via MCP reserve_spend",
+        "hash": "0xe71b28fc26fb13894ed2d81253857ef7e78582efcb83457391117b819e0f61ef",
+        "transactionId": "0.0.7314364@1793987350.504397097",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793987350.504397097",
+        "gas": {
+          "limit": 396977,
+          "used": 276447,
+          "consumed": 276447
+        }
+      },
+      "expiry": 1793987403
+    },
+    "latePayment": {
+      "code": "RESERVATION_EXPIRED",
+      "message": "the reservation expired; reserve again",
+      "hcs": {
+        "type": "SpendRejected",
+        "seq": 52,
+        "txId": "0.0.11333252@1793987436.648864215",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793987436.648864215"
+      }
+    },
+    "cosignerPolicy": {
+      "requirements": {
+        "scheme": "exact",
+        "network": "hedera:testnet",
+        "amount": "250000",
+        "asset": "0.0.429274",
+        "payTo": "0.0.11333304",
+        "maxTimeoutSeconds": 300,
+        "extra": {
+          "feePayer": "0.0.9185802"
+        }
+      },
+      "atExpiry": {
+        "ok": false,
+        "reason": "reservation_expired"
+      },
+      "justBeforeExpiry": {
+        "ok": true
+      }
+    },
+    "publicRelease": {
+      "expected": "NOT_COORDINATOR",
+      "tx": {
+        "label": "CreditFacility.release(spendId) from the seller, 1 h grace not over",
+        "hash": "0x54b05400f672cbcf189918dfb8e6038d4bb2f9508bdaa8cd3db0f812f493034a",
+        "transactionId": "0.0.7314364@1793987454.130731925",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793987454.130731925",
+        "gas": {
+          "limit": 300000,
+          "used": 24462,
+          "consumed": 24462
+        }
+      },
+      "status": "CONTRACT_REVERT_EXECUTED",
+      "errorMessage": "0xe5ad01f4",
+      "selector": "0xe5ad01f4",
+      "decoded": "NOT_COORDINATOR()"
+    },
+    "release": {
+      "tx": {
+        "label": "CreditFacility.release(spendId) from the coordinator",
+        "hash": "0x9c6d4a5ff048e66414a8bf7a8320f69f44125af767dc6088f38f4890bf90a8fb",
+        "transactionId": "0.0.7314364@1793987537.265152144",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793987537.265152144",
+        "gas": {
+          "limit": 103205,
+          "used": 61134,
+          "consumed": 61134
+        }
+      },
+      "transfers": [
+        {
+          "token": "0.0.429274",
+          "account": "0.0.11339484",
+          "amount": "-250000"
+        },
+        {
+          "token": "0.0.429274",
+          "account": "0.0.11341529",
+          "amount": "250000"
+        }
+      ],
+      "status": 3
+    },
+    "hcs": [
+      {
+        "type": "SpendReleased",
+        "seq": 53,
+        "txId": "0.0.11333252@1793987569.247562620",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793987569.247562620"
+      }
+    ],
+    "accounting": {
+      "facilityReserved": "0",
+      "facilityCommitted": "250000",
+      "walletUsdc": {
+        "research": "0",
+        "compute": "0"
+      },
+      "budget": {
+        "research": "alloc 1000000 spent 250000 reserved 0",
+        "compute": "alloc 3000000 spent 0 reserved 0"
+      }
+    }
+  }
+}
