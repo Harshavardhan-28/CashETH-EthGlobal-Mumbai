@@ -23,8 +23,8 @@ export interface RetryOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
-/** `fetch` that retries the relay's transient failures: 1 s, 2 s, 4 s, 8 s between five tries by default. */
-export function retryingFetch(fetchImpl: typeof fetch = fetch, { tries = 5, baseDelayMs = 1000, sleep = (ms) => new Promise<void>((r) => setTimeout(r, ms)) }: RetryOptions = {}): typeof fetch {
+/** `fetch` that retries the relay's transient failures: 2 s, 4 s, 8 s, 16 s between five tries by default. */
+export function retryingFetch(fetchImpl: typeof fetch = fetch, { tries = 5, baseDelayMs = 2000, sleep = (ms) => new Promise<void>((r) => setTimeout(r, ms)) }: RetryOptions = {}): typeof fetch {
   return async (input, init) => {
     for (let attempt = 1; ; attempt++) {
       const response = await fetchImpl(input, init);

@@ -38,7 +38,7 @@ describe("retryingFetch", () => {
     const response = await retryingFetch(fetchImpl, { sleep: async (ms) => void delays.push(ms) })("http://relay");
     expect(await response.json()).toEqual({ result: "0x1" });
     expect(calls).toHaveLength(3);
-    expect(delays).toEqual([1000, 2000]);
+    expect(delays).toEqual([2000, 4000]);
   });
 
   it("gives up after five tries and returns the last failure", async () => {
