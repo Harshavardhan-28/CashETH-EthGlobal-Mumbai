@@ -1,0 +1,17 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# deps / build
+node_modules/
+dist/
+out/
+cache/
+broadcast/
+.pnpm-store/
+coverage/
+*.log
+.DS_Store
+.next/
+__pycache__/
