@@ -1,8 +1,9 @@
-import { CreditFacilityAbi, RepaymentRouterAbi, type Env } from "@casheth/shared";
-import { BaseError, decodeFunctionData, encodeErrorResult, erc20Abi, getAddress, maxUint256, RawContractError, type Hex } from "viem";
+import { tierArgs } from "@casheth/aqua";
+import { AquaRouterAbi, CreditFacilityAbi, RepaymentRouterAbi, type Env } from "@casheth/shared";
+import { BaseError, decodeFunctionData, encodeErrorResult, erc20Abi, getAddress, keccak256, maxUint256, RawContractError, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
 import { merchantOrigins } from "./config.js";
-import { exactApprovalCall, toToolError } from "./live.js";
+import { exactApprovalCall, fundCalldata, toToolError } from "./live.js";
 import { enqueue } from "./orchestrator/queue.js";
 
 const CALL = { to: getAddress("0x00000000000000000000000000000000000000a3"), data: "0x" as Hex, description: "CreditFacility.reserve(...)" };
@@ -79,5 +80,60 @@ describe("merchantOrigins", () => {
       "0.0.2": ["http://localhost:3003"],
     });
     expect(() => merchantOrigins(env({ MERCHANT_ORIGINS: "https://a.example" }))).toThrow(/accountId=origin/);
+  });
+});
+
+describe("fundCalldata (fund_agents without the lender key)", () => {
+  const addrs = {
+    aqua: getAddress("0x00000000000000000000000000000000000000b1"),
+    swapRouter: getAddress("0x00000000000000000000000000000000000000b2"),
+    orderBuilder: getAddress("0x00000000000000000000000000000000000000b3"),
+    usdc: getAddress("0x0000000000000000000000000000000000068cda"),
+    rcn: getAddress("0x00000000000000000000000000000000000000b4"),
+    tUsdt: getAddress("0x00000000000000000000000000000000000000b5"),
+  };
+  const lender = getAddress("0x00000000000000000000000000000000000000a9");
+  const order = { maker: lender, traits: 0n, data: "0x01" as Hex };
+  const creditStrategy = "0xc1" as Hex;
+  const baseStrategy = "0xba" as Hex;
+
+  /** eth_call fake: the lender already has open strategies, so Aqua holds an allowance of X USDC and Y tUSDT. */
+  const reader = (allowances: Record<string, bigint>) =>
+    ({
+      readContract: async ({ address, functionName }: { address: string; functionName: string }) => {
+        if (functionName === "allowance") return allowances[getAddress(address)] ?? 0n;
+        if (functionName === "buildLenderOrder") return [order, creditStrategy];
+        if (functionName === "buildBaseYieldOrder") return [order, baseStrategy];
+        throw new Error(`unexpected eth_call ${functionName}`);
+      },
+    }) as unknown as Parameters<typeof fundCalldata>[0];
+
+  it("raises the existing USDC and tUSDT allowances by the shipped amounts, then ships both strategies", async () => {
+    const plan = { args: tierArgs("medium"), creditUsdc: 2_000_000n, base: { usdc: 1_000_000n, tUsdt: 1_500_000n, feeBps: 30 }, salt: 7n };
+    const result = await fundCalldata(reader({ [addrs.usdc]: 4_000_000n, [addrs.tUsdt]: 500_000n }), addrs, lender, plan);
+
+    const [usdcApprove, tUsdtApprove, shipCredit, shipBase] = result.calls;
+    expect(usdcApprove!.to).toBe(addrs.usdc);
+    expect(decodeFunctionData({ abi: erc20Abi, data: usdcApprove!.data }).args).toEqual([addrs.aqua, 4_000_000n + 2_000_000n + 1_000_000n]);
+    expect(tUsdtApprove!.to).toBe(addrs.tUsdt);
+    expect(decodeFunctionData({ abi: erc20Abi, data: tUsdtApprove!.data }).args).toEqual([addrs.aqua, 500_000n + 1_500_000n]);
+    expect(decodeFunctionData({ abi: AquaRouterAbi, data: shipCredit!.data })).toMatchObject({
+      functionName: "ship",
+      args: [addrs.swapRouter, creditStrategy, [addrs.usdc, addrs.rcn], [2_000_000n, 0n]],
+    });
+    expect(decodeFunctionData({ abi: AquaRouterAbi, data: shipBase!.data })).toMatchObject({
+      functionName: "ship",
+      args: [addrs.swapRouter, baseStrategy, [addrs.usdc, addrs.tUsdt], [1_000_000n, 1_500_000n]],
+    });
+    expect(result.credit.strategyHash).toBe(keccak256(creditStrategy));
+    expect(result.base?.strategyHash).toBe(keccak256(baseStrategy));
+  });
+
+  it("approves only the credit amount on top of the current allowance when no base strategy is shipped", async () => {
+    const plan = { args: tierArgs("low"), creditUsdc: 3_000_000n, salt: 1n };
+    const result = await fundCalldata(reader({ [addrs.usdc]: 2_000_000n }), addrs, lender, plan);
+    expect(result.calls).toHaveLength(2);
+    expect(decodeFunctionData({ abi: erc20Abi, data: result.calls[0]!.data }).args).toEqual([addrs.aqua, 5_000_000n]);
+    expect(result.base).toBeUndefined();
   });
 });

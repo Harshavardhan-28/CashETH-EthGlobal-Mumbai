@@ -375,6 +375,61 @@ export async function exactApprovalCall(
   };
 }
 
+/** `Aqua.ship(app = swap router, strategy, amounts)` calldata. */
+function shipCall(addrs: AquaAddresses, strategy: Hex, tokens: { token: Address; amount: bigint }[], description: string): Calldata {
+  const tx = new AquaProtocolContract(new SdkAddress(addrs.aqua)).ship({
+    app: new SdkAddress(addrs.swapRouter),
+    strategy: new HexString(strategy),
+    amountsAndTokens: tokens.map(({ token, amount }) => ({ token: new SdkAddress(token), amount })),
+  });
+  return { to: getAddress(String(tx.to)), data: String(tx.data) as Hex, description };
+}
+
+/**
+ * The lender-signed transactions of `fund_agents`, in order: USDC (and tUSDT) approvals to Aqua, then the credit
+ * and base `ship` calls. Allowances are raised additively (current allowance + what the new strategies ship), as
+ * the `@casheth/aqua` ship helpers do, so the lender's already open strategies keep their allowance.
+ */
+export async function fundCalldata(
+  reader: Pick<PublicClient, "readContract">,
+  addrs: AquaAddresses,
+  lender: Address,
+  plan: FundPlan,
+): Promise<Extract<FundResult, { mode: "calldata" }>> {
+  const tUsdt = plan.base ? addrs.tUsdt : undefined;
+  if (plan.base && !tUsdt) throw new ToolError("NOT_DEPLOYED", "addresses.json has no tUsdt: base-yield strategies need the test stablecoin");
+  const credit = await buildLenderOrder(reader, addrs.orderBuilder, { maker: lender, rcn: addrs.rcn, usdc: addrs.usdc, args: plan.args, salt: plan.salt });
+  const base =
+    plan.base && tUsdt
+      ? await buildBaseYieldOrder(reader, addrs.orderBuilder, { maker: lender, usdc: addrs.usdc, tUsdt, feeBps: plan.base.feeBps, salt: plan.salt })
+      : undefined;
+
+  const calls: Calldata[] = [
+    await exactApprovalCall(reader, { token: addrs.usdc, owner: lender, spender: addrs.aqua, add: plan.creditUsdc + (plan.base?.usdc ?? 0n), label: "USDC" }),
+  ];
+  if (plan.base && tUsdt) calls.push(await exactApprovalCall(reader, { token: tUsdt, owner: lender, spender: addrs.aqua, add: plan.base.tUsdt, label: "tUSDT" }));
+  calls.push(
+    shipCall(addrs, credit.strategy, [
+      { token: addrs.usdc, amount: plan.creditUsdc },
+      { token: addrs.rcn, amount: 0n },
+    ], "Aqua.ship(credit strategy over USDC/RCN)"),
+  );
+  if (base && plan.base && tUsdt) {
+    calls.push(
+      shipCall(addrs, base.strategy, [
+        { token: addrs.usdc, amount: plan.base.usdc },
+        { token: tUsdt, amount: plan.base.tUsdt },
+      ], "Aqua.ship(base-yield strategy over USDC/tUSDT)"),
+    );
+  }
+  return {
+    mode: "calldata",
+    calls,
+    credit: { strategyHash: keccak256(credit.strategy) },
+    ...(base ? { base: { strategyHash: keccak256(base.strategy) } } : {}),
+  };
+}
+
 /** The first block worth scanning for Aqua logs: config, addresses.json, or the swap router's creation block. */
 async function aquaFromBlock(env: Env, cfg: McpConfig, swapRouter: Address): Promise<bigint> {
   if (cfg.aquaFromBlock !== undefined) return cfg.aquaFromBlock;
@@ -400,15 +455,6 @@ export function createLiveAqua(env: Env, cfg: McpConfig, keys: AgentKey[]): Aqua
     if (!k || !k.prefix.startsWith("LENDER_") || !cfg.lenderKeysInProcess) throw new ToolError("KEY_NOT_HELD", `the server does not sign for ${lender}`);
     return evmClients(env, k.key).wallet as LenderWallet;
   };
-  const shipCall = (addrs: AquaAddresses, strategy: Hex, tokens: { token: Address; amount: bigint }[], description: string): Calldata => {
-    const tx = new AquaProtocolContract(new SdkAddress(addrs.aqua)).ship({
-      app: new SdkAddress(addrs.swapRouter),
-      strategy: new HexString(strategy),
-      amountsAndTokens: tokens.map(({ token, amount }) => ({ token: new SdkAddress(token), amount })),
-    });
-    return { to: getAddress(String(tx.to)), data: String(tx.data) as Hex, description };
-  };
-
   return {
     addresses,
     async discover() {
@@ -423,6 +469,7 @@ export function createLiveAqua(env: Env, cfg: McpConfig, keys: AgentKey[]): Aqua
       const addrs = addresses();
       if (plan.base && !addrs.tUsdt) throw new ToolError("NOT_DEPLOYED", "addresses.json has no tUsdt: base-yield strategies need the test stablecoin");
       if (inProcess) {
+        // shipLenderStrategy / shipBaseYield raise each allowance to Aqua by exactly the shipped amount.
         const wallet = lenderWallet(lender);
         const credit = await shipLenderStrategy(wallet, addrs, { args: plan.args, salt: plan.salt, usdcAmount: plan.creditUsdc });
         const base = plan.base
@@ -434,33 +481,7 @@ export function createLiveAqua(env: Env, cfg: McpConfig, keys: AgentKey[]): Aqua
           ...(base ? { base: { strategyHash: base.strategyHash, txHash: base.txHash } } : {}),
         };
       }
-      const credit = await buildLenderOrder(pub, addrs.orderBuilder, { maker: lender, rcn: addrs.rcn, usdc: addrs.usdc, args: plan.args, salt: plan.salt });
-      const calls: Calldata[] = [await exactApprovalCall(pub, { token: addrs.usdc, owner: lender, spender: addrs.aqua, add: plan.creditUsdc + (plan.base?.usdc ?? 0n), label: "USDC" })];
-      let base: { strategy: Hex } | undefined;
-      if (plan.base && addrs.tUsdt) {
-        base = await buildBaseYieldOrder(pub, addrs.orderBuilder, { maker: lender, usdc: addrs.usdc, tUsdt: addrs.tUsdt, feeBps: plan.base.feeBps, salt: plan.salt });
-        calls.push(await exactApprovalCall(pub, { token: addrs.tUsdt, owner: lender, spender: addrs.aqua, add: plan.base.tUsdt, label: "tUSDT" }));
-      }
-      calls.push(
-        shipCall(addrs, credit.strategy, [
-          { token: addrs.usdc, amount: plan.creditUsdc },
-          { token: addrs.rcn, amount: 0n },
-        ], "Aqua.ship(credit strategy over USDC/RCN)"),
-      );
-      if (base && plan.base && addrs.tUsdt) {
-        calls.push(
-          shipCall(addrs, base.strategy, [
-            { token: addrs.usdc, amount: plan.base.usdc },
-            { token: addrs.tUsdt, amount: plan.base.tUsdt },
-          ], "Aqua.ship(base-yield strategy over USDC/tUSDT)"),
-        );
-      }
-      return {
-        mode: "calldata",
-        calls,
-        credit: { strategyHash: keccak256(credit.strategy) },
-        ...(base ? { base: { strategyHash: keccak256(base.strategy) } } : {}),
-      };
+      return fundCalldata(pub, addrs, lender, plan);
     },
     async dock(lender, p, inProcess) {
       const addrs = addresses();
