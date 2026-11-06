@@ -34,14 +34,19 @@ export interface Stack {
   stop(): Promise<void>;
 }
 
-export async function startStack(): Promise<Stack> {
+export interface StackOptions {
+  /** Extra authorization-server environment, e.g. `{ AUTH_DEMO_GRANT: "true" }`. */
+  authEnv?: Record<string, string>;
+}
+
+export async function startStack({ authEnv = {} }: StackOptions = {}): Promise<Stack> {
   const kya = new InMemoryKyaReader();
   const keys = await tempKeys();
   const [auth, mcp] = await Promise.all([listen(), listen()]);
   const resource = new URL("/mcp", mcp.url);
   let tokenRequests = 0;
 
-  const authApp = createAuthApp({ env: testEnv(), kya, keys, issuer: auth.url, resource });
+  const authApp = createAuthApp({ env: testEnv(authEnv), kya, keys, issuer: auth.url, resource });
   auth.serve((req, res) => {
     if (req.method === "POST" && req.url === "/token") tokenRequests += 1;
     authApp(req, res);
