@@ -212,6 +212,8 @@ If a later run does need more, the fallback is: open `https://faucet.circle.com`
 
 ## C2: registries
 
+> This section describes the first deployment (archived in `deployments/testnet/archive-2026-11-06-redeploy.json`); the live stack was redeployed, see [C4 redeploy](#c4-redeploy-hedera-one-schedule-per-transaction).
+
 Deployed by `contracts/script/01_DeployCore.s.sol` through the Hashio relay from the operator (owner of both), driven by `scripts/c2-register-demo.ts`; addresses in `deployments/testnet/addresses.json`, full run record in `deployments/testnet/c2.json`. Nothing is wired yet (both `wire` calls are one-time; Tasks 3.6/4.3 wire them).
 
 ### Contracts
@@ -312,6 +314,8 @@ Facility allowance: not granted yet. The `CreditFacility` is not deployed at thi
 
 ## C3: facility and repayment router
 
+> This section describes the first deployment (archived in `deployments/testnet/archive-2026-11-06-redeploy.json`); the live stack was redeployed, see [C4 redeploy](#c4-redeploy-hedera-one-schedule-per-transaction).
+
 Deployed on 2026-11-06 by `contracts/script/02_DeployFacility.s.sol` through the Hashio relay from the operator, driven by `scripts/c3-deploy.ts`, against the C2 registries (not redeployed). Addresses are in `deployments/testnet/addresses.json` (`rcn`, `creditFacility`, `repaymentRouter`) and the full run record is in `deployments/testnet/c3.json`. `rcn.wire(...)` and `facility.wire(swapRouter, repaymentRouter)` need the SwapVM router, so Task 4.3 does them. Both still read zero on-chain.
 
 ### Contracts
@@ -376,6 +380,8 @@ To show the invariants catch real faults, each of the following deliberate sourc
 - `closeFacility` keeps the undrawn USDC.
 
 ## C4: modified SwapVM router, wiring, first registration
+
+> This section describes the first deployment (archived in `deployments/testnet/archive-2026-11-06-redeploy.json`); the live stack was redeployed, see [C4 redeploy](#c4-redeploy-hedera-one-schedule-per-transaction). The Aqua registry, order builder and tUSDT below are still in use.
 
 Deployed on 2026-11-06 by `contracts/script/03_DeployAqua.s.sol` through the Hashio relay from the operator (`0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e`), driven by `scripts/c4-deploy-and-wire.ts`. The wiring, the tUSDT mints and the registration were sent from TypeScript (`scripts/c4-deploy-and-wire.ts`, `scripts/c4-register.ts`), and each transaction is recorded below. Addresses are in `deployments/testnet/addresses.json` (`aqua`, `swapRouter`, `orderBuilder`, `tUsdt`, `taker`, plus `deployedBlock` = 42741303, the Aqua creation block, where Aqua log discovery should start). The full run record is in `deployments/testnet/c4.json`. Spike S1's Aqua registry (`deployments/testnet/spike-aqua.json`) is untouched. This is CashETH's own registry.
 
@@ -496,6 +502,8 @@ The same obligation (same buyer and `buyerRef`, so the same id) was signed again
 
 ## C4 strategies
 
+> These strategies were shipped on the first deployment and later docked (archived in `deployments/testnet/archive-2026-11-06-redeploy.json`); the final strategies are in [C4 strategies (final)](#c4-strategies-final).
+
 Shipped on 2026-11-06 by `scripts/c4-ship-strategies.ts` to Aqua `0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c` with the modified SwapVM router as the app. Each lender ships from one wallet, sending the exact-amount USDC (and tUSDT) approvals to Aqua first. The record, with every `Shipped` transaction and strategy hash, is `deployments/testnet/strategies.json`.
 
 Credit strategies use the tier presets (`low` 700 bps, `medium` 850 bps, `high` 1300 bps) with `maxPerBuyer` 5 USDC and `minReserve` 0. A and B accept the seller only, C accepts any seller, and D accepts only workerResearch. Base-yield strategies are USDC/tUSDT constant product with a 30 bps input fee. Lender D has no base-yield strategy, so there are seven strategies, not eight.
@@ -516,3 +524,71 @@ Checked by discovery from the Aqua deployment block (`listOpenStrategies`, also 
 - Virtual balances equal the shipped amounts.
 - The USDC allowance to Aqua is exactly credit + base for each lender (A 6, B 3, C 4, D 1 USDC) and the tUSDT allowance is exactly the base amount. Nothing was approved at max.
 - A re-run of the script only reads: every hash is already open.
+
+## C4 redeploy (Hedera one-schedule-per-transaction)
+
+Why. The first funding attempt, [0.0.7314364@1793976431.091663990](https://hashscan.io/testnet/transaction/0.0.7314364@1793976431.091663990), failed with the network status `NO_SCHEDULING_ALLOWED_AFTER_SCHEDULED_RECURSION` (mirror `error_message` is the ASCII of that status, so it is a HAPI status and not a Solidity revert; `try/catch` cannot absorb it). `CreditFacility.openAndFund` called the Schedule Service's `scheduleCall` twice (`markOverdue` and `markDefaulted`) and Hedera's recursion protection (HIP-1215) allows one scheduling call per transaction. A throwaway probe contract confirmed it: one `scheduleCall` per transaction worked for delays up to 60 days, two failed. The anvil tests had missed it because `MockHSS` does not model the limit.
+
+Contract change (commit `b2a4ab1`). `openAndFund` now schedules only `markOverdue`, always with the nested-schedule gas limit (1,800,000), and `defaultSchedule` stays 0 at funding. `markOverdue`, which runs as its own scheduled transaction, schedules `markDefaulted` (best effort, `ScheduleSkipped` on refusal, as before). The `Scheduled` event is emitted with `defaultSchedule = 0` at funding and again by `markOverdue`. A new test asserts exactly one `scheduleCall` at funding. `forge test`: 181 passed. The solver's special case for the relay's scheduling refusal was removed, because the dry run of `openAndFund` now succeeds on Hedera.
+
+Redeploy. The facility address is immutable in `CashEthSwapVMRouter`, `RepaymentRouter` and `CashEthTaker`, and every `wire()` is one-shot, so the core stack was redeployed by `scripts/c4-redeploy-prepare.ts` followed by the existing C2, C3, C4 scripts (flags and reuse variables, no copies). Kept: AquaRouter, CashEthOrderBuilder (no address immutables), tUSDT, the HCS topics, the NFT collection, the spend wallets and all accounts. Before redeploying, every lender docked its 7 strategies and set its Aqua allowances to zero (7 docks and 7 `approve(Aqua, 0)` transactions, linked in the archive file), so the new approvals are exact. The coordinator was topped up by 13 HBAR ([tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793977712.251368007)).
+
+| Contract | Address | Contract id | Deploy tx | Archived first deployment |
+| --- | --- | --- | --- | --- |
+| KYARegistry | `0x81d1935e41705DCD4c4499285c74c955626673dD` | [0.0.11341323](https://hashscan.io/testnet/contract/0.0.11341323) | [0.0.7314364@1793978954.588950176](https://hashscan.io/testnet/transaction/0.0.7314364@1793978954.588950176) | `0xE51950be227c5A31B603e1343cD53e813C593f39` |
+| ReceivableRegistry | `0x0D118059D67cbe738aD86C4B8c25cdf06837791f` | [0.0.11341326](https://hashscan.io/testnet/contract/0.0.11341326) | [0.0.7314364@1793978957.638929669](https://hashscan.io/testnet/transaction/0.0.7314364@1793978957.638929669) | `0x112167Ad230f4b733B756201FDe8b4ec3BC97A8b` |
+| ReceivableCreditNote | `0x733bE9213C79Be5dC3E3dD68FB126182D2F74f15` | [0.0.11341528](https://hashscan.io/testnet/contract/0.0.11341528) | [0.0.7314364@1793979983.761485389](https://hashscan.io/testnet/transaction/0.0.7314364@1793979983.761485389) | `0x54a665d52E2e79bA3Ec46b20f8c2cfE950C9A0ce` |
+| CreditFacility | `0x38ACd9F1FEED870b2507b1421bE887d9a751d9e0` | [0.0.11341529](https://hashscan.io/testnet/contract/0.0.11341529) | [0.0.7314364@1793979989.446409772](https://hashscan.io/testnet/transaction/0.0.7314364@1793979989.446409772) | `0xfe702433E753ca4CA8dEDC3059987eCA7B8fe640` |
+| RepaymentRouter | `0x63B6f03a60026626B6052D800864dD74604f6a8a` | [0.0.11341530](https://hashscan.io/testnet/contract/0.0.11341530) | [0.0.7314364@1793979992.300892540](https://hashscan.io/testnet/transaction/0.0.7314364@1793979992.300892540) | `0xcf6DeBDfc01a9DcafDBf0Ad45f4ebc185dB705f7` |
+| CashEthSwapVMRouter | `0x458b3b7CaDec64Cd0AE0B244d582006C4E99ce1b` | [0.0.11341628](https://hashscan.io/testnet/contract/0.0.11341628) | [0.0.7314364@1793980328.280390902](https://hashscan.io/testnet/transaction/0.0.7314364@1793980328.280390902) | `0xFcE311Ea7f4B4F8D5d897d48BFA2a21DcC34A562` |
+| CashEthTaker | `0x8FC7B1BBa8EEdf5a4C9Ac9FEA746ABAd17804B5B` | [0.0.11341636](https://hashscan.io/testnet/contract/0.0.11341636) | [0.0.7314364@1793980360.664551738](https://hashscan.io/testnet/transaction/0.0.7314364@1793980360.664551738) | `0x506646D702C00A19854eE1f28eF3F396E32a3838` |
+| AquaRouter, CashEthOrderBuilder, tUSDT | unchanged: `0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c`, `0x4125108453A1E9c333b100a917F630b84F3413Fb`, `0x65C25Cc145f0836C8fFAb83Bf9676e98a8a2648a` | | | kept |
+
+Wiring and setup on the new stack: facility funded with 20 HBAR via `receive()` ([tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793979998.723889452)), `ReceivableRegistry.wire` ([tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793980017.168341300)), `KYARegistry.wire` ([tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793980024.675648188)), `ReceivableCreditNote.wire` ([tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793980425.858553275)), `CreditFacility.wire` ([tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793980444.372359298)). The 7 KYA registrations on the new registry (seller, buyer, both workers, lenders A to C) and lender D's ([tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793980554.341621558)) are in `deployments/testnet/c2.json` and `c4.json`. The C2 confirmation rejections were not repeated (the checks did not change).
+
+PO-1002 was registered again on the new registry with amount 6 USDC (the lenders' real balances cap the demo), due in 30 days, payee = the new RepaymentRouter, `buyerRef = keccak256("PO-1002")`: [register tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793980592.500689981), receivable id `0xb1a0a92a58af18bbeb4bad3485f23aeb7f6987d15c271513a5d5b6072bee844c`. HCS `ReceivableConfirmed` seq 34 ([tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793980598.332603471)), NFT 0.0.11338934 serial 2 ([tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793980599.981683574)), `NftMinted` seq 35 ([tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793980602.620678492)). `DUPLICATE_RECEIVABLE` was proved again on the new registry ([tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793980736.789329045)).
+
+## C4 strategies (final)
+
+Shipped on 2026-11-06 by `scripts/c4-ship-strategies.ts` to the kept Aqua registry with the new router `0x458b3b7CaDec64Cd0AE0B244d582006C4E99ce1b` as the app, each lender from one wallet with exact-amount approvals. Sizes follow the lenders' real USDC balances (credit plus base never exceeds a wallet), so base-yield swaps can draw on them. `deployments/testnet/strategies.json` holds the full `order` of every strategy. Tiers and presets are as in the first deployment (`low` 700, `medium` 850, `high` 1300 bps, `maxPerBuyer` 5 USDC, base fee 30 bps). Seven strategies; lender D has no base strategy.
+
+| Lender | Kind | Shipped | Salt | Strategy hash | `Aqua.ship` tx |
+| --- | --- | --- | --- | --- | --- |
+| A | credit | 3.5 USDC | salt 1 | `0x452b654505cfe6c9cc5ed2da3b0deec5737f015db26763e910f7f1c76abd4548` | [0.0.7314364@1793980834.590739155](https://hashscan.io/testnet/transaction/0.0.7314364@1793980834.590739155) |
+| A | base | 0.5 USDC + 0.5 tUSDT | salt 2 | `0xb066774b1f5a237212a16f37982ea219648ec1e0ff11accd73846bbc286da405` | [0.0.7314364@1793980911.340291226](https://hashscan.io/testnet/transaction/0.0.7314364@1793980911.340291226) |
+| B | credit | 1.5 USDC | salt 1 | `0xfeb38cfc6739caab0996288006d944eaf6ee801c3247ef3bf36944e1acc62490` | [0.0.7314364@1793981034.732736160](https://hashscan.io/testnet/transaction/0.0.7314364@1793981034.732736160) |
+| B | base | 0.5 USDC + 0.5 tUSDT | salt 2 | `0xb34f81f5e96886d8d19946ccb47d88a9dd91f13a3c0fd4aa3b76603eaae68f71` | [0.0.7314364@1793981428.956894431](https://hashscan.io/testnet/transaction/0.0.7314364@1793981428.956894431) |
+| C | credit | 0.5 USDC | salt 1 | `0x17711016ce827c6df6c0f84934c2bd69682932104b22b5781545b32e2a9166c5` | [0.0.7314364@1793981544.024005875](https://hashscan.io/testnet/transaction/0.0.7314364@1793981544.024005875) |
+| C | base | 0.5 USDC + 0.5 tUSDT | salt 2 | `0x3682b06ac84ac0e8dd9126a00ac396960e204f2f329553d1b778f70da9e691a0` | [0.0.7314364@1793981618.317305300](https://hashscan.io/testnet/transaction/0.0.7314364@1793981618.317305300) |
+| D | credit | 1 USDC | salt 1 | `0xcf1e8f290a4e6470572718fe82decffe81753d95a5f6d4e64ad7013477b0735a` | [0.0.7314364@1793982142.770577875](https://hashscan.io/testnet/transaction/0.0.7314364@1793982142.770577875) |
+
+Checked by discovery from the Aqua deployment block: order credit A (700 bps), D (700), B (850), C (1300), then base A, B, C; virtual balances equal the shipped amounts; USDC allowance to Aqua is exactly credit plus base per lender (A 4, B 2, C 1, D 1 USDC) and tUSDT exactly the base amount. Nothing was approved at max. Three shipping runs were needed because Hashio answered `Failed to save transaction to pool` twice; the script is idempotent (open hashes are skipped) and was run without auto-retry so an approve could not be applied twice.
+
+## C4 funding
+
+PO-1002 (6 USDC, advance 75% = borrowing base 4.5 USDC) was funded cheapest-first by lenders A and B through the modified SwapVM router, by `scripts/c4-open-facility.ts`. Engine score 600, advance 7500 bps, limit 4,500,000 units. The solver's dry runs are ordinary `eth_call`s of `openAndFund` from the coordinator:
+
+```
+fill  lender A: 3500000 units at 700 bps
+fill  lender B: 1000000 units at 850 bps
+skip  lender D credit: SELLER_NOT_FUNDED_BY_LENDER
+skip  lender C credit: NOT_NEEDED
+```
+
+`CreditFacility.openAndFund` ([0.0.7314364@1793982496.157443985](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985), gas used 2,088,677, relay-estimated, from the coordinator) is the 1inch headline transaction: the router fills A's and B's Aqua strategies, the facility receives 4.5 USDC and the lenders receive RCN.
+
+Verified on-chain and on the mirror node:
+
+- Facility USDC balance 4,500,000 units (`eth_call` and mirror node agree).
+- Registry state `Financed` (2). `FacilityFunded` (funded 4,500,000, advanceBps 7500, makers A and B) and two `PositionOpened` events.
+- Lender A holds 3,500,000 RCN units and lender B 1,000,000.
+- Exactly one schedule entity was created by the funding transaction (one `SCHEDULECREATE` child record): `markOverdue`, schedule 0.0.11342318, pending, no `ScheduleSkipped`, `defaultSchedule` 0 (`markOverdue` schedules the default check when it runs).
+
+Two real transactions that revert, decoded from the mirror node's `error_message`:
+
+| Call | Revert | Tx |
+| --- | --- | --- |
+| `openAndFund` for an unregistered id, from the coordinator | `NOT_CONFIRMED()` `0x6dc2c622` | [0.0.7314364@1793982511.134508238](https://hashscan.io/testnet/transaction/0.0.7314364@1793982511.134508238) |
+| `openAndFund` for PO-1002, from the seller | `NOT_COORDINATOR()` `0xe5ad01f4` | [0.0.7314364@1793982519.722396023](https://hashscan.io/testnet/transaction/0.0.7314364@1793982519.722396023) |
+
+HCS `FacilityFunded` on the audit topic [0.0.11338927](https://hashscan.io/testnet/topic/0.0.11338927): seq 36, [tx](https://hashscan.io/testnet/transaction/0.0.11333252@1793982667.668877640). The record is `deployments/testnet/facility.json`.

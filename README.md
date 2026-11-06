@@ -61,14 +61,12 @@ The demo also submits the same obligation twice (rejected with `DUPLICATE_RECEIV
 | Redeploy Aqua on Hedera testnet | Done | Aqua registry [0xc65A…d54c](https://hashscan.io/testnet/contract/0xc65A0788a9AE598aEAB5DbC529B7649a1383d54c), deployed unmodified by us. |
 | Modified SwapVM router (a redeployed, modified SwapVM is allowed by the track) | Done | `CashEthSwapVMRouter` [0x458b…ce1b](https://hashscan.io/testnet/contract/0x458b3b7CaDec64Cd0AE0B244d582006C4E99ce1b), custom opcode `ReceivableCredit` on `Opcode._21`, runtime 23,759 B. |
 | Custom instruction gates fills on real state | Done | [Section 5](#5-the-modified-swapvm); `contracts/test/ReceivableCredit.t.sol`. |
-| Lender strategies on-chain; token transfers visible on HashScan | Done for ships; funding fill pending | Strategies table in [section 4.2](#42-funding-through-aqua-shared-liquidity); spike S1 fill with HTS child transfer: [fill tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793963078.419965153). |
+| Lender strategies on-chain; token transfers visible on HashScan | Done | Strategies table in [section 4.2](#42-funding-through-aqua-shared-liquidity); spike S1 fill with HTS child transfer: [fill tx](https://hashscan.io/testnet/transaction/0.0.7314364@1793963078.419965153). |
 | Shared liquidity | Done | One lender balance backs a base-yield strategy and a credit strategy. |
 | Commits spread across the event | See `git log` | |
 | Attribution | Done | [Section 10](#10-attribution-and-licenses). |
 
-**Aqua funding transaction (`openAndFund` through the modified router): TODO.**
-
-<!-- TODO(8.2-final): the `CreditFacility.openAndFund` transaction id (HashScan link) in which the modified router fills lenders A and B for PO-1002 and the receivable becomes Financed. -->
+**Aqua funding transaction (`openAndFund` through the modified router, lenders A and B fill PO-1002, the receivable becomes Financed): [0.0.7314364@1793982496.157443985](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985).**
 
 **Settled x402 transaction (final demo run, paid from a 2-of-2 spend wallet): TODO.**
 
@@ -230,7 +228,7 @@ A non-empty `sellerSet` (up to 3 addresses) replaces the score thresholds: an ex
 | C | high (1300 bps) | 0.5 USDC | 0.5 USDC + 0.5 tUSDT | any | eligible, not needed (most expensive) |
 | D | low (700 bps) | 1.0 USDC | none | workerResearch | skipped on-chain: `SELLER_NOT_FUNDED_BY_LENDER` |
 
-PO-1002 is 6 USDC with a 75% advance, so the borrowing base is 4.5 USDC. The last column is the designed outcome; the observed fill is the `openAndFund` TODO above.
+PO-1002 is 6 USDC with a 75% advance, so the borrowing base is 4.5 USDC. The last column is the designed outcome; the observed fill is the `openAndFund` transaction [0.0.7314364@1793982496.157443985](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985) (A 3.5 USDC, B 1.0 USDC, C not needed, D skipped).
 
 `Aqua.ship` transactions recorded so far (the remaining ships are recorded in `strategies.json` as they land):
 
@@ -411,7 +409,7 @@ Everything is recorded in [docs/EVIDENCE.md](docs/EVIDENCE.md) and the run recor
 
 | What | Where |
 | --- | --- |
-| First Aqua-funded facility (`openAndFund` through the modified router, A and B filled) | TODO (see section 2) |
+| First Aqua-funded facility (`openAndFund` through the modified router, A and B filled) | Done: [0.0.7314364@1793982496.157443985](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985) |
 | Settled x402 payment, final run | TODO (see section 2) |
 | x402 mechanism, single-key and 2-of-2 settlements | [A](https://hashscan.io/testnet/transaction/0.0.9185802-1793964900-434830214), [B](https://hashscan.io/testnet/transaction/0.0.9185802-1793964918-249682742) |
 | 2-of-2 spend wallets (threshold key read back from the mirror node) | [research](https://hashscan.io/testnet/account/0.0.11339484), [compute](https://hashscan.io/testnet/account/0.0.11339486) |
