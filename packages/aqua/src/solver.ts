@@ -3,12 +3,11 @@
  *
  * Off-chain checks (tenor, advance, balances, allowance, reserve, per-buyer headroom) only prune; the lender's
  * own rules (seller set or seller score, buyer reputation, receivable state) are decided by the credit opcode
- * itself through an on-chain `router.quote` eth_call sent from the facility, so the solver never re-implements
- * them and cannot disagree with the chain.
+ * itself: each strategy's fill is dry-run through `CreditFacility.openAndFund` (an eth_call from the
+ * coordinator), so the solver never re-implements the rules and cannot disagree with the chain.
  */
-import { AquaRouterAbi, CashEthSwapVMRouterAbi } from "@casheth/shared";
+import { AquaRouterAbi, CashEthSwapVMRouterAbi, CreditFacilityAbi } from "@casheth/shared";
 import { BaseError, ContractFunctionRevertedError, type Abi, type Address, type Hex, type PublicClient } from "viem";
-import { takerData } from "./orderBuilder.js";
 import type { AquaAddresses, Fill, LenderStrategy } from "./types.js";
 
 const DAY = 86_400n;
@@ -133,16 +132,34 @@ export type SolveInput = {
   /** The engine's limit (USDC base units); the plan covers `min(amount * advanceBps / 10_000, limit)`. */
   limit: bigint;
   facility: Address;
+  /** The account allowed to call `openAndFund`: the dry runs are sent from it. */
+  coordinator: Address;
   /** Unix seconds (use the chain's latest block timestamp). */
   now: bigint;
 };
 
-const QUOTE_ABI = [
-  ...CashEthSwapVMRouterAbi,
-  ...AquaRouterAbi.filter(
-    (e) => e.type === "error" && !CashEthSwapVMRouterAbi.some((r) => r.type === "error" && r.name === e.name),
+/** `openAndFund` plus every custom error it can bubble up from the facility, the router and Aqua. */
+const SIMULATION_ABI = [
+  ...CreditFacilityAbi,
+  ...[...CashEthSwapVMRouterAbi, ...AquaRouterAbi].filter(
+    (e, i, all) =>
+      e.type === "error" &&
+      !CreditFacilityAbi.some((f) => f.type === "error" && f.name === e.name) &&
+      all.findIndex((x) => x.type === "error" && x.name === e.name) === i,
   ),
 ] as Abi;
+
+/** What the Hedera relay answers when a simulated call reaches the Schedule Service, which it cannot run. */
+const SCHEDULING_REFUSED = "NO_SCHEDULING_ALLOWED_AFTER_SCHEDULED_RECURSION";
+
+/**
+ * Whether a failed `openAndFund` dry run died only at the Schedule Service. `openAndFund` schedules its
+ * `markOverdue` / `markDefaulted` calls last, after the fills and `markFinanced`, so on Hedera (where eth_call
+ * cannot schedule) this error means every credit rule passed.
+ */
+export function simulationReachedScheduling(err: unknown): boolean {
+  return err instanceof BaseError && err.walk((e) => e instanceof BaseError && !!e.details?.includes(SCHEDULING_REFUSED)) !== null;
+}
 
 /** The custom error name a failed call reverted with, or a generic label. */
 export function revertReason(err: unknown): string {
@@ -157,16 +174,21 @@ export function revertReason(err: unknown): string {
 
 /**
  * Plans the fills for one receivable: pre-checks each credit strategy, reads the maker's on-chain exposure to
- * the buyer, quotes the strategy's full capacity through `router.quote` from the facility (any revert skips
- * the strategy with the decoded error name), then runs `planFills` on the survivors, which shares each
- * maker's wallet, allowance and per-buyer headroom across all of that maker's strategies.
+ * the buyer, dry-runs a fill of the strategy's capacity (at most the base) through `openAndFund` from the
+ * coordinator (any revert skips the strategy with the decoded error name), then runs `planFills` on the
+ * survivors, which shares each maker's wallet, allowance and per-buyer headroom across all of that maker's
+ * strategies.
+ *
+ * Why not `router.quote` from the facility: the opcode only accepts the facility as taker, and Hedera's
+ * eth_call ignores a contract `from` (the taker reads as 0x...02). The coordinator is an ordinary account, so
+ * the facility's real entry point can be simulated from it on every chain.
  *
  * The plan can be empty (no eligible liquidity): never send an empty `fills` to `openAndFund`, it reverts
  * `NOT_CHEAPEST_FIRST`. A `total` below the base is a partial plan the caller may accept or decline.
  */
 export async function solve(
-  client: Pick<PublicClient, "readContract">,
-  addrs: Pick<AquaAddresses, "swapRouter" | "orderBuilder" | "rcn" | "usdc">,
+  client: Pick<PublicClient, "readContract" | "simulateContract">,
+  addrs: Pick<AquaAddresses, "swapRouter">,
   input: SolveInput,
 ): Promise<Plan> {
   const { receivable, advanceBps, facility, now } = input;
@@ -192,28 +214,23 @@ export async function solve(
     const headroom = clamp0(s.args!.maxPerBuyer - exposure);
     headrooms[s.strategyHash] = headroom;
 
-    // Balance problems are reported by planFills; only quote strategies that could give something.
+    // Balance problems are reported by planFills; only dry-run strategies that could give something.
     if (!balanceCheck(s, headroom)) {
-      const amount = strategyCapacity(s, headroom);
-      const data = await takerData(client, addrs.orderBuilder, {
-        facility,
-        rcn: addrs.rcn,
-        usdc: addrs.usdc,
-        amount,
-        id: receivable.id,
-        advanceBps,
-      });
+      const amount = min(strategyCapacity(s, headroom), base);
+      const fill = { order: s.order, amount, aprBps: s.args!.aprBps };
       try {
-        await client.readContract({
-          address: addrs.swapRouter,
-          abi: QUOTE_ABI,
-          functionName: "quote",
-          args: [s.order, amount, data],
-          account: facility,
+        await client.simulateContract({
+          address: facility,
+          abi: SIMULATION_ABI,
+          functionName: "openAndFund",
+          args: [receivable.id, [fill], advanceBps, input.limit],
+          account: input.coordinator,
         });
       } catch (err) {
-        skipped.push({ strategyHash: s.strategyHash, reason: revertReason(err) });
-        continue;
+        if (!simulationReachedScheduling(err)) {
+          skipped.push({ strategyHash: s.strategyHash, reason: revertReason(err) });
+          continue;
+        }
       }
     }
     eligible.push(s);

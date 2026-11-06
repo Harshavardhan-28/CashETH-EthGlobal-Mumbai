@@ -215,7 +215,7 @@ describe("solve", () => {
   async function plan(advanceBps = ADVANCE, limit = LIMIT) {
     const { timestamp } = await pub.getBlock();
     const strategies = await listOpenStrategies(pub, addrs, { fromBlock: 0n });
-    return solve(pub, addrs, { receivable, strategies, advanceBps, limit, facility: stack.creditFacility, now: timestamp });
+    return solve(pub, addrs, { receivable, strategies, advanceBps, limit, facility: stack.creditFacility, coordinator: account("coordinator").address, now: timestamp });
   }
 
   const coordinator = createWalletClient({ account: account("coordinator"), chain: anvilChain, transport });
