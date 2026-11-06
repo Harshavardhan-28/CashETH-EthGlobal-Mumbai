@@ -19,7 +19,7 @@ import { MockUSDC } from "../test/mocks/MockUSDC.sol";
 import { MockHSS } from "../test/mocks/MockHSS.sol";
 
 /// @notice Full CashETH stack on a local anvil node, for the TypeScript integration tests of `@casheth/aqua`
-///         (packages/aqua/test/globalSetup.ts runs it). Never broadcast this to a real network: the USDC and
+///         (packages/aqua/test/anvil.globalSetup.ts runs it). Never broadcast this to a real network: the USDC and
 ///         tUSDT are open-mint mocks.
 ///
 ///   anvil --port 8547 --chain-id 31337

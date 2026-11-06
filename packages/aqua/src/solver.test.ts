@@ -86,6 +86,43 @@ describe("planFills", () => {
     expect(planFills([broke], {}, USD(1)).skipped).toEqual([{ strategyHash: broke.strategyHash, reason: "NO_CAPACITY" }]);
   });
 
+  it("shares one maker's wallet, allowance and per-buyer headroom across its strategies", () => {
+    // One lender, wallet 5 USDC, two credit strategies of 4 each: the plan may take only 5 in total.
+    const cheap = strategy("P", "low", USD(4), { realUsdc: USD(5), allowance: USD(8) });
+    const dear = { ...strategy("Q", "medium", USD(4), { realUsdc: USD(5), allowance: USD(8) }), maker: cheap.maker };
+    dear.order = { ...dear.order, maker: cheap.maker.toUpperCase().replace("0X", "0x") as Address };
+    const other = strategy("R", "high", USD(3));
+    const plan = planFills([dear, cheap, other], {}, USD(7.5));
+    expect(plan.fills).toEqual([
+      { order: cheap.order, amount: USD(4), aprBps: 700 },
+      { order: dear.order, amount: USD(1), aprBps: 850 },
+      { order: other.order, amount: USD(2.5), aprBps: 1300 },
+    ]);
+    expect(plan.total).toBe(USD(7.5));
+
+    // The same maker's allowance (5) and per-buyer headroom (4.5) are shared the same way.
+    const allow = (h: string, over = {}) =>
+      ({ ...strategy(h, "low", USD(4), { realUsdc: USD(20), allowance: USD(5), ...over }), maker: cheap.maker });
+    const a1 = allow("S");
+    const a2 = allow("T");
+    expect(planFills([a1, a2], {}, USD(10)).total).toBe(USD(5));
+    expect(planFills([allow("U", { allowance: USD(20) }), allow("V", { allowance: USD(20) })], {
+      [`0x${"U".charCodeAt(0).toString(16).padStart(64, "0")}`]: USD(4.5),
+      [`0x${"V".charCodeAt(0).toString(16).padStart(64, "0")}`]: USD(4.5),
+    }, USD(10)).total).toBe(USD(4.5));
+
+    // Once the maker is used up, its next strategy is skipped for capacity.
+    const full = planFills([a1, a2], {}, USD(10));
+    expect(full.skipped).toEqual([]);
+    const drained = planFills(
+      [allow("W", { allowance: USD(4) }), allow("X", { allowance: USD(4) })],
+      {},
+      USD(10),
+    );
+    expect(drained.fills.map((f) => f.amount)).toEqual([USD(4)]);
+    expect(drained.skipped).toEqual([{ strategyHash: `0x${"X".charCodeAt(0).toString(16).padStart(64, "0")}`, reason: "NO_CAPACITY" }]);
+  });
+
   it("caps each strategy at its allowance and its per-buyer headroom", () => {
     const a = strategy("A", "low", USD(4), { allowance: USD(1) });
     const b = strategy("B", "medium", USD(2));

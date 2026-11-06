@@ -16,6 +16,7 @@ import {
   type PublicClient,
 } from "viem";
 import { decodeBaseYieldOrder, decodeLenderOrder } from "./orderBuilder.js";
+import { revertReason } from "./solver.js";
 import type { AquaAddresses, LenderStrategy, Order } from "./types.js";
 
 /** Hashio (Hedera JSON-RPC relay) rejects `eth_getLogs` ranges wider than this. */
@@ -114,32 +115,72 @@ async function classify(
   }
 }
 
+/** A shipped strategy discovery left out, and why. */
+export type DiscoverySkip = { maker: Address; strategyHash: Hex; reason: string };
+
+/** Reasons `discoverStrategies` leaves a `Shipped` strategy out. */
+export const DISCOVERY_SKIP = {
+  /** The strategy bytes are not `abi.encode(Order)`. */
+  MALFORMED_STRATEGY: "MALFORMED_STRATEGY",
+  /** The order's maker is not the account that shipped it (someone re-shipped another maker's order). */
+  MAKER_MISMATCH: "MAKER_MISMATCH",
+  /** Neither a CashETH credit order over (USDC, RCN) nor a base-yield order over (USDC, tUSDT). */
+  NOT_CASHETH_ORDER: "NOT_CASHETH_ORDER",
+  /** `aqua.safeBalances` reverted (e.g. shipped without both tokens); suffixed with `:<error name>`. */
+  BALANCES_REVERTED: "BALANCES_REVERTED",
+} as const;
+
 /**
- * Open CashETH strategies on `addrs.swapRouter`: credit strategies sorted by `aprBps` ascending (ties in
- * shipping order), then base-yield strategies in shipping order. Strategies with any other program or token
- * pair are ignored.
- * @param opts.fromBlock First block to scan (default 0; pass the deployment block on long chains).
+ * Like `listOpenStrategies`, but also returns the shipped strategies it left out. Aqua's `ship` is
+ * permissionless and takes arbitrary bytes, so every `Shipped` event is untrusted: malformed strategy bytes,
+ * orders whose maker is not the shipper, foreign programs and strategies whose balances cannot be read are
+ * skipped and reported per strategy. Transport and RPC failures still throw.
  */
-export async function listOpenStrategies(
+export async function discoverStrategies(
   client: Reader,
   addrs: Pick<AquaAddresses, "aqua" | "swapRouter" | "orderBuilder" | "usdc" | "rcn" | "tUsdt">,
   opts: { fromBlock?: bigint; toBlock?: bigint } = {},
-): Promise<LenderStrategy[]> {
+): Promise<{ strategies: LenderStrategy[]; skipped: DiscoverySkip[] }> {
   const to = opts.toBlock ?? (await client.getBlockNumber({ cacheTime: 0 }));
   const logs = await aquaLogs(client, addrs.aqua, opts.fromBlock ?? 0n, to);
   const app = getAddress(addrs.swapRouter);
 
   const out: LenderStrategy[] = [];
+  const skipped: DiscoverySkip[] = [];
   for (const s of openFromLogs(logs, app)) {
-    const order = decodeStrategy(s.strategy);
+    const skip = (reason: string) => skipped.push({ maker: s.maker, strategyHash: s.strategyHash, reason });
+    let order: Order;
+    try {
+      order = decodeStrategy(s.strategy);
+    } catch {
+      skip(DISCOVERY_SKIP.MALFORMED_STRATEGY);
+      continue;
+    }
+    // Aqua keys balances by the shipper while the router pulls from `order.maker`: they must be the same
+    // account, or a copy of a lender's order shipped by someone else would count as that lender's liquidity.
+    if (order.maker !== s.maker) {
+      skip(DISCOVERY_SKIP.MAKER_MISMATCH);
+      continue;
+    }
     const kind = await classify(client, addrs, order);
-    if (!kind) continue;
-    const [b0, b1] = await client.readContract({
-      address: addrs.aqua,
-      abi: AquaRouterAbi,
-      functionName: "safeBalances",
-      args: [s.maker, app, s.strategyHash, kind.tokens[0], kind.tokens[1]],
-    });
+    if (!kind) {
+      skip(DISCOVERY_SKIP.NOT_CASHETH_ORDER);
+      continue;
+    }
+    let b0: bigint;
+    let b1: bigint;
+    try {
+      [b0, b1] = await client.readContract({
+        address: addrs.aqua,
+        abi: AquaRouterAbi,
+        functionName: "safeBalances",
+        args: [s.maker, app, s.strategyHash, kind.tokens[0], kind.tokens[1]],
+      });
+    } catch (err) {
+      // revertReason rethrows anything that is not a contract revert.
+      skip(`${DISCOVERY_SKIP.BALANCES_REVERTED}:${revertReason(err)}`);
+      continue;
+    }
     const [realUsdc, allowance] = await Promise.all([
       client.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "balanceOf", args: [s.maker] }),
       client.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "allowance", args: [s.maker, addrs.aqua] }),
@@ -160,5 +201,19 @@ export async function listOpenStrategies(
     .filter(({ s }) => s.kind === "credit")
     .sort((x, y) => x.s.args!.aprBps - y.s.args!.aprBps || x.i - y.i)
     .map(({ s }) => s);
-  return [...credit, ...out.filter((s) => s.kind === "base")];
+  return { strategies: [...credit, ...out.filter((s) => s.kind === "base")], skipped };
+}
+
+/**
+ * Open CashETH strategies on `addrs.swapRouter`: credit strategies sorted by `aprBps` ascending (ties in
+ * shipping order), then base-yield strategies in shipping order. Untrusted or foreign `Shipped` data is
+ * skipped; use `discoverStrategies` to also see what was skipped and why.
+ * @param opts.fromBlock First block to scan (default 0; pass the deployment block on long chains).
+ */
+export async function listOpenStrategies(
+  client: Reader,
+  addrs: Pick<AquaAddresses, "aqua" | "swapRouter" | "orderBuilder" | "usdc" | "rcn" | "tUsdt">,
+  opts: { fromBlock?: bigint; toBlock?: bigint } = {},
+): Promise<LenderStrategy[]> {
+  return (await discoverStrategies(client, addrs, opts)).strategies;
 }

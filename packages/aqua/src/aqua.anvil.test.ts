@@ -2,7 +2,13 @@
  * Integration tests against a local anvil node running the real contracts (AquaRouter, CashEthSwapVMRouter,
  * CashEthOrderBuilder, CreditFacility, registries, RCN). See test/anvil.globalSetup.ts.
  */
-import { AquaRouterAbi, CashEthSwapVMRouterAbi, CreditFacilityAbi, ReceivableRegistryAbi } from "@casheth/shared";
+import {
+  AquaRouterAbi,
+  CashEthOrderBuilderAbi,
+  CashEthSwapVMRouterAbi,
+  CreditFacilityAbi,
+  ReceivableRegistryAbi,
+} from "@casheth/shared";
 import {
   createPublicClient,
   createWalletClient,
@@ -172,6 +178,14 @@ describe("order builder", () => {
     // Base yield round-trips too (fee in basis points), and each decoder rejects the other kind.
     const y = await buildBaseYieldOrder(pub, addrs.orderBuilder, { maker, usdc: addrs.usdc, tUsdt: addrs.tUsdt, feeBps: 30, salt: 7n });
     expect(await decodeBaseYieldOrder(pub, addrs.orderBuilder, y.order)).toMatchObject({ feeBps: 30, salt: 7n });
+    // On-chain the fee is in FeeFlatIn's 1e7 units: 30 bps is 30_000.
+    const [rawFee] = await pub.readContract({
+      address: addrs.orderBuilder,
+      abi: CashEthOrderBuilderAbi,
+      functionName: "decodeBaseYieldOrder",
+      args: [y.order],
+    });
+    expect(rawFee).toBe(30_000);
     await expect(decodeLenderOrder(pub, addrs.orderBuilder, y.order)).rejects.toThrow(/NotLenderOrder/);
     await expect(decodeBaseYieldOrder(pub, addrs.orderBuilder, order)).rejects.toThrow(/NotBaseYieldOrder/);
   });
@@ -198,10 +212,22 @@ describe("solve", () => {
   const ADVANCE = 7500;
   const LIMIT = USD(6); // 8 USDC * 75%
 
-  async function plan() {
+  async function plan(advanceBps = ADVANCE, limit = LIMIT) {
     const { timestamp } = await pub.getBlock();
     const strategies = await listOpenStrategies(pub, addrs, { fromBlock: 0n });
-    return solve(pub, addrs, { receivable, strategies, advanceBps: ADVANCE, limit: LIMIT, facility: stack.creditFacility, now: timestamp });
+    return solve(pub, addrs, { receivable, strategies, advanceBps, limit, facility: stack.creditFacility, now: timestamp });
+  }
+
+  const coordinator = createWalletClient({ account: account("coordinator"), chain: anvilChain, transport });
+  const usdcOf = (who: Address) => pub.readContract({ address: addrs.usdc, abi: erc20Abi, functionName: "balanceOf", args: [who] });
+  async function openAndFund(fills: Awaited<ReturnType<typeof plan>>["fills"], advanceBps: number, limit: bigint) {
+    const hash = await coordinator.writeContract({
+      address: stack.creditFacility,
+      abi: CreditFacilityAbi,
+      functionName: "openAndFund",
+      args: [receivable.id, fills, advanceBps, limit],
+    });
+    return (await pub.waitForTransactionReceipt({ hash })).status;
   }
 
   it("takes A then B and skips C by price and D by SELLER_NOT_FUNDED_BY_LENDER", async () => {
@@ -225,22 +251,53 @@ describe("solve", () => {
       salt: 77n,
       usdcAmount: USD(1),
     });
-    const p = await plan();
-    expect(p.skipped[0]).toEqual({ strategyHash: strict.strategyHash, reason: "BuyerReputationTooLow" });
-    expect(p.fills.map((f) => f.amount)).toEqual([USD(4), USD(2)]);
-    await dockStrategy(w, addrs.aqua, { app: addrs.swapRouter, strategyHash: strict.strategyHash, tokens: [addrs.usdc, addrs.rcn] });
+    try {
+      const p = await plan();
+      expect(p.skipped[0]).toEqual({ strategyHash: strict.strategyHash, reason: "BuyerReputationTooLow" });
+      expect(p.fills.map((f) => f.amount)).toEqual([USD(4), USD(2)]);
+    } finally {
+      await dockStrategy(w, addrs.aqua, { app: addrs.swapRouter, strategyHash: strict.strategyHash, tokens: [addrs.usdc, addrs.rcn] });
+    }
+  });
+
+  it("never plans more from one lender than its wallet holds across its strategies", async () => {
+    // Everything here runs inside an anvil snapshot and is rolled back, so the next test sees the old state.
+    const snapshot = await pub.request({ method: "evm_snapshot" as never, params: [] as never });
+    try {
+      // B keeps 2.2 USDC and ships a second 2 USDC credit strategy: each of B's strategies is backed on its
+      // own (2.2 >= 2), together they are not (4 > 2.2).
+      const w = wallet("lenderB");
+      const b = account("lenderB").address;
+      const burn = getAddress("0x000000000000000000000000000000000000dEaD");
+      await pub.waitForTransactionReceipt({
+        hash: await w.writeContract({ address: addrs.usdc, abi: erc20Abi, functionName: "transfer", args: [burn, WALLET_USDC - USD(2.2)] }),
+      });
+      const b2 = await shipLenderStrategy(w, addrs, { args: LENDERS.B.args, salt: 5n, usdcAmount: USD(2) });
+
+      // 8 USDC at 8000 bps = 6.4 USDC: A 4, B 2 + 0.2 (B's wallet is spent), C the remaining 0.2.
+      const p = await plan(8000, USD(6.4));
+      expect(p.fills).toEqual([
+        { order: credit.A.order, amount: USD(4), aprBps: 700 },
+        { order: credit.B.order, amount: USD(2), aprBps: 850 },
+        { order: b2.order, amount: USD(0.2), aprBps: 850 },
+        { order: credit.C.order, amount: USD(0.2), aprBps: 1300 },
+      ]);
+      const fromB = p.fills.filter((f) => f.order.maker === b).reduce((s, f) => s + f.amount, 0n);
+      expect(fromB).toBe(await usdcOf(b));
+
+      // And the chain accepts exactly that plan.
+      expect(await openAndFund(p.fills, 8000, USD(6.4))).toBe("success");
+      expect(await usdcOf(b)).toBe(0n);
+      expect(await usdcOf(stack.creditFacility)).toBe(USD(6.4));
+    } finally {
+      await pub.request({ method: "evm_revert" as never, params: [snapshot] as never });
+    }
+    expect(await usdcOf(account("lenderB").address)).toBe(WALLET_USDC);
   });
 
   it("the solver's fills fund the receivable on-chain through openAndFund", async () => {
     const p = await plan();
-    const coordinator = createWalletClient({ account: account("coordinator"), chain: anvilChain, transport });
-    const hash = await coordinator.writeContract({
-      address: stack.creditFacility,
-      abi: CreditFacilityAbi,
-      functionName: "openAndFund",
-      args: [receivable.id, p.fills, ADVANCE, LIMIT],
-    });
-    expect((await pub.waitForTransactionReceipt({ hash })).status).toBe("success");
+    expect(await openAndFund(p.fills, ADVANCE, LIMIT)).toBe("success");
 
     const bal = (token: Address, who: Address) =>
       pub.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [who] });

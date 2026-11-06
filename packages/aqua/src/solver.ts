@@ -54,13 +54,16 @@ function byPrice(strategies: readonly LenderStrategy[]): LenderStrategy[] {
 }
 
 /**
- * Most USDC `s` can advance: `min(virtual USDC, allowance, headroom, realUsdc - minReserve)`, where `headroom`
- * is `maxPerBuyer - exposure(maker, buyer)`. (Real USDC itself is not a cap: `planFills` skips strategies
- * whose wallet is below their virtual balance.)
+ * Most USDC `s` can advance: `min(virtual USDC, allowance - used, headroom - used, realUsdc - used - minReserve)`,
+ * where `headroom` is `maxPerBuyer - exposure(maker, buyer)` and `used` is what earlier fills of the same plan
+ * already take from the same maker. Wallet balance, allowance to Aqua and the per-buyer exposure belong to the
+ * maker, not the strategy, so every strategy of one maker draws on the same three budgets (the opcode checks
+ * `exposure[maker][buyer]` and the maker's wallet on each fill). Real USDC is not a cap by itself: `planFills`
+ * skips strategies whose wallet is below their virtual balance.
  */
-export function strategyCapacity(s: LenderStrategy, headroom: bigint): bigint {
+export function strategyCapacity(s: LenderStrategy, headroom: bigint, used = 0n): bigint {
   const reserve = s.args?.minReserve ?? 0n;
-  return clamp0(min(virtualUsdc(s), s.allowance, headroom, s.realUsdc - reserve));
+  return clamp0(min(virtualUsdc(s), s.allowance - used, headroom - used, s.realUsdc - used - reserve));
 }
 
 /**
@@ -79,18 +82,19 @@ export function preCheck(
 }
 
 /** Skip reason from balances alone, or `undefined` when the strategy has something to give. */
-function balanceCheck(s: LenderStrategy, headroom: bigint): string | undefined {
+function balanceCheck(s: LenderStrategy, headroom: bigint, used = 0n): string | undefined {
   const shipped = virtualUsdc(s);
   if (shipped === 0n) return SKIP.NO_VIRTUAL_BALANCE;
   if (s.realUsdc < shipped) return SKIP.UNDERFUNDED;
-  if (strategyCapacity(s, headroom) === 0n) return SKIP.NO_CAPACITY;
+  if (strategyCapacity(s, headroom, used) === 0n) return SKIP.NO_CAPACITY;
   return undefined;
 }
 
 /**
  * Pure greedy plan: credit strategies cheapest first, `take = min(remaining, capacity)` until `base` is
  * covered. `headrooms` maps a strategy hash to its per-buyer headroom (`maxPerBuyer - exposure`); a missing
- * entry means the full `maxPerBuyer`. Base-yield strategies are ignored.
+ * entry means the full `maxPerBuyer`. What a maker has already given in this plan is subtracted from its
+ * wallet, allowance and headroom before its next strategy is sized. Base-yield strategies are ignored.
  */
 export function planFills(
   strategies: readonly LenderStrategy[],
@@ -99,6 +103,7 @@ export function planFills(
 ): Plan {
   const fills: Fill[] = [];
   const skipped: Skipped[] = [];
+  const usedByMaker = new Map<string, bigint>();
   let remaining = clamp0(base);
   for (const s of byPrice(strategies)) {
     const headroom = headrooms[s.strategyHash] ?? s.args!.maxPerBuyer;
@@ -106,13 +111,16 @@ export function planFills(
       skipped.push({ strategyHash: s.strategyHash, reason: SKIP.NOT_NEEDED });
       continue;
     }
-    const reason = balanceCheck(s, headroom);
+    const maker = s.maker.toLowerCase();
+    const used = usedByMaker.get(maker) ?? 0n;
+    const reason = balanceCheck(s, headroom, used);
     if (reason) {
       skipped.push({ strategyHash: s.strategyHash, reason });
       continue;
     }
-    const take = min(remaining, strategyCapacity(s, headroom));
+    const take = min(remaining, strategyCapacity(s, headroom, used));
     fills.push({ order: s.order, amount: take, aprBps: s.args!.aprBps });
+    usedByMaker.set(maker, used + take);
     remaining -= take;
   }
   return { fills, total: clamp0(base) - remaining, skipped };
@@ -150,7 +158,11 @@ export function revertReason(err: unknown): string {
 /**
  * Plans the fills for one receivable: pre-checks each credit strategy, reads the maker's on-chain exposure to
  * the buyer, quotes the strategy's full capacity through `router.quote` from the facility (any revert skips
- * the strategy with the decoded error name), then runs `planFills` on the survivors.
+ * the strategy with the decoded error name), then runs `planFills` on the survivors, which shares each
+ * maker's wallet, allowance and per-buyer headroom across all of that maker's strategies.
+ *
+ * The plan can be empty (no eligible liquidity): never send an empty `fills` to `openAndFund`, it reverts
+ * `NOT_CHEAPEST_FIRST`. A `total` below the base is a partial plan the caller may accept or decline.
  */
 export async function solve(
   client: Pick<PublicClient, "readContract">,
