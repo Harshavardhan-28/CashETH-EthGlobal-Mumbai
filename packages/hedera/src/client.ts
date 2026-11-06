@@ -11,6 +11,7 @@ import {
   type WalletClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { retryingFetch } from "./relayRetry.js";
 
 export const hederaTestnet: Chain = defineChain({
   id: 296,
@@ -41,9 +42,10 @@ export function evmClients(
   privateKey?: Hex,
 ): { public: PublicClient; wallet?: WalletClient; chain: Chain } {
   const chain = hederaTestnet;
-  // Hashio regularly takes longer than viem's 10 s default to answer eth_sendRawTransaction and answers
-  // 502 now and then; viem resends the same signed transaction, so retrying never double-sends.
-  const transport = http(env.HEDERA_JSON_RPC_URL, { timeout: 60_000, retryCount: 5, retryDelay: 1_000 });
+  // Hashio regularly takes longer than viem's 10 s default to answer eth_sendRawTransaction and answers 502 and
+  // generic "RPC Request failed" errors now and then; both layers resend the same signed transaction (retrying a
+  // response that was OK never happens), so retrying never double-sends.
+  const transport = http(env.HEDERA_JSON_RPC_URL, { timeout: 60_000, retryCount: 5, retryDelay: 1_000, fetchFn: retryingFetch() });
   return {
     public: createPublicClient({ chain, transport }),
     wallet: privateKey
