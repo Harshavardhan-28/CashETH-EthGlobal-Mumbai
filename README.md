@@ -394,7 +394,9 @@ Spike S1 evidence that Aqua and SwapVM run on Hedera with real HTS USDC: [ship](
 | `packages/engine` | `@casheth/engine`: credit score, borrowing base, spend policy, co-signer policy, event store, idempotency |
 | `apps/merchant` | Our x402 research API |
 | `apps/auth-server` | OAuth 2.1 authorization server with KYA checks |
-| `apps/mcp-server` | MCP tools (20), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`) |
+| `apps/mcp-server` | MCP tools (24), orchestrator, read API (`/events`, `/agents`, `/lenders`, `/receivables/:id`, `/invoices/:keccak`, `/health`) |
+| `frontend/` | Next.js app: landing and docs pages, the `/admin` console and the public `/dashboard`, all on the read API |
+| `seller-agent/` | Ollama LangGraph seller agent (`qwen3:8b`) that drives the whole flow through the MCP tools (`pnpm seller-agent`) |
 | `agents/` | `AgentClient` and the seller, buyer, worker, lender and trader agents; Hedera Agent Kit wrapper; demo runner |
 | `wallet-mcp/` | Local stdio MCP wallet for Claude Code: buyer confirmation signing, allowlisted calldata sending ([docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md)) |
 | `scripts/` | Account setup, deploy and wiring drivers (`c2` to `c5`), spikes, sweep, ABI sync |
@@ -451,6 +453,12 @@ Hedera notes: HTS `approve(spender, type(uint256).max)` reverts (allowances are 
 ### Servers and the demo
 
 ```
+pnpm servers                                 # builds, then starts auth (:4020) and MCP (:4030) in one terminal; Ctrl+C stops both
+```
+
+`pnpm servers` (`scripts/start-servers.sh`) is the quickest way to run the Claude Code or seller-agent demo: it checks the ports are free, starts both servers with prefixed logs, and waits for their health checks. The servers can also be started one by one:
+
+```
 pnpm -F @casheth/merchant start              # x402 merchant, MERCHANT_PORT (default 3003)
 pnpm -F @casheth/auth start                  # authorization server, AUTH_PORT (default 4020)
 pnpm -F @casheth/mcp start                   # MCP server and read API, MCP_PORT (default 4030)
@@ -461,9 +469,25 @@ pnpm demo                                    # drives the eight steps, the dupli
 
 The agent-driven run on PO-1003 (registered from the invoice PDF, section 4.7) is being recorded: its funding and repayment transaction ids are appended by the demo runner to the "Demo run" section of EVIDENCE.md. The funding, x402 and spend evidence above comes from the PO-1002 run.
 
+### Read API latency
+
+`/events` and `/health` are served from memory. `/agents`, `/lenders` and `/receivables/:id` are derived from chain state through the Hashio relay, so the MCP server keeps them warm:
+
+- At boot it scans the Aqua and contract logs once (about 60 s) and builds the agent and lender stats before the first request.
+- Log reads are incremental (mirror node cursor per contract), and strategy kinds and Aqua logs are cached between scans.
+- The finished `/agents` and `/lenders` rows (10 s) and each `/receivables/:id` (5 s) are cached stale-while-revalidate: a poll is answered from memory at once while one background refresh replaces the value, and a failed refresh keeps the last good one.
+
+Measured against testnet after warm-up: `/agents` and `/lenders` answer in under 10 ms (previously 1 to 35 s per poll), and a receivable in about 1 ms after its first read.
+
 ### Frontend
 
-The UI is a separate Next.js app on the branch `feat/nextjs-frontend` (`frontend/`: landing and docs pages). It is integrated last and consumes the read API: `GET /events`, `/agents`, `/lenders`, `/receivables/:id` (types in [docs/API.md](docs/API.md)). The MCP server allows the frontend's origin through `CORS_ORIGINS`.
+`frontend/` is a Next.js app (landing, docs, `/admin` console, public `/dashboard`); setup is in [frontend/README.md](frontend/README.md). It consumes the read API (types in [docs/API.md](docs/API.md)); the MCP server allows its origin through `CORS_ORIGINS`.
+
+```
+cd frontend && pnpm install && pnpm dev       # http://localhost:3000, NEXT_PUBLIC_API_URL defaults to http://localhost:4030
+```
+
+The admin console and dashboard poll `/health` + `/events` every 3 s and the slower `/agents` + `/lenders` every 10 s in a separate loop, so the activity appears as soon as the server answers. The last live data is kept in the browser's localStorage and painted immediately on reload while the server is asked again.
 
 ## 7. Evidence index
 

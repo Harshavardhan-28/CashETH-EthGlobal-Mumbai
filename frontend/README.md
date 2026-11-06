@@ -39,7 +39,7 @@ It uses the same read API as the admin console (`/events`, `/agents`, `/lenders`
 
 ## Admin console
 
-`/admin` is a live view of the AI agents connected to the CashETH MCP server: who they are, what they did, and the Hedera proof of every action. It polls the MCP server's read API (`/health`, `/events`, `/agents`, `/lenders`) every 3 seconds. Previous runs (one per invoice) come from the server's persisted audit log.
+`/admin` is a live view of the AI agents connected to the CashETH MCP server: who they are, what they did, and the Hedera proof of every action. It polls the MCP server's read API in two loops: `/health` and `/events` every 3 seconds (they set the connection status), and the slower, chain-derived `/agents` and `/lenders` every 10 seconds, so the activity shows before the stats arrive. The last live data is kept in localStorage and shown at once on reload. Previous runs (one per invoice) come from the server's persisted audit log.
 
 1. Start the MCP server (`pnpm -F @casheth/mcp start`, port 4030). Its `CORS_ORIGINS` must include this app's origin (default `http://localhost:3000`).
 2. Open `http://localhost:3000/admin` and sign in with the admin password (default `admin@01`).
