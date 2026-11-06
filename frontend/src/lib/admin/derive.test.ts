@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentStats, LenderYield } from "./api";
 import type { Actor, ActorRole, Narrated } from "./narrate";
-import { ACTIVE_WINDOW_MS, agentRows, computeKpis, groupRuns, inRange, roleBuckets, SETUP_RUN_ID } from "./derive";
+import { ACTIVE_WINDOW_MS, addUnits, agentRows, computeKpis, groupRuns, inRange, roleBuckets, SETUP_RUN_ID } from "./derive";
 
 const NOW = Date.parse("2026-11-07T12:00:00Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -216,5 +216,31 @@ describe("agentRows", () => {
     const rows = agentRows([stats("0xl", "lender", "L"), stats("0xw", "worker", "W", { spendByMerchant: { a: "oops", b: "5" } })], [], [], NOW);
     expect(rows.find((r) => r.stats.label === "L")!.money).toBe("—");
     expect(rows.find((r) => r.stats.label === "W")!.money).toBe("$0.00 spent");
+  });
+});
+
+describe("addUnits", () => {
+  it("keeps the zeros that follow a final carry", () => {
+    expect(addUnits("500", "500")).toBe("1000");
+    expect(addUnits("99", "1")).toBe("100");
+    expect(addUnits("999999", "1")).toBe("1000000");
+    expect(addUnits("500000000", "500000000")).toBe("1000000000");
+  });
+
+  it("handles zeros, uneven lengths and garbage", () => {
+    expect(addUnits("0", "0")).toBe("0");
+    expect(addUnits("007", "5")).toBe("12");
+    expect(addUnits("123", "oops")).toBe("123");
+  });
+
+  it("is exact through computeKpis with two $500 fundings", () => {
+    seq = 0;
+    const funded = [
+      n("FacilityFunded", LENDERS, ago(2 * MIN), { id: ID2, amount: "500000000" }),
+      n("FacilityFunded", LENDERS, ago(MIN), { id: ID3, amount: "500000000" }),
+    ];
+    const k = computeKpis(funded, [], "all", NOW);
+    expect(k.financed).toBe("1000000000");
+    expect(k.financedInRange).toBe("1000000000");
   });
 });

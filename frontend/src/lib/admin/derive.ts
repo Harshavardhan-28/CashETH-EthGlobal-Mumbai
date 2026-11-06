@@ -21,7 +21,7 @@ const timeOf = (n: Narrated): number => {
 };
 
 /** Decimal-string addition; non-numeric operands count as "0". */
-function addUnits(a: string, b: string): string {
+export function addUnits(a: string, b: string): string {
   const x = /^\d+$/.test(a) ? a : "0";
   const y = /^\d+$/.test(b) ? b : "0";
   const len = Math.max(x.length, y.length);
@@ -34,7 +34,7 @@ function addUnits(a: string, b: string): string {
     out = String(sum % 10) + out;
     carry = sum > 9 ? 1 : 0;
   }
-  return (carry ? "1" : "") + out.replace(/^0+(?=\d)/, "");
+  return carry ? `1${out}` : out.replace(/^0+(?=\d)/, "");
 }
 
 const sumAmounts = (items: Narrated[]): string => items.reduce((acc, i) => addUnits(acc, i.amount ?? "0"), "0");
@@ -224,7 +224,7 @@ export function roleBuckets(items: Narrated[], range: Range, nowMs: number, buck
 
 export type AgentRow = { stats: AgentStats; actor: Actor; status: "active" | "idle"; last?: Narrated; money: string };
 
-function moneyOf(a: AgentStats, key: string, all: Narrated[], lenders: LenderYield[]): string {
+function moneyOf(a: AgentStats, key: string, all: Narrated[], runs: Run[], lenders: LenderYield[]): string {
   switch (a.role) {
     case "worker":
       return `${formatUsdc(Object.values(a.spendByMerchant ?? {}).reduce((acc, v) => addUnits(acc, v), "0"))} spent`;
@@ -233,7 +233,7 @@ function moneyOf(a: AgentStats, key: string, all: Narrated[], lenders: LenderYie
       return entry ? `${formatUsdc(entry.lent)} lent` : "—";
     }
     case "seller": {
-      const borrowed = groupRuns(all)
+      const borrowed = runs
         .filter((r) => r.id !== SETUP_RUN_ID && r.events.find((e) => STEPS[0].types.includes(e.type))?.actor.key === key)
         .reduce((acc, r) => addUnits(acc, sumAmounts(r.events.filter((e) => e.type === "FacilityFunded"))), "0");
       return `${formatUsdc(borrowed)} borrowed`;
@@ -252,6 +252,7 @@ export function agentRows(agents: AgentStats[], all: Narrated[], lenders: Lender
     const prev = lastByKey.get(i.actor.key);
     if (!prev || i.seq > prev.seq) lastByKey.set(i.actor.key, i);
   }
+  const runs = groupRuns(all);
   const rows = agents.map((stats): AgentRow => {
     const key = stats.address.toLowerCase();
     const name = stats.label || shortAddress(stats.address);
@@ -262,7 +263,7 @@ export function agentRows(agents: AgentStats[], all: Narrated[], lenders: Lender
       actor: { key, name, role: stats.role, initials: initials(name), address: key },
       status,
       ...(last ? { last } : {}),
-      money: moneyOf(stats, key, all, lenders),
+      money: moneyOf(stats, key, all, runs, lenders),
     };
   });
   const lastAt = (r: AgentRow) => (r.last ? timeOf(r.last) : -1);
