@@ -42,7 +42,8 @@ export interface VerifyAgentAssertionOptions {
   now?: number;
 }
 
-const CLOCK_SKEW_SECONDS = 30;
+/** Tolerance applied to assertion exp/iat; replay protection must cover it too. */
+export const CLOCK_SKEW_SECONDS = 30;
 const MAX_LIFETIME_SECONDS = 600;
 const BYTES32 = /^0x[0-9a-fA-F]{64}$/;
 
@@ -93,7 +94,13 @@ export async function verifyAgentAssertion(
 
   const { iss, sub, aud, jti, iat, exp, mandateHash, kya_evidence } = claims;
   if (typeof iss !== "string" || !isAddress(iss)) reject("assertion iss must be an EVM address");
-  if (getAddress(iss as string) !== evmAddressFromJwk(jwk)) reject("assertion iss is not the address of the signing key");
+  let keyAddress: `0x${string}`;
+  try {
+    keyAddress = evmAddressFromJwk(jwk);
+  } catch (error) {
+    return reject(`assertion jwk is malformed: ${(error as Error).message}`);
+  }
+  if (getAddress(iss as string) !== keyAddress) reject("assertion iss is not the address of the signing key");
   if (typeof sub !== "string" || sub.length === 0) reject("assertion sub (UAID) is required");
   if (typeof jti !== "string" || jti.length === 0) reject("assertion jti is required");
   if (typeof mandateHash !== "string" || !BYTES32.test(mandateHash)) reject("assertion mandateHash must be a bytes32 hex");

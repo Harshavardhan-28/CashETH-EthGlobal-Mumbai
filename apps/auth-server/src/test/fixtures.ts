@@ -66,11 +66,15 @@ export function newAgent(role: number, level: number, overrides: Partial<AgentRe
   return { privateKey, address, uaid, record };
 }
 
-/** Signs arbitrary claims as an ES256K JWT with `privateKey`, embedding its public JWK (for forging bad assertions). */
-export function signRawAssertion(privateKey: `0x${string}`, claims: Record<string, unknown>): string {
+/**
+ * Signs arbitrary claims as an ES256K JWT with `privateKey`, embedding its public JWK (for forging bad
+ * assertions). `headerJwk` replaces the embedded JWK (it must still describe the same key for the
+ * signature to verify, e.g. a zero-padded coordinate).
+ */
+export function signRawAssertion(privateKey: `0x${string}`, claims: Record<string, unknown>, headerJwk?: Record<string, string>): string {
   const pub = Buffer.from(privateKeyToAccount(privateKey).publicKey.slice(2), "hex");
   const jwk = { kty: "EC", crv: "secp256k1", x: base64url.encode(pub.subarray(1, 33)), y: base64url.encode(pub.subarray(33)) };
-  const header = base64url.encode(JSON.stringify({ alg: "ES256K", typ: "JWT", jwk }));
+  const header = base64url.encode(JSON.stringify({ alg: "ES256K", typ: "JWT", jwk: headerJwk ?? jwk }));
   const payload = base64url.encode(JSON.stringify(claims));
   const key = createPrivateKey({ key: { ...jwk, d: base64url.encode(Buffer.from(privateKey.slice(2), "hex")) }, format: "jwk" });
   const signature = sign("sha256", Buffer.from(`${header}.${payload}`), { key, dsaEncoding: "ieee-p1363" });

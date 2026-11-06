@@ -49,6 +49,23 @@ describe("verifyAgentAssertion", () => {
     expect(error.description).toMatch(/iss/);
   });
 
+  it("assertion whose jwk has a zero-padded coordinate is rejected as invalid_grant", async () => {
+    const privateKey = generatePrivateKey();
+    const { address, publicKey } = privateKeyToAccount(privateKey);
+    const pub = Buffer.from(publicKey.slice(2), "hex");
+    const paddedJwk = {
+      kty: "EC",
+      crv: "secp256k1",
+      x: Buffer.concat([Buffer.from([0]), pub.subarray(1, 33)]).toString("base64url"),
+      y: pub.subarray(33).toString("base64url"),
+    };
+    const now = Math.floor(Date.now() / 1000);
+    const claims = { iss: address, sub: "uaid:aid:x", aud: audience, jti: "jti-padded", iat: now, exp: now + 300, mandateHash: MANDATE };
+
+    const error = await rejection(verifyAgentAssertion(signRawAssertion(privateKey, claims, paddedJwk), { audience }));
+    expect(error.code).toBe("invalid_grant");
+  });
+
   it("assertion with a tampered payload is rejected", async () => {
     const privateKey = generatePrivateKey();
     const assertion = await signAgentAssertion({ privateKey, uaid: "uaid:aid:x", audience, mandateHash: MANDATE });

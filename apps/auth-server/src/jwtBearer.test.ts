@@ -2,7 +2,8 @@ import { type AccessTokenClaims, ROLE_SCOPES, signAgentAssertion } from "@cashet
 import type { Application } from "express";
 import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT, type JSONWebKeySet } from "jose";
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CLOCK_SKEW_SECONDS } from "./assertion.js";
 import { JtiReplayCache, JWT_BEARER_GRANT, handleJwtBearerGrant } from "./jwtBearer.js";
 import { InMemoryKyaReader } from "./kya.js";
 import { ISSUER, MANDATE, newAgent, RESOURCE, type TestAgent, tempKeys, testApp } from "./test/fixtures.js";
@@ -32,6 +33,10 @@ async function verifyWithJwks(app: Application, token: string) {
 }
 
 describe("POST /token (jwt-bearer)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("jwt-bearer issues a token with seller scopes for a level-2 seller", async () => {
     const { app, kya } = await testApp();
     const seller = newAgent(1, 2, {}, kya);
@@ -143,49 +148,80 @@ describe("POST /token (jwt-bearer)", () => {
     expect(claims.scope).toBe("receivable:read credit:read");
   });
 
-  it("kya_evidence from the configured issuer raises the level to 3", async () => {
-    const skyfire = await generateKeyPair("ES256");
-    const skyfireIssuer = "https://skyfire.example";
+  it("jti replay is rejected inside the clock-skew window after exp", async () => {
     const kya = new InMemoryKyaReader();
-    const worker = newAgent(3, 1, {}, kya);
-    const deps = {
-      kya,
-      keys: await tempKeys(),
-      issuer: ISSUER,
-      resource: RESOURCE,
-      jti: new JtiReplayCache(),
-      kyaEvidence: {
-        issuer: skyfireIssuer,
-        keys: createLocalJWKSet({ keys: [{ ...(await exportJWK(skyfire.publicKey)), alg: "ES256" }] }),
-      },
-    };
-    const evidence = await new SignJWT({ sub: worker.address })
-      .setProtectedHeader({ alg: "ES256", typ: "kya+jwt" })
-      .setIssuer(skyfireIssuer)
-      .setAudience(ISSUER.href)
-      .setIssuedAt()
-      .setExpirationTime("5m")
-      .sign(skyfire.privateKey);
+    const seller = newAgent(1, 2, {}, kya);
+    const deps = { kya, keys: await tempKeys(), issuer: ISSUER, resource: RESOURCE, jti: new JtiReplayCache() };
+    const assertion = await assertionFor(seller);
+    const body = { grant_type: JWT_BEARER_GRANT, assertion, resource: RESOURCE.href };
+    const { exp } = JSON.parse(Buffer.from(assertion.split(".")[1]!, "base64url").toString()) as { exp: number };
 
-    const raised = await handleJwtBearerGrant(deps, {
-      grant_type: JWT_BEARER_GRANT,
-      assertion: await assertionFor(worker, { kyaEvidence: evidence }),
-      resource: RESOURCE.href,
+    await handleJwtBearerGrant(deps, body);
+    // Past exp but still accepted by the skew tolerance: the jti must still be remembered.
+    vi.spyOn(Date, "now").mockReturnValue((exp + 10) * 1000);
+    expect(exp + 10).toBeLessThan(exp + CLOCK_SKEW_SECONDS);
+    await expect(handleJwtBearerGrant(deps, body)).rejects.toMatchObject({ code: "invalid_grant", description: expect.stringMatching(/jti/) });
+  });
+
+  describe("kya_evidence", () => {
+    const skyfireIssuer = "https://skyfire.example";
+
+    async function evidenceSetup() {
+      const skyfire = await generateKeyPair("ES256");
+      const kya = new InMemoryKyaReader();
+      const worker = newAgent(3, 1, {}, kya);
+      const deps = {
+        kya,
+        keys: await tempKeys(),
+        issuer: ISSUER,
+        resource: RESOURCE,
+        jti: new JtiReplayCache(),
+        kyaEvidence: {
+          issuer: skyfireIssuer,
+          keys: createLocalJWKSet({ keys: [{ ...(await exportJWK(skyfire.publicKey)), alg: "ES256" }] }),
+        },
+      };
+      const evidence = (sub: string, signer = skyfire.privateKey) =>
+        new SignJWT({ sub })
+          .setProtectedHeader({ alg: "ES256", typ: "kya+jwt" })
+          .setIssuer(skyfireIssuer)
+          .setAudience(ISSUER.href)
+          .setIssuedAt()
+          .setExpirationTime("5m")
+          .sign(signer);
+      const grant = async (kyaEvidence: string) =>
+        handleJwtBearerGrant(deps, {
+          grant_type: JWT_BEARER_GRANT,
+          assertion: await assertionFor(worker, { kyaEvidence }),
+          resource: RESOURCE.href,
+        });
+      return { worker, evidence, grant };
+    }
+
+    it("kya_evidence from the configured issuer raises the level to 3", async () => {
+      const { worker, evidence, grant } = await evidenceSetup();
+
+      expect((await grant(await evidence(worker.address))).scope).toBe(ROLE_SCOPES[3]!.join(" "));
+      expect((await grant(await evidence(worker.address.toLowerCase()))).scope).toBe(ROLE_SCOPES[3]!.join(" "));
+      expect((await grant(await evidence(worker.uaid))).scope).toBe(ROLE_SCOPES[3]!.join(" "));
     });
-    expect(raised.scope).toBe(ROLE_SCOPES[3]!.join(" "));
 
-    const forged = await new SignJWT({ sub: worker.address })
-      .setProtectedHeader({ alg: "ES256", typ: "kya+jwt" })
-      .setIssuer(skyfireIssuer)
-      .setAudience(ISSUER.href)
-      .setExpirationTime("5m")
-      .sign((await generateKeyPair("ES256")).privateKey);
-    await expect(
-      handleJwtBearerGrant(deps, {
-        grant_type: JWT_BEARER_GRANT,
-        assertion: await assertionFor(worker, { kyaEvidence: forged }),
-        resource: RESOURCE.href,
-      }),
-    ).rejects.toMatchObject({ code: "KYA_FAIL" });
+    it("kya_evidence signed by an unknown key is rejected with KYA_FAIL", async () => {
+      const { worker, evidence, grant } = await evidenceSetup();
+      const forged = await evidence(worker.address, (await generateKeyPair("ES256")).privateKey);
+
+      await expect(grant(forged)).rejects.toMatchObject({ code: "KYA_FAIL" });
+    });
+
+    it("kya_evidence issued for another agent is rejected with KYA_FAIL", async () => {
+      const { evidence, grant } = await evidenceSetup();
+      const someoneElse = newAgent(3, 2);
+
+      await expect(grant(await evidence(someoneElse.address))).rejects.toMatchObject({
+        code: "KYA_FAIL",
+        description: expect.stringMatching(/sub/),
+      });
+      await expect(grant(await evidence(someoneElse.uaid))).rejects.toMatchObject({ code: "KYA_FAIL" });
+    });
   });
 });
