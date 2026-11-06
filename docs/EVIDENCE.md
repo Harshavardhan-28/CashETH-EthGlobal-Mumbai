@@ -90,3 +90,32 @@ AssocProbe: [0.0.11338193](https://hashscan.io/testnet/contract/0.0.11338193) (`
 The pull's HTS child transfer (`1793963653.433925105`) debits the operator with `is_approval: true`, i.e. the probe spent the operator's HTS allowance; 500,000 of the 1,000,000 allowance remains.
 
 Findings for later tasks: a constructor that calls `associate()` costs ~1.0M gas in total (gas limit for deploys with association: budget ~1.5M); a facade `approve` uses ~727k gas, so set ~1.1M; `transferFrom`/`transfer` from a contract are cheap (~43k).
+
+## Spike S4: HSS self-scheduled contract call (HIP-1215)
+
+`AlarmProbe` asks the Hedera Schedule Service (`0x16b`) to call its own `ring(nonce)` 90 seconds later; the network executed it at the requested consensus second with the probe as `msg.sender` (`ring` requires `msg.sender == address(this)`). A second schedule (600 s) was deleted with `deleteSchedule` before it fired. Produced by `contracts/script/02_DeploySpikeS4.s.sol` and `scripts/spikes/s4-hss.ts`; machine-readable record in `deployments/testnet/spike-s4.json`.
+
+AlarmProbe: [0.0.11338265](https://hashscan.io/testnet/contract/0.0.11338265) (`0xF0D452537736187b0793D3caBC7bb7E7478C9F74`), funded with 5 HBAR.
+
+| Step | Transaction | Gas limit | Gas used |
+| --- | --- | --- | --- |
+| deploy `AlarmProbe` | [0.0.7314364@1793963937.665626821](https://hashscan.io/testnet/transaction/0.0.7314364@1793963937.665626821) | 442,393 | 295,379 |
+| fund 5 HBAR through `receive()` | [0.0.7314364@1793963939.125757865](https://hashscan.io/testnet/transaction/0.0.7314364@1793963939.125757865) | 62,300 | 21,067 |
+| `schedule(90)` → schedule [0.0.11338268](https://hashscan.io/testnet/schedule/0.0.11338268) | [0.0.7314364@1793963948.917566541](https://hashscan.io/testnet/transaction/0.0.7314364@1793963948.917566541) | 2,134,962 | 1,458,281 |
+| network executes `ring(0)` (scheduled `CONTRACTCALL`, `SUCCESS`) | [1793964046.045736810](https://hashscan.io/testnet/transaction/1793964046.045736810) | 200,000 | 44,893 |
+| `schedule(600)` → schedule [0.0.11338283](https://hashscan.io/testnet/schedule/0.0.11338283) | [0.0.7314364@1793964052.726185880](https://hashscan.io/testnet/transaction/0.0.7314364@1793964052.726185880) | 2,111,821 | 1,441,193 |
+| `cancel(0.0.11338283)` (`deleteSchedule`) | [0.0.7314364@1793964061.192393677](https://hashscan.io/testnet/transaction/0.0.7314364@1793964061.192393677) | 59,277 | 39,774 |
+
+Executed schedule `0.0.11338268` (mirror `/schedules/0.0.11338268`): `expiration_time` 1793964046.000000000, `executed_timestamp` 1793964046.045736810, `wait_for_expiry: true`, `creator_account_id` 0.0.11333252 (operator), `payer_account_id` 0.0.11338265 (the probe). `hasScheduleCapacity(expiry, 200000)` returned `true` before each schedule.
+
+`Rang` log on `0.0.11338265` at consensus 1793964046.045736810 (EVM hash `0xc836a6e6ab63c87647d4958c6084e89f32a462984b14eedc3046b6f82614e042`): `Rang(nonce = 0, at = 1793964045)`; `rings()` = 1 afterwards. Calldata `0xec73ae46…00` = `ring(0)`.
+
+Deleted schedule `0.0.11338283` (mirror `/schedules/0.0.11338283`): `deleted: true`, `executed_timestamp: null`.
+
+Costs: the scheduled execution was paid by the probe (0.05566732 HBAR, probe balance 5 → 4.94433268 HBAR); each `schedule()` cost the operator ~1.81 HBAR (≈1.45M gas).
+
+Findings for later tasks:
+- The Hashio relay cannot estimate gas for a contract creation that carries value (`eth_estimateGas` → "to field must not be empty"; the same creation with value 0 estimates fine), and Solidity forbids `gas` on `new`. Fund HBAR-holding contracts through `receive()` in a second transaction with an explicit gas limit (forge uses an explicit call `gas` as the tx limit), or send the creation with an explicit gas limit outside forge.
+- `scheduleCall` is expensive: ~1.45M gas per call (relay estimate ×1.3 ≈ 2.1M limit). `deleteSchedule` is cheap (~40k).
+- The scheduled call ran in the first consensus round after the expiry second (46 ms after it); `block.timestamp` inside the call was 1 second earlier than the expiry second, so code run by a schedule must not require `block.timestamp >= expiry`.
+- The mirror contract result for the executed call reports `from` as the relay account (`0x…6f9bbc` = 0.0.7314364, the payer in the transaction id), but in the EVM `msg.sender` was the probe, as the passing `msg.sender == address(this)` check shows.

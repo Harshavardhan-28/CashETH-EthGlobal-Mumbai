@@ -68,18 +68,22 @@ export async function txRecord(hash: Hex, label?: string): Promise<TxRecord> {
 
 /**
  * Contract write from the operator with gas = 1.3x the relay estimate (Hedera charges at least 80%
- * of the limit). Waits for the receipt and fails loudly with the mirror-node reason.
+ * of the limit) unless `gas` is given. Waits for the receipt and fails loudly with the mirror-node reason.
  */
 export async function send(
   label: string,
-  request: { address: Address; abi: Abi; functionName: string; args: readonly unknown[] },
+  request: { address: Address; abi: Abi; functionName: string; args: readonly unknown[]; gas?: bigint },
 ): Promise<TxRecord & { gas: Gas }> {
-  const estimate = await pub.estimateContractGas({ ...request, account: wallet.account! } as Parameters<
-    typeof pub.estimateContractGas
-  >[0]);
+  const gas =
+    request.gas ??
+    ((await pub.estimateContractGas({ ...request, account: wallet.account! } as Parameters<
+      typeof pub.estimateContractGas
+    >[0])) *
+      13n) /
+      10n;
   const hash = await wallet.writeContract({
     ...request,
-    gas: (estimate * 13n) / 10n,
+    gas,
     account: wallet.account!,
     chain: operator.chain,
   } as Parameters<WalletClient["writeContract"]>[0]);
@@ -97,9 +101,12 @@ export async function send(
 
 /**
  * Runs `contracts/script/<script>` through the relay (the S1 deploy path) and returns the created
- * contracts by name. `--skip-simulation`: forge's replay cannot execute HTS/HSS system contracts.
+ * contracts by name plus any other broadcast transactions (calls). `--skip-simulation`: forge's replay cannot execute HTS/HSS system contracts.
  */
-export async function forgeDeploy(script: string, extraEnv: Record<string, string> = {}): Promise<Map<string, Deployed>> {
+export async function forgeDeploy(
+  script: string,
+  extraEnv: Record<string, string> = {},
+): Promise<{ created: Map<string, Deployed>; calls: (TxRecord & { gas: Gas })[] }> {
   execFileSync(
     process.env.FORGE ?? "forge",
     [
@@ -119,23 +126,29 @@ export async function forgeDeploy(script: string, extraEnv: Record<string, strin
     { cwd: CONTRACTS_DIR, stdio: "inherit", env: { ...process.env, ...extraEnv } },
   );
   const broadcast = JSON.parse(readFileSync(`${CONTRACTS_DIR}/broadcast/${script}/296/run-latest.json`, "utf8")) as {
-    transactions: { contractName: string }[];
-    receipts: { status: string; contractAddress: Address; transactionHash: Hex }[];
+    transactions: { transactionType: string; contractName: string | null; function: string | null }[];
+    receipts: { status: string; contractAddress: Address | null; transactionHash: Hex }[];
   };
-  const byName = new Map<string, Deployed>();
+  const created = new Map<string, Deployed>();
+  const calls: (TxRecord & { gas: Gas })[] = [];
   for (const [i, t] of broadcast.transactions.entries()) {
     const receipt = broadcast.receipts[i];
-    if (!receipt || receipt.status !== "0x1") throw new Error(`${t.contractName} creation did not succeed`);
+    const label = `${t.contractName ?? "call"} ${t.function ?? t.transactionType}`;
+    if (!receipt || receipt.status !== "0x1") throw new Error(`${label} did not succeed`);
+    if (t.transactionType !== "CREATE" || !receipt.contractAddress || !t.contractName) {
+      calls.push({ ...(await txRecord(receipt.transactionHash, label)), gas: await gasOf(receipt.transactionHash) });
+      continue;
+    }
     const address = getAddress(receipt.contractAddress);
     const info = await mirror.waitFor(() => mirrorGet<{ contract_id: string }>(`/contracts/${address}`));
-    byName.set(t.contractName, {
+    created.set(t.contractName, {
       address,
       contractId: info.contract_id,
       tx: await txRecord(receipt.transactionHash),
       gas: await gasOf(receipt.transactionHash),
     });
   }
-  return byName;
+  return { created, calls };
 }
 
 export function readJson<T>(path: string): T {

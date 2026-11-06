@@ -57,7 +57,7 @@ const operatorAddress = wallet.account!.address;
 
 async function deploy(): Promise<S2State> {
   console.log("1. deploy: forge script 01_DeploySpikeS2 through the Hashio relay");
-  const created = await forgeDeploy("01_DeploySpikeS2.s.sol", { USDC_EVM_ADDRESS: usdc });
+  const { created } = await forgeDeploy("01_DeploySpikeS2.s.sol", { USDC_EVM_ADDRESS: usdc });
   const probe = created.get("AssocProbe");
   if (!probe) throw new Error("broadcast has no AssocProbe");
   const state: S2State = {

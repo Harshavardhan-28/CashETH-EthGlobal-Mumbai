@@ -1,0 +1,94 @@
+{
+  "network": "testnet",
+  "chainId": 296,
+  "deployPath": "forge script --broadcast --legacy --slow --skip-simulation via Hashio JSON-RPC relay",
+  "operator": "0x8Ac63d78d72Faa40B4fB04945Ea37124ee93E97e",
+  "probe": {
+    "address": "0xF0D452537736187b0793D3caBC7bb7E7478C9F74",
+    "contractId": "0.0.11338265",
+    "tx": {
+      "hash": "0x76d0731dacaf02d272974a172ef7023b720bab737b454dc8f95601f6e74779fe",
+      "transactionId": "0.0.7314364@1793963937.665626821",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963937.665626821"
+    },
+    "gas": {
+      "limit": 442393,
+      "used": 295379,
+      "consumed": 295379
+    }
+  },
+  "funding": {
+    "label": "fund probe with 5 HBAR via receive()",
+    "hash": "0x514f944c36f181c2ac90a95203fd8984239a8a1416351356cd0fcc4ae98b78eb",
+    "transactionId": "0.0.7314364@1793963939.125757865",
+    "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963939.125757865",
+    "gas": {
+      "limit": 62300,
+      "used": 21067,
+      "consumed": 21067
+    }
+  },
+  "ring": {
+    "scheduleAddress": "0x0000000000000000000000000000000000aD021C",
+    "scheduleId": "0.0.11338268",
+    "hashscan": "https://hashscan.io/testnet/schedule/0.0.11338268",
+    "nonce": "0",
+    "expirySecond": "1793964046",
+    "scheduleTx": {
+      "label": "probe.schedule(90)",
+      "hash": "0x523bba3d8b34bd7b95543fd9a853447567aa4f490f6924284df7a7fffa8bb9c5",
+      "transactionId": "0.0.7314364@1793963948.917566541",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793963948.917566541",
+      "gas": {
+        "limit": 2134962,
+        "used": 1458281,
+        "consumed": 1458281
+      }
+    },
+    "executedTimestamp": "1793964046.045736810",
+    "executedTx": {
+      "transactionId": "0.0.7314364@1793963948.917566541",
+      "name": "CONTRACTCALL",
+      "result": "SUCCESS",
+      "scheduled": true,
+      "hashscan": "https://hashscan.io/testnet/transaction/1793964046.045736810"
+    },
+    "rang": {
+      "nonce": "0",
+      "at": "1793964045",
+      "timestamp": "1793964046.045736810",
+      "transactionHash": "0xc836a6e6ab63c87647d4958c6084e89f32a462984b14eedc3046b6f82614e042"
+    },
+    "rings": "1"
+  },
+  "cancel": {
+    "scheduleAddress": "0x0000000000000000000000000000000000AD022b",
+    "scheduleId": "0.0.11338283",
+    "hashscan": "https://hashscan.io/testnet/schedule/0.0.11338283",
+    "nonce": "1",
+    "expirySecond": "1793964658",
+    "scheduleTx": {
+      "label": "probe.schedule(600)",
+      "hash": "0x9ed1fad2ad46caf56b1eb01d611d17d8c0a4d97562d6383b92ceb3b36bbe4df6",
+      "transactionId": "0.0.7314364@1793964052.726185880",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793964052.726185880",
+      "gas": {
+        "limit": 2111821,
+        "used": 1441193,
+        "consumed": 1441193
+      }
+    },
+    "cancelTx": {
+      "label": "probe.cancel(0.0.11338283)",
+      "hash": "0x1728e90d05dfed12c5f017953a7241b9f5eb40c7aec09f08522a798893a4b89d",
+      "transactionId": "0.0.7314364@1793964061.192393677",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793964061.192393677",
+      "gas": {
+        "limit": 59277,
+        "used": 39774,
+        "consumed": 39774
+      }
+    },
+    "deleted": true
+  }
+}
