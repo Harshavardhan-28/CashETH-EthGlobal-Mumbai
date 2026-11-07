@@ -2,26 +2,26 @@
   "network": "testnet",
   "chainId": 296,
   "kyaRegistry": {
-    "address": "0x81d1935e41705DCD4c4499285c74c955626673dD",
-    "contractId": "0.0.11341323",
+    "address": "0xdcA2F5d031cb969ECD9A1e780Ed00D4dB70F5877",
+    "contractId": "0.0.11348136",
     "tx": {
-      "hash": "0x01d1c7d0ca82c30d16db87ed0c22c32fd2bfedcfae7d5527462353af74b3d04a",
-      "transactionId": "0.0.7314364@1793978954.588950176",
-      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793978954.588950176"
+      "hash": "0xead87b372c42be77e2ea2fdbda34e6b6055b0beb73a2f02daaadcc39573cca7b",
+      "transactionId": "0.0.7314364@1794014367.270197396",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1794014367.270197396"
     },
     "gas": {
-      "limit": 1060174,
-      "used": 720907,
-      "consumed": 720907
+      "limit": 1073111,
+      "used": 730421,
+      "consumed": 730421
     }
   },
   "receivableRegistry": {
-    "address": "0x0D118059D67cbe738aD86C4B8c25cdf06837791f",
-    "contractId": "0.0.11341326",
+    "address": "0x4DA6004cBB929855B31379D1985f0B1E27C47e6e",
+    "contractId": "0.0.11348138",
     "tx": {
-      "hash": "0x14a6b7c9e8a89d9e98d26c866867235b676a3ea5feed6a810769915976b914e6",
-      "transactionId": "0.0.7314364@1793978957.638929669",
-      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793978957.638929669"
+      "hash": "0x03c9cbbb218a38d1e0825746ffb5d69a8480da65b84196c081bc2c29adb48a4a",
+      "transactionId": "0.0.7314364@1794014369.672600737",
+      "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1794014369.672600737"
     },
     "gas": {
       "limit": 2158087,
@@ -38,9 +38,9 @@
       "ownerGroupLabel": "seller-co",
       "tx": {
         "label": "KYARegistry.register(seller)",
-        "hash": "0xdb944fa4129134549005c0d3545f3a13bc180664ce02db9e286bbc16708e47e3",
-        "transactionId": "0.0.7314364@1793978969.206969469",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793978969.206969469",
+        "hash": "0x56ea05320baeb04c178902e6362671caf521ba4aee2974907de3f6eb6686bc0e",
+        "transactionId": "0.0.7314364@1794014379.368196558",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1794014379.368196558",
         "gas": {
           "limit": 167944,
           "used": 115769,
@@ -56,9 +56,9 @@
       "ownerGroupLabel": "buyer-co",
       "tx": {
         "label": "KYARegistry.register(buyer)",
-        "hash": "0x31ac08a3e5f6deac36346e7bb819e7ae46abe121e6aa35c738e96f5fb7b5e0c8",
-        "transactionId": "0.0.7314364@1793979051.992267965",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979051.992267965",
+        "hash": "0x37c4ce65381ecff5a931401555d86890f22cd30e43733e12a9dfdd498a6833b6",
+        "transactionId": "0.0.7314364@1794014388.986572588",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1794014388.986572588",
         "gas": {
           "limit": 167944,
           "used": 115769,
@@ -74,9 +74,9 @@
       "ownerGroupLabel": "seller-co",
       "tx": {
         "label": "KYARegistry.register(workerResearch)",
-        "hash": "0x231657c392e222603a3e21fa6ec3ae3a5b6d5d27a680f1341b0c47719666f0d8",
-        "transactionId": "0.0.7314364@1793979068.059888846",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979068.059888846",
+        "hash": "0x5cff3e70590e24c34c8c1c2ed82c5bbe60650e2b8a2056da44bfdb4e9849e169",
+        "transactionId": "0.0.7314364@1794014397.651200970",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1794014397.651200970",
         "gas": {
           "limit": 167928,
           "used": 115757,
@@ -92,9 +92,9 @@
       "ownerGroupLabel": "seller-co",
       "tx": {
         "label": "KYARegistry.register(workerCompute)",
-        "hash": "0xf59af609c7347db0805a5fdc3fa94227ceb63634718ac7d4e83579fab0d3e785",
-        "transactionId": "0.0.7314364@1793979111.064268848",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979111.064268848",
+        "hash": "0xfced3022affd1031413a6c7499c4c698c1798e1eeda7769b658c32411dc63a43",
+        "transactionId": "0.0.7314364@1794014401.636718209",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1794014401.636718209",
         "gas": {
           "limit": 167944,
           "used": 115769,
@@ -110,9 +110,9 @@
       "ownerGroupLabel": "lender-a",
       "tx": {
         "label": "KYARegistry.register(lenderA)",
-        "hash": "0x9f1ca91784dedee890ab7ff60c3855c11a5671ecf2fae36a2ddb5520b28608bf",
-        "transactionId": "0.0.7314364@1793979122.903942077",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979122.903942077",
+        "hash": "0x204d16289552c5e0540168bcf941b73e11994d56f9d76f9116b9e3153768fe56",
+        "transactionId": "0.0.7314364@1794014410.188535868",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1794014410.188535868",
         "gas": {
           "limit": 167944,
           "used": 115769,
@@ -128,9 +128,9 @@
       "ownerGroupLabel": "lender-b",
       "tx": {
         "label": "KYARegistry.register(lenderB)",
-        "hash": "0x6e1efddaecdfc089992b02326ffe7d8c1e154b7e6f49ed28a52a8557463b3fec",
-        "transactionId": "0.0.7314364@1793979276.242368379",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979276.242368379",
+        "hash": "0x3aaaf7ca6c1d88a14da5ce5f15bbacc2b3167601e5bea6bfed3be196c888a1f4",
+        "transactionId": "0.0.7314364@1794014420.001875573",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1794014420.001875573",
         "gas": {
           "limit": 167928,
           "used": 115757,
@@ -146,9 +146,9 @@
       "ownerGroupLabel": "lender-c",
       "tx": {
         "label": "KYARegistry.register(lenderC)",
-        "hash": "0x6904bb947525c045409ffebbac9d49243e075630bec10d98cc68d15db2390f79",
-        "transactionId": "0.0.7314364@1793979300.479479344",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1793979300.479479344",
+        "hash": "0x1df7fd9ce976199e7b8fb37f7fd093c41b771d853564d128f00d0c0b57280721",
+        "transactionId": "0.0.7314364@1794014427.353201144",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.7314364@1794014427.353201144",
         "gas": {
           "limit": 167944,
           "used": 115769,

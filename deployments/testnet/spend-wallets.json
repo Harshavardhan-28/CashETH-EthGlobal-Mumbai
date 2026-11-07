@@ -88,21 +88,21 @@
     "status": "granted",
     "token": "0.0.429274",
     "spender": {
-      "contractId": "0.0.11341529",
-      "evmAddress": "0x38ACd9F1FEED870b2507b1421bE887d9a751d9e0"
+      "contractId": "0.0.11348156",
+      "evmAddress": "0xF8F9CB3AB708a6e2cDeC938C6B485f3889d7Dd7d"
     },
     "units": "1000000000",
     "wallets": {
       "SPEND_WALLET_RESEARCH": {
-        "transactionId": "0.0.11333252@1793983019.448799343",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793983019.448799343",
-        "spender": "0.0.11341529",
+        "transactionId": "0.0.11333252@1794014581.811744035",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1794014581.811744035",
+        "spender": "0.0.11348156",
         "units": "1000000000"
       },
       "SPEND_WALLET_COMPUTE": {
-        "transactionId": "0.0.11333252@1793983022.085110936",
-        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1793983022.085110936",
-        "spender": "0.0.11341529",
+        "transactionId": "0.0.11333252@1794014582.180068736",
+        "hashscan": "https://hashscan.io/testnet/transaction/0.0.11333252@1794014582.180068736",
+        "spender": "0.0.11348156",
         "units": "1000000000"
       }
     },
@@ -117,5 +117,5 @@
       }
     }
   },
-  "updatedAt": "2026-11-06T16:37:28.414Z"
+  "updatedAt": "2026-11-07T01:23:13.986Z"
 }
