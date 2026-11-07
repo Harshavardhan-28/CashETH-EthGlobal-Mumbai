@@ -131,7 +131,7 @@ export function AgentPicker({ agents, status, lastSeen, nowMs, unknown, onPick }
                   <th>Role</th>
                   <th>Address</th>
                   <th>KYA</th>
-                  <th>Trust score</th>
+                  <th>Credit score</th>
                   <th>Last MCP call</th>
                   <th aria-label="Open" />
                 </tr>

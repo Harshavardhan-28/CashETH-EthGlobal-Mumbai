@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import a from "@/components/admin/Admin.module.css";
 import { Avatar, Empty, ROLE_COLOR } from "@/components/admin/primitives";
-import { initials, relativeTime, shortAddress } from "@/lib/admin/format";
+import { formatOnTime, formatScore, initials, relativeTime, scoreBand, shortAddress } from "@/lib/admin/format";
 import { owedOn, ratio, sellerSummary, workerBudgets, type Invoice, type SellerSummary, type WorkerBudget } from "@/lib/dashboard/derive";
 import { AgentDetails, Connections, Panel, RecentCalls, ToolUsage, WalletPanel } from "./console";
 import d from "./Dashboard.module.css";
@@ -91,8 +91,9 @@ function PaybackKV({ s, me }: { s: SellerSummary; me: RoleViewProps["me"] }) {
         { label: "Received from buyers", value: usd(s.receivedFromBuyers) },
         { label: "Paid to lenders", value: usd(s.paidToLenders), hint: "principal + fee" },
         { label: "Kept by you", value: usd(s.keptBySeller), hint: "the remainder after lenders" },
-        { label: "On-time repayment", value: pct(me.onTimePct, 0) },
-        { label: "Trust score · tier", value: `${Math.round(me.score)} / 100 · ${me.tier}` },
+        { label: "On-time repayment", value: formatOnTime(me) },
+        { label: "Credit score", value: formatScore(me.score), hint: `${scoreBand(me.score).label} · ${scoreBand(me.score).advance}` },
+        { label: "Lender tier you qualify for", value: me.tier === "none" ? "None yet" : me.tier },
       ]}
     />
   );

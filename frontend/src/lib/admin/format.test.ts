@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatUsdc, humanizeCode, initials, relativeTime, shortAddress } from "./format";
+import { formatUsdc, humanizeCode, initials, relativeTime, shortAddress, SCORE_MAX, formatScore, scoreBand, formatOnTime } from "./format";
 
 describe("formatUsdc", () => {
   it("formats base units with 2 decimals", () => {
@@ -63,5 +63,29 @@ describe("humanizeCode", () => {
   });
   it("falls back to sentence case", () => {
     expect(humanizeCode("SOME_NEW_CODE")).toBe("Some new code");
+  });
+});
+
+describe("credit score (engine scale, not a percentage)", () => {
+  it("formats against the best possible score of 750", () => {
+    expect(SCORE_MAX).toBe(750);
+    expect(formatScore(623)).toBe("623 / 750");
+    expect(formatScore(600.4)).toBe("600 / 750");
+    expect(formatScore(-40)).toBe("-40 / 750");
+    expect(formatScore(Number.NaN)).toBe("—");
+  });
+
+  it("uses the engine's advance bands", () => {
+    expect(scoreBand(750)).toMatchObject({ label: "Excellent", advance: "80% advance" });
+    expect(scoreBand(700).label).toBe("Excellent");
+    expect(scoreBand(623)).toMatchObject({ label: "Good", advance: "75% advance" });
+    expect(scoreBand(500)).toMatchObject({ label: "Fair", advance: "60% advance" });
+    expect(scoreBand(499)).toMatchObject({ label: "Below 500", advance: "credit declined", tone: "bad" });
+  });
+
+  it("says 'No history' instead of 0% when nothing was ever repaid", () => {
+    expect(formatOnTime({ onTimePct: 0, receivablesRepaid: 0, receivablesDefaulted: 0 })).toBe("No history");
+    expect(formatOnTime({ onTimePct: 0, receivablesRepaid: 0, receivablesDefaulted: 1 })).toBe("0%");
+    expect(formatOnTime({ onTimePct: 66.7, receivablesRepaid: 2, receivablesDefaulted: 1 })).toBe("67%");
   });
 });

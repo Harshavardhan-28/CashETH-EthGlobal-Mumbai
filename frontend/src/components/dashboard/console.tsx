@@ -3,7 +3,7 @@ import { useMemo, type ReactNode } from "react";
 import a from "@/components/admin/Admin.module.css";
 import { Avatar, Empty, ROLE_COLOR, jobOf } from "@/components/admin/primitives";
 import { HCS_TOPIC_ID, type AgentStats, type LenderYield } from "@/lib/admin/api";
-import { formatUsdc, initials, relativeTime, shortAddress } from "@/lib/admin/format";
+import { formatScore, formatUsdc, initials, relativeTime, scoreBand, shortAddress } from "@/lib/admin/format";
 import { toolOf } from "@/lib/dashboard/derive";
 import { formatHbar } from "@/lib/dashboard/live";
 import d from "./Dashboard.module.css";
@@ -103,7 +103,7 @@ export function AgentDetails({ me, lenders, wallet, log, nowMs }: Pick<RoleViewP
           { label: "Hedera account", value: wallet.accountId ?? "—" },
           { label: "UAID", value: <span className={a.mono}>{me.uaid.length > 24 ? `${me.uaid.slice(0, 22)}…` : me.uaid}</span>, title: me.uaid },
           { label: "KYA level", value: `Level ${me.level}` },
-          { label: "Trust score", value: `${Math.round(me.score)} / 100${me.role === "seller" || me.role === "buyer" ? ` · ${me.tier} tier` : ""}` },
+          { label: "Credit score", value: `${formatScore(me.score)} · ${scoreBand(me.score).label}` },
           { label: "Last MCP call", value: log[0] ? relativeTime(log[0].ts, nowMs) : "Never" },
         ]}
       />

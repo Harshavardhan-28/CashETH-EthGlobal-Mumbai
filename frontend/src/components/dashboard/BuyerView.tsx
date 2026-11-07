@@ -2,12 +2,12 @@ import { useMemo } from "react";
 import a from "@/components/admin/Admin.module.css";
 import { Empty } from "@/components/admin/primitives";
 import type { AuditEvent } from "@/lib/admin/api";
-import { relativeTime } from "@/lib/admin/format";
+import { formatOnTime, formatScore, relativeTime, scoreBand } from "@/lib/admin/format";
 import { addU, buyerSummary, daysUntil, lc, outstanding, subU, type BuyerSummary, type Invoice } from "@/lib/dashboard/derive";
 import type { Wallet } from "@/lib/dashboard/live";
 import { AgentDetails, Connections, Panel, RecentCalls, ToolUsage, WalletPanel } from "./console";
 import d from "./Dashboard.module.css";
-import { DueLabel, Icons, InvoiceName, KV, Meter, Party, Proof, Stat, StateChip, pct, usd } from "./parts";
+import { DueLabel, Icons, InvoiceName, KV, Meter, Party, Proof, Stat, StateChip, usd } from "./parts";
 import type { RoleViewProps, SectionDef } from "./types";
 
 export const BUYER_NAV: SectionDef[] = [
@@ -135,11 +135,12 @@ function Record({ me }: { me: RoleViewProps["me"] }) {
   return (
     <KV
       rows={[
-        { label: "On-time payments", value: pct(me.onTimePct, 0) },
+        { label: "On-time payments", value: formatOnTime(me) },
         { label: "Invoices paid", value: String(me.receivablesRepaid) },
         { label: "Defaults", value: String(me.receivablesDefaulted) },
         { label: "Average days to pay", value: me.avgDaysToRepay ? `${me.avgDaysToRepay} d` : "—" },
-        { label: "Trust score · KYA level", value: `${Math.round(me.score)} / 100 · L${me.level}` },
+        { label: "Credit score", value: formatScore(me.score), hint: scoreBand(me.score).label },
+        { label: "KYA level", value: `Level ${me.level}` },
       ]}
     />
   );

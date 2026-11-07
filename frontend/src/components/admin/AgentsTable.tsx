@@ -16,7 +16,7 @@ export function AgentsTable({ rows, lenders, nowMs, onSelect }: Props) {
             <th>Agent</th>
             <th>Status</th>
             <th>Last action</th>
-            <th>Trust score</th>
+            <th>Credit score</th>
             <th>Money moved</th>
           </tr>
         </thead>

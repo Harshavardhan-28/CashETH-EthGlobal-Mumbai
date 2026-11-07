@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { AgentStats, LenderYield } from "@/lib/admin/api";
 import type { RunStatus } from "@/lib/admin/derive";
 import type { Actor, ActorRole } from "@/lib/admin/narrate";
+import { SCORE_MAX, scoreBand } from "@/lib/admin/format";
 import styles from "./Admin.module.css";
 
 export const ROLE_COLOR: Record<ActorRole, string> = {
@@ -69,14 +70,18 @@ export function StatusChip({ kind }: { kind: ChipKind }) {
   );
 }
 
+/** The engine's credit score (0 to 750, not a percentage): the bar fills relative to the best possible score. */
 export function ScoreBar({ score }: { score: number }) {
-  const pct = Math.max(0, Math.min(100, Math.round(score)));
+  const known = Number.isFinite(score);
+  const value = known ? Math.round(score) : 0;
+  const fill = known ? Math.max(0, Math.min(100, (value / SCORE_MAX) * 100)) : 0;
+  const band = scoreBand(value);
   return (
-    <span className={styles.score} aria-label={`Trust score ${pct} of 100`}>
+    <span className={styles.score} aria-label={known ? `Credit score ${value} of ${SCORE_MAX}, ${band.label}` : "Credit score unknown"} title={known ? `${band.label} · ${band.advance}` : undefined}>
       <span className={styles.track}>
-        <b style={{ width: `${pct}%` }} />
+        <b style={{ width: `${fill}%`, background: band.tone === "bad" ? "var(--err)" : band.tone === "warn" ? "var(--warn)" : undefined }} />
       </span>
-      {pct}
+      {known ? value : "—"}
     </span>
   );
 }

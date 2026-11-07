@@ -154,6 +154,21 @@ describe("lender console", () => {
   });
 });
 
+describe("credit score", () => {
+  it("shows the engine score out of 750 everywhere, never out of 100", () => {
+    const withScore = (): AdminData => ({ ...live(), agents: SAMPLE_AGENTS.map((a) => (a.label === "Seller" ? { ...a, score: 623 } : a)) });
+    renderAt(`#agent=${addrOf("Seller")}`, withScore);
+    const details = within(screen.getByRole("region", { name: "Agent details" }));
+    expect(details.getByText("623 / 750 · Good")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/\d+ \/ 100\b/);
+  });
+
+  it("the agent list bar reads the real score", () => {
+    renderAt("", () => ({ ...live(), agents: SAMPLE_AGENTS.map((a) => (a.label === "Seller" ? { ...a, score: 623 } : a)) }));
+    expect(screen.getByLabelText("Credit score 623 of 750, Good")).toBeInTheDocument();
+  });
+});
+
 describe("offline", () => {
   it("labels sample data and does not read a wallet", () => {
     renderAt(`#agent=${addrOf("Seller")}`, offline);

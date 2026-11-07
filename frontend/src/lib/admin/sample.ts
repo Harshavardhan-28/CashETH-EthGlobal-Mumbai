@@ -36,7 +36,7 @@ function agent(address: string, role: AgentStats["role"], label: string, extra: 
     role,
     label,
     level: 2,
-    score: 70,
+    score: 600, // engine base score: no repayment history
     tier: "none",
     onTimePct: 0,
     receivablesFunded: 0,
@@ -50,12 +50,12 @@ function agent(address: string, role: AgentStats["role"], label: string, extra: 
 }
 
 export const SAMPLE_AGENTS: AgentStats[] = [
-  agent(SELLER, "seller", "Seller", { level: 2, score: 71, tier: "low", onTimePct: 100, receivablesFunded: 3, receivablesRepaid: 2, avgDaysToRepay: 0.8 }),
-  agent(BUYER, "buyer", "Buyer", { level: 2, score: 82, tier: "low", onTimePct: 100, receivablesFunded: 3, receivablesRepaid: 2, avgDaysToRepay: 0.8 }),
-  agent(WORKER_1, "worker", "Worker 1", { level: 1, score: 68, spendByMerchant: { [DATA_API]: "3600000" } }),
-  agent(WORKER_2, "worker", "Worker 2", { level: 1, score: 64, spendByMerchant: { [SEARCH_API]: "4900000" } }),
-  agent(LENDER_A, "lender", "Lender A", { level: 3, score: 90, lenderReturnPct: 9.4 }),
-  agent(LENDER_B, "lender", "Lender B", { level: 3, score: 86, lenderReturnPct: 7.1 }),
+  agent(SELLER, "seller", "Seller", { level: 2, score: 630, tier: "low", onTimePct: 100, receivablesFunded: 3, receivablesRepaid: 2, avgDaysToRepay: 0.8 }),
+  agent(BUYER, "buyer", "Buyer", { level: 2, score: 630, tier: "low", onTimePct: 100, receivablesFunded: 3, receivablesRepaid: 2, avgDaysToRepay: 0.8 }),
+  agent(WORKER_1, "worker", "Worker 1", { level: 1, score: 600, spendByMerchant: { [DATA_API]: "3600000" } }),
+  agent(WORKER_2, "worker", "Worker 2", { level: 1, score: 600, spendByMerchant: { [SEARCH_API]: "4900000" } }),
+  agent(LENDER_A, "lender", "Lender A", { level: 3, score: 600, lenderReturnPct: 9.4 }),
+  agent(LENDER_B, "lender", "Lender B", { level: 3, score: 600, lenderReturnPct: 7.1 }),
 ];
 
 export const SAMPLE_LENDERS: LenderYield[] = [

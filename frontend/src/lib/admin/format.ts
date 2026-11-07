@@ -58,3 +58,30 @@ export function humanizeCode(code: string): string {
   const text = code.replace(/_+/g, " ").trim().toLowerCase();
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
+
+/**
+ * Credit score scale of `scoreReceivable` (packages/engine/src/score.ts), which `/agents` reports as `score`:
+ * base 600, +15 per on-time repayment (at most 10), -40 per late one, -200 per default. With the zero tenor the
+ * read API uses, the best possible score is 750; it can go below zero. It is not a percentage.
+ */
+export const SCORE_MAX = 750;
+
+/** The advance band the engine gives a score (same thresholds as `advanceFor`). */
+export function scoreBand(score: number): { label: string; advance: string; tone: "good" | "ok" | "warn" | "bad" } {
+  if (!Number.isFinite(score)) return { label: "Unknown", advance: "—", tone: "warn" };
+  if (score >= 700) return { label: "Excellent", advance: "80% advance", tone: "good" };
+  if (score >= 600) return { label: "Good", advance: "75% advance", tone: "ok" };
+  if (score >= 500) return { label: "Fair", advance: "60% advance", tone: "warn" };
+  return { label: "Below 500", advance: "credit declined", tone: "bad" };
+}
+
+/** "630 / 750"; "—" for a missing or non-numeric score. */
+export function formatScore(score: number): string {
+  return Number.isFinite(score) ? `${Math.round(score)} / ${SCORE_MAX}` : DASH;
+}
+
+/** On-time repayment share, or "No history" when the agent has never repaid or defaulted (the API reports 0 then). */
+export function formatOnTime(stats: { onTimePct: number; receivablesRepaid: number; receivablesDefaulted: number }): string {
+  if (stats.receivablesRepaid + stats.receivablesDefaulted === 0 && !stats.onTimePct) return "No history";
+  return Number.isFinite(stats.onTimePct) ? `${Math.round(stats.onTimePct)}%` : DASH;
+}

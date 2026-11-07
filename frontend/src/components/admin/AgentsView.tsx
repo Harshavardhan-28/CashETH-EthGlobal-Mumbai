@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { agentRows, type AgentRow } from "@/lib/admin/derive";
-import { formatUsdc, relativeTime, shortAddress } from "@/lib/admin/format";
+import { formatOnTime, formatScore, formatUsdc, relativeTime, shortAddress } from "@/lib/admin/format";
 import type { ActorRole } from "@/lib/admin/narrate";
 import styles from "./Admin.module.css";
 import { ActivityFeed } from "./ActivityFeed";
@@ -68,7 +68,7 @@ function AgentCard({ row, lenders, nowMs, go }: ViewProps & { row: AgentRow }) {
       </div>
       <div className={styles.agentStats}>
         <div>
-          <div className={styles.miniLabel}>Trust score</div>
+          <div className={styles.miniLabel}>Credit score</div>
           <ScoreBar score={row.stats.score} />
         </div>
         <div>
@@ -112,8 +112,8 @@ function AgentDetail({ row, items, lenders, range, onRange, nowMs, go }: ViewPro
       </PageHead>
       <section className={styles.tiles}>
         <Tile label="KYA level" value={`Level ${s.level}`} />
-        <Tile label="Trust score" value={`${Math.round(s.score)} / 100`} />
-        <Tile label="On-time repayment" value={`${Math.round(s.onTimePct)}%`} />
+        <Tile label="Credit score" value={formatScore(s.score)} />
+        <Tile label="On-time repayment" value={formatOnTime(s)} />
         <Tile label="Money moved" value={row.money} />
         <Tile label="Invoices funded" value={String(s.receivablesFunded)} />
         <Tile label="Invoices repaid" value={String(s.receivablesRepaid)} />
