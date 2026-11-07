@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import a from "@/components/admin/Admin.module.css";
 import { Avatar, Empty, ROLE_COLOR } from "@/components/admin/primitives";
 import { formatOnTime, formatScore, initials, relativeTime, scoreBand, shortAddress } from "@/lib/admin/format";
+import { formatRate, slabLabel } from "@/lib/admin/slabs";
 import { owedOn, ratio, sellerSummary, workerBudgets, type Invoice, type SellerSummary, type WorkerBudget } from "@/lib/dashboard/derive";
 import { AgentDetails, Connections, Panel, RecentCalls, ToolUsage, WalletPanel } from "./console";
 import d from "./Dashboard.module.css";
@@ -93,7 +94,7 @@ function PaybackKV({ s, me }: { s: SellerSummary; me: RoleViewProps["me"] }) {
         { label: "Kept by you", value: usd(s.keptBySeller), hint: "the remainder after lenders" },
         { label: "On-time repayment", value: formatOnTime(me) },
         { label: "Credit score", value: formatScore(me.score), hint: `${scoreBand(me.score).label} · ${scoreBand(me.score).advance}` },
-        { label: "Lender tier you qualify for", value: me.tier === "none" ? "None yet" : me.tier },
+        { label: "Your credit rate", value: me.slab === "none" ? "Not financeable yet" : `${formatRate(me.aprBps)} APR`, hint: `${slabLabel(me.slab)} · set on chain from your score` },
       ]}
     />
   );

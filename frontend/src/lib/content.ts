@@ -182,8 +182,8 @@ export const ROLE_SCOPES: [Role, string][] = [
 export const READ_API: { method: "GET"; path: string; returns: string }[] = [
   { method: "GET", path: "/health", returns: "{ ok, resource, authorizationServer, events } — liveness and the audit event count" },
   { method: "GET", path: "/events", returns: "AuditEvent[] — every state change and rejection, oldest first, each mirrored on the HCS audit topic" },
-  { method: "GET", path: "/agents", returns: "AgentStats[] — KYA level, score, tier, on-time %, receivables funded / repaid / defaulted, spend by merchant" },
-  { method: "GET", path: "/lenders", returns: "LenderYield[] — capital, lent, idle, base / boost / blended APR, open strategies" },
+  { method: "GET", path: "/agents", returns: "AgentStats[] — KYA level, score, risk slab and rate, on-time %, receivables funded / repaid / defaulted, spend by merchant" },
+  { method: "GET", path: "/lenders", returns: "LenderYield[] — capital, lent, idle, funded slabs and sellers, farming / lending / blended APR, extra earned over farming" },
   { method: "GET", path: "/receivables/:id", returns: "State, amount funded and the lenders owed for one receivable" },
   { method: "GET", path: "/invoices/:keccak256", returns: "The invoice file itself, so anyone can hash it against the registry's detailsCommitment" },
 ];

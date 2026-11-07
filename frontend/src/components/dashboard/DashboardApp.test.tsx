@@ -146,11 +146,32 @@ describe("lender console", () => {
     renderAt(`#agent=${addrOf("Lender A")}`);
     const kpis = screen.getByRole("region", { name: "Capital" });
     for (const label of ["Total capital", "Lent to sellers", "Blended return", "Earned so far"]) expect(within(kpis).getByText(label)).toBeInTheDocument();
-    expect(within(kpis).getByText("9.4%")).toBeInTheDocument();
+    expect(within(kpis).getByText("5.4%")).toBeInTheDocument();
+    expect(within(kpis).getByText("Farming 4.2% · lending 10.1% APR")).toBeInTheDocument();
     const liquidity = screen.getByRole("region", { name: "Liquidity" });
     expect(within(liquidity).getByText("Credit strategy")).toBeInTheDocument();
     expect(within(liquidity).getByText("Base-yield strategy")).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Recent positions" })).getAllByText("7.0%")).toHaveLength(3);
+    expect(within(liquidity).getByText("6–11% APR")).toBeInTheDocument();
+    // Every position pays its seller's own rate (the sample seller: 10.1%), whichever lender funded it.
+    expect(within(screen.getByRole("region", { name: "Recent positions" })).getAllByText("10.1%")).toHaveLength(3);
+  });
+
+  it("compares yield farming with lending and shows the extra lending earned", () => {
+    renderAt(`#agent=${addrOf("Lender A")}`);
+    const compare = within(screen.getByRole("region", { name: "Farming vs lending" }));
+    expect(compare.getByText("4.2% APR")).toBeInTheDocument();
+    expect(compare.getByText("10.1% APR")).toBeInTheDocument();
+    expect(compare.getByText("Extra over farming")).toBeInTheDocument();
+  });
+
+  it("lists the sellers with their score, slab and rate, and which ones the lender backs", () => {
+    renderAt(`#agent=${addrOf("Lender A")}&view=sellers`);
+    const table = within(screen.getByRole("region", { name: "Sellers" }));
+    expect(table.getByText("630 / 750")).toBeInTheDocument();
+    expect(table.getByText("Medium risk")).toBeInTheDocument();
+    expect(table.getByText("10.1%")).toBeInTheDocument();
+    expect(table.getByText("Backed by you")).toBeInTheDocument();
+    expect(screen.getByText(/call fund_agents/)).toBeInTheDocument();
   });
 });
 

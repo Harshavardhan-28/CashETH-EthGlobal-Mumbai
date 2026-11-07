@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import a from "@/components/admin/Admin.module.css";
 import { Empty, ROLE_COLOR } from "@/components/admin/primitives";
 import type { LenderYield } from "@/lib/admin/api";
-import { shortAddress } from "@/lib/admin/format";
+import { formatScore, shortAddress } from "@/lib/admin/format";
+import { backingOf, formatRate, rateRange, SLABS, slabLabel, type Backing } from "@/lib/admin/slabs";
 import { addU, lenderOf, lenderPositions, type Position } from "@/lib/dashboard/derive";
 import { AgentDetails, Connections, Panel, RecentCalls, ToolUsage, WalletPanel } from "./console";
 import d from "./Dashboard.module.css";
@@ -11,19 +12,28 @@ import type { RoleViewProps, SectionDef } from "./types";
 
 export const LENDER_NAV: SectionDef[] = [
   { id: "overview", label: "Overview", icon: Icons.overview, title: "Overview", description: "Your capital, what it earns and who it is lent to" },
+  { id: "sellers", label: "Sellers", icon: Icons.agents, title: "Sellers", description: "Agents you can back: each one's risk slab and the rate it pays, set on chain from its score" },
   { id: "liquidity", label: "Liquidity", icon: Icons.coins, title: "Liquidity", description: "Non-custodial: your USDC stays in your wallet until one of your 1inch Aqua strategies fills" },
   { id: "positions", label: "Positions", icon: Icons.runs, title: "Positions", description: "Invoices your credit strategy funded, and where each loan stands" },
   { id: "returns", label: "Returns", icon: Icons.percent, title: "Returns", description: "Fees earned from sellers' credit and from base-yield swaps" },
 ];
 
-const TIER: Record<string, string> = { low: "Low risk", medium: "Medium risk", high: "High risk", custom: "Custom", none: "No credit offer" };
+const BACKING: Record<Backing, { label: string; cls: string }> = {
+  backed: { label: "Backed by you", cls: a.chipGood },
+  "outside-slabs": { label: "Outside your slabs", cls: a.chipIdle },
+  "not-listed": { label: "Not on your list", cls: a.chipIdle },
+  "not-financeable": { label: "Not financeable", cls: a.chipBad },
+};
+
+/** How to change what the lender backs: lenders act through their MCP connection, the dashboard only reads. */
+const CHANGE_HINT = "To change the slabs or sellers you back, call fund_agents (lend:write) with slabs and up to 3 sellers.";
 
 function Kpis({ y, idle, earned, open, late, me }: { y?: LenderYield; idle?: string; earned: string; open: number; late: number; me: RoleViewProps["me"] }) {
   return (
     <section className={a.kpis} aria-label="Capital">
       <Stat label="Total capital" value={usd(y?.capital ?? idle)} sub="Idle in your wallet + lent" icon={<Icons.coins />} />
       <Stat label="Lent to sellers" value={usd(y?.lent ?? "0")} sub={`${open} open position${open === 1 ? "" : "s"}${late ? ` · ${late} late` : ""}`} tone={late ? "warn" : "accent"} icon={<Icons.card />} />
-      <Stat label="Blended return" value={pct(y?.blendedApr ?? 0)} sub={`Base ${pct(y?.baseApr ?? 0)} · credit ${pct(y?.boostApr ?? 0)} APR`} tone="accent" icon={<Icons.percent />} />
+      <Stat label="Blended return" value={pct(y?.blendedApr ?? 0)} sub={`Farming ${pct(y?.baseApr ?? 0)} · lending ${pct(y?.creditApr ?? 0)} APR`} tone="accent" icon={<Icons.percent />} />
       <Stat label="Earned so far" value={usd(earned)} sub={`${pct(me.lenderReturnPct)} on capital`} icon={<Icons.check />} />
     </section>
   );
@@ -41,8 +51,22 @@ function Allocation({ y, idle }: { y?: LenderYield; idle?: string }) {
   );
 }
 
+/** What lending adds on top of plain yield farming: the two rates side by side and the extra USDC it earned. */
+function FarmingVsLending({ y }: { y?: LenderYield }) {
+  return (
+    <KV
+      rows={[
+        { label: "Farming only", value: `${pct(y?.baseApr ?? 0)} APR`, hint: "Aqua swap fees on idle USDC" },
+        { label: "Lending", value: `${pct(y?.creditApr ?? 0)} APR`, hint: "each loan at its seller's own rate" },
+        { label: "Your blend", value: `${pct(y?.blendedApr ?? 0)} APR`, hint: "weighted by idle and lent capital" },
+        { label: "Extra over farming", value: usd(y?.extraEarned ?? "0"), hint: "credit fees minus what that capital would have earned farming" },
+      ]}
+    />
+  );
+}
+
 function Strategies({ y }: { y?: LenderYield }) {
-  const creditOn = !!y && (!!y.strategies.credit || y.tier !== "none");
+  const creditOn = !!y && (!!y.strategies.credit || y.slabs.length > 0);
   const baseOn = !!y && (!!y.strategies.base || y.baseApr > 0);
   return (
     <div className={d.strategies}>
@@ -51,10 +75,14 @@ function Strategies({ y }: { y?: LenderYield }) {
           Credit strategy <span className={`${a.chip} ${creditOn ? a.chipGood : a.chipIdle}`}>{creditOn ? "Active" : "Off"}</span>
         </h3>
         <p>
-          {TIER[y?.tier ?? "none"]} · 1inch Aqua{y?.strategies.credit ? ` · ${shortAddress(y.strategies.credit)}` : ""}
+          {creditOn ? y!.slabs.map((s) => `${SLABS[s].label} (${SLABS[s].rates})`).join(" · ") : "No risk slab funded"} · 1inch Aqua
+          {y?.strategies.credit ? ` · ${shortAddress(y.strategies.credit)}` : ""}
         </p>
-        <div className={d.strategyApr}>{creditOn ? `${pct(y!.boostApr)} APR` : "Not offered"}</div>
-        <p>Lends against buyer-confirmed invoices; the risk tier is enforced at fill time.</p>
+        <div className={d.strategyApr}>{creditOn ? `${rateRange(y!.slabs)} APR` : "Not offered"}</div>
+        <p>
+          You choose the risk, not the price: each loan pays its seller&apos;s own rate, set on chain from its score.
+          {y?.sellers.length ? ` Only your ${y.sellers.length} chosen seller${y.sellers.length === 1 ? "" : "s"}.` : " Any seller in these slabs."}
+        </p>
       </div>
       <div className={d.strategy}>
         <h3>
@@ -64,6 +92,45 @@ function Strategies({ y }: { y?: LenderYield }) {
         <div className={d.strategyApr}>{baseOn ? `${pct(y!.baseApr)} APR` : "Not offered"}</div>
         <p>Idle capital earns swap fees while it waits for credit demand.</p>
       </div>
+    </div>
+  );
+}
+
+/** Every seller agent with its score, slab and rate, and whether this lender's credit strategies back it. */
+function SellerTable({ y, agents }: { y?: LenderYield; agents: RoleViewProps["agents"] }) {
+  const sellers = agents.filter((x) => x.role === "seller");
+  if (!sellers.length) return <Empty title="No sellers yet">Seller agents appear here once they register through the MCP server.</Empty>;
+  return (
+    <div className={a.tableWrap} style={{ paddingTop: 0 }}>
+      <table className={a.table}>
+        <thead>
+          <tr>
+            <th>Seller</th>
+            <th className={d.num}>Score</th>
+            <th>Risk slab</th>
+            <th className={d.num}>Rate it pays</th>
+            <th>Your strategy</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sellers.map((s) => {
+            const backing = BACKING[backingOf(y, s)];
+            return (
+              <tr key={s.address}>
+                <td>
+                  <Party address={s.address} agents={agents} />
+                </td>
+                <td className={`${d.num} ${a.mono}`}>{formatScore(s.score)}</td>
+                <td>{slabLabel(s.slab)}</td>
+                <td className={`${d.num} ${a.mono}`}>{formatRate(s.aprBps)}</td>
+                <td>
+                  <span className={`${a.chip} ${backing.cls}`}>{backing.label}</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -140,6 +207,12 @@ export function LenderPage({ view, ...p }: RoleViewProps & { view: string }) {
   );
 
   switch (view) {
+    case "sellers":
+      return (
+        <Panel title="Sellers" description={CHANGE_HINT} flush>
+          <SellerTable y={y} agents={agents} />
+        </Panel>
+      );
     case "liquidity":
       return (
         <>
@@ -167,14 +240,8 @@ export function LenderPage({ view, ...p }: RoleViewProps & { view: string }) {
             <Panel title="Earnings" description="Paid on-chain by the repayment router">
               {returns}
             </Panel>
-            <Panel title="Return rates" description="Annualised">
-              <KV
-                rows={[
-                  { label: "Base-yield APR", value: pct(y?.baseApr ?? 0), hint: "swap fees on idle capital" },
-                  { label: "Credit APR", value: pct(y?.boostApr ?? 0), hint: `${TIER[y?.tier ?? "none"]} tier` },
-                  { label: "Blended APR", value: pct(y?.blendedApr ?? 0), hint: "weighted by idle and lent capital" },
-                ]}
-              />
+            <Panel title="Farming vs lending" description="Annualised; what lending adds on top of yield farming">
+              <FarmingVsLending y={y} />
             </Panel>
           </div>
         </>
@@ -193,8 +260,8 @@ export function LenderPage({ view, ...p }: RoleViewProps & { view: string }) {
               <Strategies y={y} />
             </Panel>
             <div className={d.stack}>
-              <Panel title="Returns" description="Fees earned so far" more={{ label: "Return details", onClick: () => go("returns") }}>
-                {returns}
+              <Panel title="Farming vs lending" description="What lending adds on top of yield farming" more={{ label: "Return details", onClick: () => go("returns") }}>
+                <FarmingVsLending y={y} />
               </Panel>
               <Connections {...p} />
             </div>

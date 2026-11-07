@@ -37,7 +37,8 @@ function agent(address: string, role: AgentStats["role"], label: string, extra: 
     label,
     level: 2,
     score: 600, // engine base score: no repayment history
-    tier: "none",
+    slab: "medium",
+    aprBps: 1100,
     onTimePct: 0,
     receivablesFunded: 0,
     receivablesRepaid: 0,
@@ -50,8 +51,8 @@ function agent(address: string, role: AgentStats["role"], label: string, extra: 
 }
 
 export const SAMPLE_AGENTS: AgentStats[] = [
-  agent(SELLER, "seller", "Seller", { level: 2, score: 630, tier: "low", onTimePct: 100, receivablesFunded: 3, receivablesRepaid: 2, avgDaysToRepay: 0.8 }),
-  agent(BUYER, "buyer", "Buyer", { level: 2, score: 630, tier: "low", onTimePct: 100, receivablesFunded: 3, receivablesRepaid: 2, avgDaysToRepay: 0.8 }),
+  agent(SELLER, "seller", "Seller", { level: 2, score: 630, slab: "medium", aprBps: 1010, onTimePct: 100, receivablesFunded: 3, receivablesRepaid: 2, avgDaysToRepay: 0.8 }),
+  agent(BUYER, "buyer", "Buyer", { level: 2, score: 630, slab: "medium", aprBps: 1010, onTimePct: 100, receivablesFunded: 3, receivablesRepaid: 2, avgDaysToRepay: 0.8 }),
   agent(WORKER_1, "worker", "Worker 1", { level: 1, score: 600, spendByMerchant: { [DATA_API]: "3600000" } }),
   agent(WORKER_2, "worker", "Worker 2", { level: 1, score: 600, spendByMerchant: { [SEARCH_API]: "4900000" } }),
   agent(LENDER_A, "lender", "Lender A", { level: 3, score: 600, lenderReturnPct: 9.4 }),
@@ -59,8 +60,8 @@ export const SAMPLE_AGENTS: AgentStats[] = [
 ];
 
 export const SAMPLE_LENDERS: LenderYield[] = [
-  { address: LENDER_A, label: "Lender A", tier: "low", capital: "5000000000", lent: "1000000000", idle: "4000000000", baseFees: "1200000", creditFees: "6400000", baseApr: 4.2, boostApr: 12, blendedApr: 9.4, strategies: {} },
-  { address: LENDER_B, label: "Lender B", tier: "medium", capital: "3000000000", lent: "300000000", idle: "2700000000", baseFees: "600000", creditFees: "2100000", baseApr: 3.8, boostApr: 10, blendedApr: 7.1, strategies: {} },
+  { address: LENDER_A, label: "Lender A", slabs: ["low", "medium"], sellers: [], capital: "5000000000", lent: "1000000000", idle: "4000000000", baseFees: "1200000", creditFees: "6400000", baseApr: 4.2, creditApr: 10.1, blendedApr: 5.38, extraEarned: "5900000", strategies: {} },
+  { address: LENDER_B, label: "Lender B", slabs: ["medium"], sellers: [SELLER], capital: "3000000000", lent: "300000000", idle: "2700000000", baseFees: "600000", creditFees: "2100000", baseApr: 3.8, creditApr: 10.1, blendedApr: 4.43, extraEarned: "1950000", strategies: {} },
 ];
 
 type Draft = { at: number /* ms before now */; type: string; [k: string]: unknown };
@@ -71,7 +72,8 @@ const DAY = 24 * HOUR;
 
 /** Advance rate of the sample facility: lenders fund 80% of the face value. */
 const ADVANCE = 0.8;
-const APR_BPS = [700, 850];
+/** Every fill pays the seller's own rate: the sample seller scores 630 (medium risk, 10.1%). */
+const SELLER_APR_BPS = 1010;
 const u = (n: number) => String(Math.round(n));
 
 /** `funded` is what the lenders advanced; the invoice's face value is funded / ADVANCE. `dueIn` is ms after upload. */
@@ -81,7 +83,7 @@ function invoice(ref: string, tag: string, funded: string, start: number, lender
   const face = u(Number(funded) / ADVANCE);
   const terms = { seller: SELLER, buyer: BUYER, amount: face, dueAt: start - dueIn };
   const shares = lenders.map((_, i) => (lenders.length === 1 ? 1 : i === 0 ? 0.6 : 0.4 / (lenders.length - 1)));
-  const fills = lenders.map((maker, i) => ({ maker, amount: u(Number(funded) * shares[i]), aprBps: APR_BPS[i % APR_BPS.length] }));
+  const fills = lenders.map((maker, i) => ({ maker, amount: u(Number(funded) * shares[i]), aprBps: SELLER_APR_BPS }));
   const out: Draft[] = [
     { at: start, type: "InvoiceDocumentStored", receivableRef: ref, keccak256: doc, sha256: hash(`5a${tag}`), bytes: 48213, mime: "application/pdf", agent: SELLER },
     { at: start - 20_000, type: "ReceivableUploaded", id, ...terms, documentKeccak: doc, agent: SELLER },

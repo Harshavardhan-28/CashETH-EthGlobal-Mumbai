@@ -53,6 +53,9 @@ export type AuditEvent = {
   [k: string]: unknown; // type-specific fields (decision, fills, workers, strategyHash, ...)
 };
 
+/** Risk slab of a seller's score (low 700+, medium 600-699, high 500-599; `none` below 500). */
+export type Slab = "low" | "medium" | "high" | "none";
+
 export type AgentStats = {
   address: string;
   uaid: string;
@@ -60,7 +63,8 @@ export type AgentStats = {
   label: string;
   level: number; // KYA level
   score: number; // scoreReceivable on the agent's own reputation (base score, zero tenor)
-  tier: "low" | "medium" | "high" | "none"; // safest lender tier whose seller thresholds the agent meets
+  slab: Slab; // risk slab of the score
+  aprBps: number; // the APR the agent would pay as a seller now (0 when not financeable)
   onTimePct: number; // on-time / (on-time + late + defaults) x 100; 0 without history
   receivablesFunded: number; // receivables (as seller or buyer) that reached Financed
   receivablesRepaid: number;
@@ -73,15 +77,17 @@ export type AgentStats = {
 export type LenderYield = {
   address: string;
   label: string;
-  tier: "low" | "medium" | "high" | "custom" | "none"; // from the cheapest open credit strategy's aprBps
+  slabs: Exclude<Slab, "none">[]; // risk slabs its open credit strategies fund, safest first
+  sellers: string[]; // sellers its credit strategies are limited to; empty = any seller in its slabs
   capital: string; // idle + lent
   lent: string; // sum PositionOpened.principal - sum LenderPaid.principal
   idle: string; // wallet USDC balance
   baseFees: string; // Aqua Pushed into the lender's strategies x base feeBps
   creditFees: string; // sum LenderPaid.fee
   baseApr: number; // baseFees / base strategy balance, annualised since its first swap
-  boostApr: number; // credit strategy aprBps / 100
-  blendedApr: number; // (baseApr x idle + boostApr x lent) / capital
+  creditApr: number; // principal-weighted APR of its credit positions (each at its seller's own rate)
+  blendedApr: number; // (baseApr x idle + creditApr x lent) / capital
+  extraEarned: string; // credit fees minus what the same principal would have earned farming over the same time
   strategies: { credit?: string; base?: string }; // open strategy hashes
 };
 

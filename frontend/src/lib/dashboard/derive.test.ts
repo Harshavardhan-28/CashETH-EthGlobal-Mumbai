@@ -75,8 +75,9 @@ describe("role summaries", () => {
     const b = lenderPositions(invoices, LENDER_B);
     expect(a).toHaveLength(3);
     expect(b).toHaveLength(2);
-    expect(a[0]).toMatchObject({ principal: "480000000", aprBps: 700 });
-    expect(b[0]).toMatchObject({ principal: "320000000", aprBps: 850 });
+    expect(a[0]).toMatchObject({ principal: "480000000", aprBps: 1010 });
+    expect(b[0]).toMatchObject({ principal: "320000000", aprBps: 1010 });
+    // Both lenders of one invoice are paid the seller's own rate, not a rate of their own.
   });
 
   it("worker budgets: latest allocation, spend, blocks and merchants", () => {
