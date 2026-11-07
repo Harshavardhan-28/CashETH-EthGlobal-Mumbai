@@ -337,7 +337,9 @@ export type ReceivableDetails = {
 function evidenceFor(o: Orchestrator, id: Hex): { label: string; url: string }[] {
   const out: { label: string; url: string }[] = [];
   for (const e of o.events.byId(id)) {
+    if (typeof e.approveTxHash === "string") out.push({ label: "Settlement approval", url: hashscan.tx(e.approveTxHash) });
     if (typeof e.hashscan === "string") out.push({ label: e.type, url: e.hashscan });
+    if (typeof e.paymentHashscan === "string") out.push({ label: "x402 payment", url: e.paymentHashscan });
     if (typeof e.hcsSeq === "number" && typeof e.hcsTxId === "string") {
       out.push({ label: `${e.type} (HCS #${e.hcsSeq})`, url: hashscan.tx(e.hcsTxId) });
     }

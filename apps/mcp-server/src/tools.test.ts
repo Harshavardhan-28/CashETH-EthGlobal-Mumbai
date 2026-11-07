@@ -878,6 +878,37 @@ describe("read API", () => {
     await request(app).get("/receivables/not-an-id").expect(400);
   });
 
+  it("GET /receivables/:id evidence includes the x402 payment and the settlement approval", async () => {
+    const { app, o } = await setup();
+    const id = keccak256(toHex("repaid"));
+    o.chain.receivables.set(id.toLowerCase(), {
+      seller: seller.address,
+      buyer: buyer.address,
+      currency: ADDRS.usdc,
+      amount: 1_200_000n,
+      dueDate: NOW + 30n * DAY,
+      detailsCommitment: keccak256(toHex("doc")),
+      state: 3,
+      registeredAt: NOW,
+    });
+    await o.events.append({
+      type: "SpendCommitted",
+      id,
+      hashscan: "https://hashscan.io/testnet/transaction/0xc0",
+      paymentHashscan: "https://hashscan.io/testnet/transaction/0.0.9185802@1794016452.965527617",
+    });
+    await o.events.append({ type: "Repaid", id, hashscan: "https://hashscan.io/testnet/transaction/0xc4", approveTxHash: "0x2c4f" });
+
+    const { body } = await request(app).get(`/receivables/${id}`).expect(200);
+    const links = body.evidence.filter((l: { label: string }) => !l.label.includes("HCS"));
+    expect(links).toEqual([
+      { label: "SpendCommitted", url: "https://hashscan.io/testnet/transaction/0xc0" },
+      { label: "x402 payment", url: "https://hashscan.io/testnet/transaction/0.0.9185802@1794016452.965527617" },
+      { label: "Settlement approval", url: "https://hashscan.io/testnet/transaction/0x2c4f" },
+      { label: "Repaid", url: "https://hashscan.io/testnet/transaction/0xc4" },
+    ]);
+  });
+
   it("GET /receivables/:id answers repeat polls from a short cache instead of re-reading the chain", async () => {
     const { app, o } = await setup();
     const id = keccak256(toHex("polled"));
