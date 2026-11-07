@@ -4382,22 +4382,6 @@ export const CashEthSwapVMRouterAbi = [
   },
   {
     "type": "error",
-    "name": "BuyerReputationTooLow",
-    "inputs": [
-      {
-        "name": "onTime",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "min",
-        "type": "uint32",
-        "internalType": "uint32"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "DeadlineReached",
     "inputs": [
       {
@@ -4508,6 +4492,17 @@ export const CashEthSwapVMRouterAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidSlabMask",
+    "inputs": [
+      {
+        "name": "slabMask",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "LENDER_RESERVE_TOO_LOW",
     "inputs": []
   },
@@ -4544,6 +4539,17 @@ export const CashEthSwapVMRouterAbi = [
         "name": "taker",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotFinanceable",
+    "inputs": [
+      {
+        "name": "score",
+        "type": "int256",
+        "internalType": "int256"
       }
     ]
   },
@@ -4713,6 +4719,22 @@ export const CashEthSwapVMRouterAbi = [
         "name": "result",
         "type": "bytes",
         "internalType": "bytes"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SlabNotFunded",
+    "inputs": [
+      {
+        "name": "slab",
+        "type": "uint8",
+        "internalType": "enum RiskPricing.Slab"
+      },
+      {
+        "name": "slabMask",
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ]
   },
@@ -5103,27 +5125,12 @@ export const CashEthOrderBuilderAbi = [
             "internalType": "uint16"
           },
           {
-            "name": "minBuyerOnTime",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
             "name": "maxPerBuyer",
             "type": "uint128",
             "internalType": "uint128"
           },
           {
-            "name": "aprBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "minSellerOnTime",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "maxSellerDefaults",
+            "name": "slabMask",
             "type": "uint8",
             "internalType": "uint8"
           },
@@ -5271,27 +5278,12 @@ export const CashEthOrderBuilderAbi = [
             "internalType": "uint16"
           },
           {
-            "name": "minBuyerOnTime",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
             "name": "maxPerBuyer",
             "type": "uint128",
             "internalType": "uint128"
           },
           {
-            "name": "aprBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "minSellerOnTime",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "maxSellerDefaults",
+            "name": "slabMask",
             "type": "uint8",
             "internalType": "uint8"
           },
@@ -5446,6 +5438,17 @@ export const CashEthOrderBuilderAbi = [
         "name": "length",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidSlabMask",
+    "inputs": [
+      {
+        "name": "slabMask",
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ]
   },

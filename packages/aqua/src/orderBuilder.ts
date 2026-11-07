@@ -21,22 +21,16 @@ function toOrder(o: { maker: Address; traits: bigint; data: Hex }): Order {
 function toArgs(a: {
   maxTenorDays: number;
   maxAdvanceBps: number;
-  minBuyerOnTime: number;
   maxPerBuyer: bigint;
-  aprBps: number;
-  minSellerOnTime: number;
-  maxSellerDefaults: number;
+  slabMask: number;
   minReserve: bigint;
   sellerSet: readonly Address[];
 }): CreditArgs {
   return {
     maxTenorDays: a.maxTenorDays,
     maxAdvanceBps: a.maxAdvanceBps,
-    minBuyerOnTime: a.minBuyerOnTime,
     maxPerBuyer: a.maxPerBuyer,
-    aprBps: a.aprBps,
-    minSellerOnTime: a.minSellerOnTime,
-    maxSellerDefaults: a.maxSellerDefaults,
+    slabMask: a.slabMask,
     minReserve: a.minReserve,
     sellerSet: [...a.sellerSet],
   };

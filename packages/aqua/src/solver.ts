@@ -1,15 +1,17 @@
 /**
- * Cheapest-first solver: picks the lender fills for `CreditFacility.openAndFund`.
+ * Solver: picks the lender fills for `CreditFacility.openAndFund`.
  *
- * Off-chain checks (tenor, advance, balances, allowance, reserve, per-buyer headroom) only prune; the lender's
- * own rules (seller set or seller score, buyer reputation, receivable state) are decided by the credit opcode
- * itself: each strategy's fill is dry-run through `CreditFacility.openAndFund` (an eth_call from the
- * coordinator), so the solver never re-implements the rules and cannot disagree with the chain.
+ * Every fill pays the seller's own rate (the score and APR the credit opcode computes on chain, `RiskPricing.sol`),
+ * so lenders do not compete on price: the solver only finds the strategies that fund the seller's risk slab and
+ * takes the largest first, which keeps the number of fills low. Off-chain checks (slab, seller list, tenor,
+ * advance, balances, allowance, reserve, per-buyer headroom) only prune; the chain decides: each strategy's fill
+ * is dry-run through `CreditFacility.openAndFund` (an eth_call from the coordinator), so the solver cannot
+ * disagree with the opcode.
  */
 import { limitConcurrency, RELAY_CONCURRENCY, retryEmptyResult } from "./relayRead.js";
 import { AquaRouterAbi, CashEthSwapVMRouterAbi, CreditFacilityAbi } from "@casheth/shared";
 import { BaseError, ContractFunctionRevertedError, type Abi, type Address, type Hex, type PublicClient } from "viem";
-import type { AquaAddresses, Fill, LenderStrategy } from "./types.js";
+import { slabsOf, type AquaAddresses, type Fill, type LenderStrategy, type RiskSlab } from "./types.js";
 
 const DAY = 86_400n;
 
@@ -18,11 +20,15 @@ export type Plan = { fills: Fill[]; total: bigint; skipped: Skipped[] };
 
 /**
  * Skip reasons decided off-chain. On-chain rejections use the custom error name the router reverted with
- * (e.g. `SELLER_NOT_FUNDED_BY_LENDER`, `BuyerReputationTooLow`).
+ * (e.g. `SELLER_NOT_FUNDED_BY_LENDER`, `SlabNotFunded`).
  */
 export const SKIP = {
   /** Not a credit strategy. */
   NOT_CREDIT: "NOT_CREDIT",
+  /** The strategy does not fund the seller's risk slab. */
+  SLAB_NOT_FUNDED: "SLAB_NOT_FUNDED",
+  /** The strategy funds a list of sellers that leaves this one out. */
+  SELLER_NOT_LISTED: "SELLER_NOT_LISTED",
   /** The receivable is due now or earlier. */
   PAST_DUE: "PAST_DUE",
   TENOR_TOO_LONG: "TENOR_TOO_LONG",
@@ -33,7 +39,7 @@ export const SKIP = {
   UNDERFUNDED: "UNDERFUNDED",
   /** Allowance, reserve or per-buyer cap leave nothing to take. */
   NO_CAPACITY: "NO_CAPACITY",
-  /** Cheaper strategies already cover the base. */
+  /** Larger strategies already cover the base. */
   NOT_NEEDED: "NOT_NEEDED",
 } as const;
 
@@ -44,12 +50,16 @@ function virtualUsdc(s: LenderStrategy): bigint {
   return s.virtual[s.tokens[0]] ?? 0n;
 }
 
-/** Credit strategies by `aprBps` ascending; ties keep their input order. */
-function byPrice(strategies: readonly LenderStrategy[]): LenderStrategy[] {
-  return strategies
-    .filter((s) => s.kind === "credit" && s.args)
-    .map((s, i) => ({ s, i }))
-    .sort((x, y) => x.s.args!.aprBps - y.s.args!.aprBps || x.i - y.i)
+function creditOnly(strategies: readonly LenderStrategy[]): LenderStrategy[] {
+  return strategies.filter((s) => s.kind === "credit" && s.args);
+}
+
+/** Credit strategies by what they can give on their own, largest first; ties keep their input order. */
+function byCapacity(strategies: readonly LenderStrategy[], headrooms: Readonly<Record<Hex, bigint>>): LenderStrategy[] {
+  const capacity = (s: LenderStrategy) => strategyCapacity(s, headrooms[s.strategyHash] ?? s.args!.maxPerBuyer);
+  return creditOnly(strategies)
+    .map((s, i) => ({ s, i, c: capacity(s) }))
+    .sort((x, y) => (x.c === y.c ? x.i - y.i : x.c > y.c ? -1 : 1))
     .map(({ s }) => s);
 }
 
@@ -68,13 +78,16 @@ export function strategyCapacity(s: LenderStrategy, headroom: bigint, used = 0n)
 
 /**
  * Off-chain eligibility of one strategy for a receivable; returns the skip reason or `undefined`.
- * Seller, buyer and receivable-state rules are left to the on-chain quote.
+ * The seller's score and the receivable's state are left to the on-chain dry run.
  */
 export function preCheck(
   s: LenderStrategy,
-  p: { receivable: { dueDate: bigint }; advanceBps: number; now: bigint },
+  p: { receivable: { dueDate: bigint; seller: Address }; advanceBps: number; now: bigint; slab: RiskSlab },
 ): string | undefined {
   if (s.kind !== "credit" || !s.args) return SKIP.NOT_CREDIT;
+  if (!slabsOf(s.args.slabMask).includes(p.slab)) return SKIP.SLAB_NOT_FUNDED;
+  const listed = s.args.sellerSet;
+  if (listed.length > 0 && !listed.some((a) => a.toLowerCase() === p.receivable.seller.toLowerCase())) return SKIP.SELLER_NOT_LISTED;
   if (p.receivable.dueDate <= p.now) return SKIP.PAST_DUE;
   if (p.receivable.dueDate - p.now > BigInt(s.args.maxTenorDays) * DAY) return SKIP.TENOR_TOO_LONG;
   if (p.advanceBps > s.args.maxAdvanceBps) return SKIP.ADVANCE_TOO_HIGH;
@@ -91,21 +104,23 @@ function balanceCheck(s: LenderStrategy, headroom: bigint, used = 0n): string | 
 }
 
 /**
- * Pure greedy plan: credit strategies cheapest first, `take = min(remaining, capacity)` until `base` is
- * covered. `headrooms` maps a strategy hash to its per-buyer headroom (`maxPerBuyer - exposure`); a missing
- * entry means the full `maxPerBuyer`. What a maker has already given in this plan is subtracted from its
- * wallet, allowance and headroom before its next strategy is sized. Base-yield strategies are ignored.
+ * Pure greedy plan at the seller's rate `aprBps`: credit strategies largest capacity first,
+ * `take = min(remaining, capacity)` until `base` is covered. `headrooms` maps a strategy hash to its per-buyer
+ * headroom (`maxPerBuyer - exposure`); a missing entry means the full `maxPerBuyer`. What a maker has already
+ * given in this plan is subtracted from its wallet, allowance and headroom before its next strategy is sized.
+ * Base-yield strategies are ignored.
  */
 export function planFills(
   strategies: readonly LenderStrategy[],
   headrooms: Readonly<Record<Hex, bigint>>,
   base: bigint,
+  aprBps: number,
 ): Plan {
   const fills: Fill[] = [];
   const skipped: Skipped[] = [];
   const usedByMaker = new Map<string, bigint>();
   let remaining = clamp0(base);
-  for (const s of byPrice(strategies)) {
+  for (const s of byCapacity(strategies, headrooms)) {
     const headroom = headrooms[s.strategyHash] ?? s.args!.maxPerBuyer;
     if (remaining === 0n) {
       skipped.push({ strategyHash: s.strategyHash, reason: SKIP.NOT_NEEDED });
@@ -119,7 +134,7 @@ export function planFills(
       continue;
     }
     const take = min(remaining, strategyCapacity(s, headroom, used));
-    fills.push({ order: s.order, amount: take, aprBps: s.args!.aprBps });
+    fills.push({ order: s.order, amount: take, aprBps });
     usedByMaker.set(maker, used + take);
     remaining -= take;
   }
@@ -130,6 +145,8 @@ export type SolveInput = {
   receivable: { id: Hex; seller: Address; buyer: Address; amount: bigint; dueDate: bigint };
   strategies: readonly LenderStrategy[];
   advanceBps: number;
+  /** The seller's slab and rate from the engine (`scoreReceivable`); the opcode recomputes and enforces both. */
+  price: { slab: RiskSlab; aprBps: number };
   /** The engine's limit (USDC base units); the plan covers `min(amount * advanceBps / 10_000, limit)`. */
   limit: bigint;
   facility: Address;
@@ -184,17 +201,17 @@ export async function solve(
   const base = min(advance, input.limit);
 
   // Each strategy's check (its buyer exposure, then a dry-run of its own fill) is independent of the others, so
-  // they run a few at a time; the results keep price order for the greedy, cheapest-first planner.
-  const checks = await limitConcurrency(byPrice(input.strategies), RELAY_CONCURRENCY, (s) => checkStrategy(client, addrs, input, base, s));
+  // they run a few at a time; the planner then orders the survivors by capacity.
+  const checks = await limitConcurrency(creditOnly(input.strategies), RELAY_CONCURRENCY, (s) => checkStrategy(client, addrs, input, base, s));
   const skipped: Skipped[] = checks.flatMap((c) => ("skip" in c ? [c.skip] : []));
   const eligible = checks.flatMap((c) => ("headroom" in c ? [c.strategy] : []));
   const headrooms: Record<Hex, bigint> = Object.fromEntries(checks.flatMap((c) => ("headroom" in c ? [[c.strategy.strategyHash, c.headroom]] : [])));
 
-  const plan = planFills(eligible, headrooms, base);
+  const plan = planFills(eligible, headrooms, base, input.price.aprBps);
   return { fills: plan.fills, total: plan.total, skipped: [...skipped, ...plan.skipped] };
 }
 
-/** One strategy's eligibility: the tier pre-check, its headroom under `maxPerBuyer`, and a dry-run of its fill. */
+/** One strategy's eligibility: the pre-check, its headroom under `maxPerBuyer`, and a dry-run of its fill. */
 async function checkStrategy(
   client: Pick<PublicClient, "readContract" | "simulateContract">,
   addrs: Pick<AquaAddresses, "swapRouter">,
@@ -202,8 +219,8 @@ async function checkStrategy(
   base: bigint,
   s: LenderStrategy,
 ): Promise<{ skip: Skipped } | { strategy: LenderStrategy; headroom: bigint }> {
-  const { receivable, advanceBps, facility, now } = input;
-  const pre = preCheck(s, { receivable, advanceBps, now });
+  const { receivable, advanceBps, facility, now, price } = input;
+  const pre = preCheck(s, { receivable, advanceBps, now, slab: price.slab });
   if (pre) return { skip: { strategyHash: s.strategyHash, reason: pre } };
   const exposure = await retryEmptyResult(() =>
     client.readContract({ address: addrs.swapRouter, abi: CashEthSwapVMRouterAbi, functionName: "exposure", args: [s.maker, receivable.buyer] }),
@@ -211,7 +228,7 @@ async function checkStrategy(
   const headroom = clamp0(s.args!.maxPerBuyer - exposure);
   // Balance problems are reported by planFills; only dry-run strategies that could give something.
   if (!balanceCheck(s, headroom)) {
-    const fill = { order: s.order, amount: min(strategyCapacity(s, headroom), base), aprBps: s.args!.aprBps };
+    const fill = { order: s.order, amount: min(strategyCapacity(s, headroom), base), aprBps: price.aprBps };
     try {
       await client.simulateContract({
         address: facility,

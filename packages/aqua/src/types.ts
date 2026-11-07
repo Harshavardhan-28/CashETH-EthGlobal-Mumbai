@@ -1,63 +1,54 @@
 import type { Address, Hex } from "viem";
 
+/** The risk slabs of `RiskPricing.sol`: a seller's score puts it in one, and its rate follows from the score. */
+export type RiskSlab = "low" | "medium" | "high";
+
+export const RISK_SLABS: readonly RiskSlab[] = ["low", "medium", "high"];
+
+const SLAB_BIT: Readonly<Record<RiskSlab, number>> = { low: 1, medium: 2, high: 4 };
+
 /**
- * `ReceivableCredit.Args`: the lender's risk rules, enforced by the credit opcode on every fill.
- * A non-empty `sellerSet` (at most 3) replaces the seller score thresholds.
+ * `ReceivableCredit.Args`: the lender's rules, enforced by the credit opcode on every fill. The lender picks the
+ * risk slabs it funds (`slabMask`) and optionally up to 3 sellers; the price is the seller's own, set on chain.
  */
 export type CreditArgs = {
   maxTenorDays: number;
   maxAdvanceBps: number;
-  minBuyerOnTime: number;
   /** Lifetime USDC cap against one buyer across all of the lender's strategies (6 decimals). */
   maxPerBuyer: bigint;
-  aprBps: number;
-  minSellerOnTime: number;
-  maxSellerDefaults: number;
+  /** Funded slabs: bit 0 low, bit 1 medium, bit 2 high (see `slabMask`). */
+  slabMask: number;
   /** USDC the lender's wallet must keep after a fill (6 decimals). */
   minReserve: bigint;
+  /** When non-empty, only these sellers (and only in a funded slab). */
   sellerSet: Address[];
 };
 
-export type Tier = "low" | "medium" | "high";
+export function slabMask(slabs: readonly RiskSlab[]): number {
+  if (slabs.length === 0) throw new Error("a credit strategy funds at least one slab");
+  return slabs.reduce((mask, slab) => mask | SLAB_BIT[slab], 0);
+}
 
-export type TierPreset = Omit<CreditArgs, "sellerSet" | "maxPerBuyer" | "minReserve">;
+/** The slabs a mask funds, safest first. */
+export function slabsOf(mask: number): RiskSlab[] {
+  return RISK_SLABS.filter((slab) => (mask & SLAB_BIT[slab]) !== 0);
+}
 
-/** Risk-tier presets of the credit opcode arguments (plan Addendum A, D-A2). */
-export const LENDER_TIERS: Readonly<Record<Tier, Readonly<TierPreset>>> = Object.freeze({
-  low: Object.freeze({
-    aprBps: 700,
-    minSellerOnTime: 3,
-    maxSellerDefaults: 0,
-    minBuyerOnTime: 0,
-    maxTenorDays: 60,
-    maxAdvanceBps: 8000,
-  }),
-  medium: Object.freeze({
-    aprBps: 850,
-    minSellerOnTime: 1,
-    maxSellerDefaults: 0,
-    minBuyerOnTime: 0,
-    maxTenorDays: 60,
-    maxAdvanceBps: 8000,
-  }),
-  high: Object.freeze({
-    aprBps: 1300,
-    minSellerOnTime: 0,
-    maxSellerDefaults: 2,
-    minBuyerOnTime: 0,
-    maxTenorDays: 60,
-    maxAdvanceBps: 8000,
-  }),
-});
+export type CreditOptions = {
+  sellerSet?: Address[];
+  maxPerBuyer?: bigint;
+  minReserve?: bigint;
+  maxTenorDays?: number;
+  maxAdvanceBps?: number;
+};
 
-export type TierOptions = { sellerSet?: Address[]; maxPerBuyer?: bigint; minReserve?: bigint };
-
-/** Full credit args for a tier: the preset plus the lender's seller set, per-buyer cap and reserve. */
-export function tierArgs(tier: Tier, { sellerSet = [], maxPerBuyer = 5_000_000n, minReserve = 0n }: TierOptions = {}): CreditArgs {
-  const preset = LENDER_TIERS[tier];
-  if (!preset) throw new Error(`unknown tier ${String(tier)}`);
+/** Credit args for the slabs a lender funds, with its optional seller list, per-buyer cap and reserve. */
+export function creditArgs(
+  slabs: readonly RiskSlab[],
+  { sellerSet = [], maxPerBuyer = 5_000_000n, minReserve = 0n, maxTenorDays = 60, maxAdvanceBps = 8000 }: CreditOptions = {},
+): CreditArgs {
   if (sellerSet.length > 3) throw new Error(`sellerSet holds at most 3 sellers, got ${sellerSet.length}`);
-  return { ...preset, maxPerBuyer, minReserve, sellerSet: [...sellerSet] };
+  return { maxTenorDays, maxAdvanceBps, maxPerBuyer, slabMask: slabMask(slabs), minReserve, sellerSet: [...sellerSet] };
 }
 
 /** `ISwapVM.Order`; `traits` is the packed `MakerTraits` word. */

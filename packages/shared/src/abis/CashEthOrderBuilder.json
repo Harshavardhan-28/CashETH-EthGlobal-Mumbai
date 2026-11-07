@@ -95,27 +95,12 @@
             "internalType": "uint16"
           },
           {
-            "name": "minBuyerOnTime",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
             "name": "maxPerBuyer",
             "type": "uint128",
             "internalType": "uint128"
           },
           {
-            "name": "aprBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "minSellerOnTime",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "maxSellerDefaults",
+            "name": "slabMask",
             "type": "uint8",
             "internalType": "uint8"
           },
@@ -263,27 +248,12 @@
             "internalType": "uint16"
           },
           {
-            "name": "minBuyerOnTime",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
             "name": "maxPerBuyer",
             "type": "uint128",
             "internalType": "uint128"
           },
           {
-            "name": "aprBps",
-            "type": "uint16",
-            "internalType": "uint16"
-          },
-          {
-            "name": "minSellerOnTime",
-            "type": "uint32",
-            "internalType": "uint32"
-          },
-          {
-            "name": "maxSellerDefaults",
+            "name": "slabMask",
             "type": "uint8",
             "internalType": "uint8"
           },
@@ -438,6 +408,17 @@
         "name": "length",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidSlabMask",
+    "inputs": [
+      {
+        "name": "slabMask",
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ]
   },

@@ -1,5 +1,5 @@
-export { LENDER_TIERS, tierArgs } from "./types.js";
-export type { AquaAddresses, CreditArgs, Fill, LenderStrategy, Order, Tier, TierOptions, TierPreset } from "./types.js";
+export { creditArgs, RISK_SLABS, slabMask, slabsOf } from "./types.js";
+export type { AquaAddresses, CreditArgs, CreditOptions, Fill, LenderStrategy, Order, RiskSlab } from "./types.js";
 export { baseTakerData } from "./baseTakerData.js";
 export {
   BASE_FEE_BPS,

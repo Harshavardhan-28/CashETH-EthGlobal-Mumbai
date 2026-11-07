@@ -11,7 +11,7 @@ import {
   type Hex,
 } from "viem";
 import { decodeStrategy, discoverStrategies, listOpenStrategies, LOG_CHUNK_BLOCKS } from "./discover.js";
-import { tierArgs } from "./types.js";
+import { creditArgs } from "./types.js";
 
 const A = "0x00000000000000000000000000000000000000a1" as const;
 
@@ -62,7 +62,7 @@ function stubChain(logs: ReturnType<typeof shippedLog>[], safeBalances: (maker: 
     readContract: async ({ functionName, args }: { functionName: string; args: readonly unknown[] }) => {
       switch (functionName) {
         case "decodeLenderOrder":
-          return [tierArgs("high"), 1n, USDC, RCN];
+          return [creditArgs(["high"]), 1n, USDC, RCN];
         case "safeBalances":
           return safeBalances(args[0] as Address);
         case "balanceOf":

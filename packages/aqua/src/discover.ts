@@ -198,12 +198,7 @@ export async function discoverStrategies(
   const out = results.flatMap((r) => ("strategy" in r ? [r.strategy] : []));
   const skipped = results.flatMap((r) => ("skip" in r ? [r.skip] : []));
 
-  const credit = out
-    .map((s, i) => ({ s, i }))
-    .filter(({ s }) => s.kind === "credit")
-    .sort((x, y) => x.s.args!.aprBps - y.s.args!.aprBps || x.i - y.i)
-    .map(({ s }) => s);
-  return { strategies: [...credit, ...out.filter((s) => s.kind === "base")], skipped };
+  return { strategies: [...out.filter((s) => s.kind === "credit"), ...out.filter((s) => s.kind === "base")], skipped };
 }
 
 type Inspected = { strategy: LenderStrategy } | { skip: DiscoverySkip };
@@ -246,8 +241,8 @@ async function inspect(
 }
 
 /**
- * Open CashETH strategies on `addrs.swapRouter`: credit strategies sorted by `aprBps` ascending (ties in
- * shipping order), then base-yield strategies in shipping order. Untrusted or foreign `Shipped` data is
+ * Open CashETH strategies on `addrs.swapRouter`: credit strategies, then base-yield strategies, each in shipping
+ * order. Untrusted or foreign `Shipped` data is
  * skipped; use `discoverStrategies` to also see what was skipped and why.
  * @param opts.fromBlock First block to scan (default 0; pass the deployment block on long chains).
  */

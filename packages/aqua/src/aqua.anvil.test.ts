@@ -33,7 +33,7 @@ import {
 } from "./orderBuilder.js";
 import { dockStrategy, shipBaseYield, shipLenderStrategy, type LenderWallet, type ShippedStrategy } from "./ship.js";
 import { solve } from "./solver.js";
-import { tierArgs, type AquaAddresses, type CreditArgs } from "./types.js";
+import { creditArgs, type AquaAddresses, type CreditArgs, type RiskSlab } from "./types.js";
 
 const stack = inject("localStack");
 const transport = http(stack.rpc);
@@ -54,11 +54,14 @@ const seller = account("seller").address;
 const worker = account("workerResearch").address;
 
 type Lender = { role: Role; args: CreditArgs; usdc: bigint; salt: bigint; base?: bigint };
+/** The stack's seller has no history and its receivable a 30-day tenor: score 600, medium risk, 11%. */
+const SELLER_PRICE = { slab: "medium", aprBps: 1100 } as const;
+
 const LENDERS: Record<"A" | "B" | "C" | "D", Lender> = {
-  A: { role: "lenderA", args: tierArgs("low", { sellerSet: [seller] }), usdc: USD(4), salt: 1n, base: USD(2) },
-  B: { role: "lenderB", args: tierArgs("medium", { sellerSet: [seller] }), usdc: USD(2), salt: 2n, base: USD(1) },
-  C: { role: "lenderC", args: tierArgs("high"), usdc: USD(3), salt: 3n, base: USD(1) },
-  D: { role: "lenderD", args: tierArgs("low", { sellerSet: [worker] }), usdc: USD(1), salt: 4n },
+  A: { role: "lenderA", args: creditArgs(["low", "medium"], { sellerSet: [seller] }), usdc: USD(4), salt: 1n, base: USD(2) },
+  B: { role: "lenderB", args: creditArgs(["medium"], { sellerSet: [seller] }), usdc: USD(2), salt: 2n, base: USD(1) },
+  C: { role: "lenderC", args: creditArgs(["medium", "high"]), usdc: USD(3), salt: 3n, base: USD(1) },
+  D: { role: "lenderD", args: creditArgs(["low", "medium", "high"], { sellerSet: [worker] }), usdc: USD(1), salt: 4n },
 };
 
 const credit = {} as Record<keyof typeof LENDERS, ShippedStrategy>;
@@ -74,17 +77,17 @@ beforeAll(async () => {
       base[name] = await shipBaseYield(w, addrs, { usdcAmount: l.base, tUsdtAmount: l.base, feeBps: 30, salt: 100n + l.salt });
     }
   }
-  // C ships a second, cheaper credit strategy and docks it again: it must not be discovered.
+  // C ships a second credit strategy and docks it again: it must not be discovered.
   const w = wallet("lenderC");
-  docked = await shipLenderStrategy(w, addrs, { args: tierArgs("low"), salt: 99n, usdcAmount: USD(1) });
+  docked = await shipLenderStrategy(w, addrs, { args: creditArgs(["low"]), salt: 99n, usdcAmount: USD(1) });
   await dockStrategy(w, addrs.aqua, { app: addrs.swapRouter, strategyHash: docked.strategyHash, tokens: [addrs.usdc, addrs.rcn] });
 });
 
 describe("listOpenStrategies", () => {
-  it("returns the shipped strategies with kind and tier args", async () => {
+  it("returns the shipped strategies with kind and slab args", async () => {
     const list = await listOpenStrategies(pub, addrs, { fromBlock: 0n });
 
-    // Credit cheapest first (A and D tie at 700: shipping order), then base yield in shipping order.
+    // Credit strategies, then base yield, each in shipping order.
     const names = (Object.keys(credit) as (keyof typeof credit)[]).reduce<Record<Hex, string>>((m, k) => {
       m[credit[k].strategyHash] = `credit:${k}`;
       if (base[k]) m[base[k]!.strategyHash] = `base:${k}`;
@@ -92,9 +95,9 @@ describe("listOpenStrategies", () => {
     }, {});
     expect(list.map((s) => names[s.strategyHash] ?? s.strategyHash)).toEqual([
       "credit:A",
-      "credit:D",
       "credit:B",
       "credit:C",
+      "credit:D",
       "base:A",
       "base:B",
       "base:C",
@@ -128,9 +131,9 @@ describe("listOpenStrategies", () => {
       }
     }
 
-    // The tier presets went on-chain unchanged.
-    expect(list[0]!.args).toMatchObject({ aprBps: 700, minSellerOnTime: 3, maxPerBuyer: USD(5), sellerSet: [seller] });
-    expect(list[3]!.args).toMatchObject({ aprBps: 1300, maxSellerDefaults: 2, sellerSet: [] });
+    // The slab masks and seller lists went on-chain unchanged.
+    expect(list[0]!.args).toMatchObject({ slabMask: 3, maxPerBuyer: USD(5), sellerSet: [seller] });
+    expect(list[2]!.args).toMatchObject({ slabMask: 6, sellerSet: [] });
 
     // The real wallet state behind the numbers.
     const allowanceA = await pub.readContract({
@@ -156,11 +159,8 @@ describe("order builder", () => {
     const args: CreditArgs = {
       maxTenorDays: 45,
       maxAdvanceBps: 9000,
-      minBuyerOnTime: 3,
       maxPerBuyer: 123_456_789n,
-      aprBps: 1300,
-      minSellerOnTime: 2,
-      maxSellerDefaults: 1,
+      slabMask: 5,
       minReserve: USD(5),
       sellerSet: [seller, worker],
     };
@@ -212,10 +212,19 @@ describe("solve", () => {
   const ADVANCE = 7500;
   const LIMIT = USD(6); // 8 USDC * 75%
 
-  async function plan(advanceBps = ADVANCE, limit = LIMIT) {
+  async function plan(advanceBps = ADVANCE, limit = LIMIT, price: { slab: RiskSlab; aprBps: number } = SELLER_PRICE) {
     const { timestamp } = await pub.getBlock();
     const strategies = await listOpenStrategies(pub, addrs, { fromBlock: 0n });
-    return solve(pub, addrs, { receivable, strategies, advanceBps, limit, facility: stack.creditFacility, coordinator: account("coordinator").address, now: timestamp });
+    return solve(pub, addrs, {
+      receivable,
+      strategies,
+      advanceBps,
+      price,
+      limit,
+      facility: stack.creditFacility,
+      coordinator: account("coordinator").address,
+      now: timestamp,
+    });
   }
 
   const coordinator = createWalletClient({ account: account("coordinator"), chain: anvilChain, transport });
@@ -230,33 +239,34 @@ describe("solve", () => {
     return (await pub.waitForTransactionReceipt({ hash })).status;
   }
 
-  it("takes A then B and skips C by price and D by SELLER_NOT_FUNDED_BY_LENDER", async () => {
+  it("fills the seller's slab at the seller's price, largest strategy first", async () => {
     const p = await plan();
+    // A (4) and C (3) fund medium risk; A covers 4, C the remaining 2; B (2) is not needed; D lists another seller.
     expect(p.fills).toEqual([
-      { order: credit.A.order, amount: USD(4), aprBps: 700 },
-      { order: credit.B.order, amount: USD(2), aprBps: 850 },
+      { order: credit.A.order, amount: USD(4), aprBps: 1100 },
+      { order: credit.C.order, amount: USD(2), aprBps: 1100 },
     ]);
     expect(p.total).toBe(USD(6));
     expect(p.skipped).toEqual([
-      { strategyHash: credit.D.strategyHash, reason: "SELLER_NOT_FUNDED_BY_LENDER" },
-      { strategyHash: credit.C.strategyHash, reason: "NOT_NEEDED" },
+      { strategyHash: credit.D.strategyHash, reason: "SELLER_NOT_LISTED" },
+      { strategyHash: credit.B.strategyHash, reason: "NOT_NEEDED" },
     ]);
   });
 
-  it("skips a strategy the credit opcode rejects, with the decoded error name", async () => {
-    // B with a buyer on-time requirement the zero-history buyer cannot meet: only the opcode knows.
+  it("lets the chain decide the price and the slab, whatever the caller claims", async () => {
+    // A wrong rate: every dry run fails the facility's check against the opcode's own price.
+    const cheap = await plan(ADVANCE, LIMIT, { slab: "medium", aprBps: 1000 });
+    expect(cheap.fills).toEqual([]);
+    expect(new Set(cheap.skipped.filter((x) => x.reason !== "SELLER_NOT_LISTED").map((x) => x.reason))).toEqual(new Set(["FILL_MISMATCH"]));
+
+    // A wrong slab: a low-risk-only strategy passes the off-chain check but the opcode scores the seller medium.
     const w = wallet("lenderB");
-    const strict = await shipLenderStrategy(w, addrs, {
-      args: { ...tierArgs("medium", { sellerSet: [seller] }), aprBps: 600, minBuyerOnTime: 1 },
-      salt: 77n,
-      usdcAmount: USD(1),
-    });
+    const lowOnly = await shipLenderStrategy(w, addrs, { args: creditArgs(["low"], { sellerSet: [seller] }), salt: 77n, usdcAmount: USD(1) });
     try {
-      const p = await plan();
-      expect(p.skipped[0]).toEqual({ strategyHash: strict.strategyHash, reason: "BuyerReputationTooLow" });
-      expect(p.fills.map((f) => f.amount)).toEqual([USD(4), USD(2)]);
+      const p = await plan(ADVANCE, LIMIT, { slab: "low", aprBps: 1100 });
+      expect(p.skipped).toContainEqual({ strategyHash: lowOnly.strategyHash, reason: "SlabNotFunded" });
     } finally {
-      await dockStrategy(w, addrs.aqua, { app: addrs.swapRouter, strategyHash: strict.strategyHash, tokens: [addrs.usdc, addrs.rcn] });
+      await dockStrategy(w, addrs.aqua, { app: addrs.swapRouter, strategyHash: lowOnly.strategyHash, tokens: [addrs.usdc, addrs.rcn] });
     }
   });
 
@@ -273,14 +283,16 @@ describe("solve", () => {
         hash: await w.writeContract({ address: addrs.usdc, abi: erc20Abi, functionName: "transfer", args: [burn, WALLET_USDC - USD(2.2)] }),
       });
       const b2 = await shipLenderStrategy(w, addrs, { args: LENDERS.B.args, salt: 5n, usdcAmount: USD(2) });
+      // Only B's two strategies are left funding this seller.
+      for (const [role, name] of [["lenderA", "A"], ["lenderC", "C"]] as const) {
+        await dockStrategy(wallet(role), addrs.aqua, { app: addrs.swapRouter, strategyHash: credit[name].strategyHash, tokens: [addrs.usdc, addrs.rcn] });
+      }
 
-      // 8 USDC at 8000 bps = 6.4 USDC: A 4, B 2 + 0.2 (B's wallet is spent), C the remaining 0.2.
+      // B gives 2 + 0.2: its wallet is spent, so the plan is partial (2.2 of 6.4).
       const p = await plan(8000, USD(6.4));
       expect(p.fills).toEqual([
-        { order: credit.A.order, amount: USD(4), aprBps: 700 },
-        { order: credit.B.order, amount: USD(2), aprBps: 850 },
-        { order: b2.order, amount: USD(0.2), aprBps: 850 },
-        { order: credit.C.order, amount: USD(0.2), aprBps: 1300 },
+        { order: credit.B.order, amount: USD(2), aprBps: 1100 },
+        { order: b2.order, amount: USD(0.2), aprBps: 1100 },
       ]);
       const fromB = p.fills.filter((f) => f.order.maker === b).reduce((s, f) => s + f.amount, 0n);
       expect(fromB).toBe(await usdcOf(b));
@@ -288,7 +300,7 @@ describe("solve", () => {
       // And the chain accepts exactly that plan.
       expect(await openAndFund(p.fills, 8000, USD(6.4))).toBe("success");
       expect(await usdcOf(b)).toBe(0n);
-      expect(await usdcOf(stack.creditFacility)).toBe(USD(6.4));
+      expect(await usdcOf(stack.creditFacility)).toBe(USD(2.2));
     } finally {
       await pub.request({ method: "evm_revert" as never, params: [snapshot] as never });
     }
@@ -306,11 +318,11 @@ describe("solve", () => {
     const c = account("lenderC").address;
     expect(await bal(addrs.usdc, stack.creditFacility)).toBe(USD(6));
     expect(await bal(addrs.usdc, a)).toBe(WALLET_USDC - USD(4));
-    expect(await bal(addrs.usdc, b)).toBe(WALLET_USDC - USD(2));
-    expect(await bal(addrs.usdc, c)).toBe(WALLET_USDC);
+    expect(await bal(addrs.usdc, b)).toBe(WALLET_USDC);
+    expect(await bal(addrs.usdc, c)).toBe(WALLET_USDC - USD(2));
     expect(await bal(addrs.rcn, a)).toBe(USD(4));
-    expect(await bal(addrs.rcn, b)).toBe(USD(2));
-    expect(await bal(addrs.rcn, c)).toBe(0n);
+    expect(await bal(addrs.rcn, b)).toBe(0n);
+    expect(await bal(addrs.rcn, c)).toBe(USD(2));
     const state = await pub.readContract({ address: stack.receivableRegistry, abi: ReceivableRegistryAbi, functionName: "state", args: [receivable.id] });
     expect(state).toBe(2); // Financed
 
