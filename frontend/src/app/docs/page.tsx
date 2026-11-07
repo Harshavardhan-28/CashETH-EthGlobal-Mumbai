@@ -91,27 +91,22 @@ X402_FACILITATOR_URL=https://api.testnet.blocky402.com`}
             HTTP, <code>POST</code> only, JSON responses, no session id. Any MCP client works; point it at the endpoint
             and it discovers the authorization server from the <code>401</code>.
           </p>
-          <CodeBlock title=".mcp.json · one connection per role, plus the local wallet">
+          <CodeBlock title=".mcp.json · one seller connection">
 {`{
   "mcpServers": {
     "casheth-seller": {
       "type": "http", "url": "http://localhost:4030/mcp",
-      "oauth": { "scopes": "receivable:write receivable:read credit:read facility:open budget:write spend:reserve stats:read" }
-    },
-    "casheth-buyer":  { "type": "http", "url": "http://localhost:4030/mcp", "oauth": { "scopes": "receivable:confirm … repay:write" } },
-    "casheth-worker": { "type": "http", "url": "http://localhost:4030/mcp", "oauth": { "scopes": "… spend:pay spend:commit" } },
-    "casheth-wallet": {
-      "type": "stdio", "command": "pnpm", "args": ["-s", "-F", "@casheth/wallet-mcp", "start"],
-      "env": { "WALLET_ACCOUNTS": "buyer" }
+      "oauth": { "scopes": "receivable:write receivable:read credit:read facility:open budget:write spend:reserve stats:read" },
+      "timeout": 600000
     }
   }
 }`}
           </CodeBlock>
           <p className={styles.p}>
-            Each role-pinned entry requests only its role&apos;s scopes, so the consent page pre-selects the matching agent.
-            The local <code>casheth-wallet</code> server signs the buyer&apos;s confirmation and sends allow-listed calldata
-            from the agent&apos;s own key, which never reaches the MCP server. Call <code>whoami</code> to see which account
-            a connection acts as.
+            The seller is the only agent you sign in as: the sign-in page shows your seller and its permissions, and you
+            click <b>Approve</b>. The buyer, the lenders and the workers are run by the server, so the seller drives the
+            whole flow (<code>request_buyer_confirmation</code>, <code>buy_with_credit</code>,{" "}
+            <code>settle_receivable</code>). Call <code>whoami</code> to see which account the connection acts as.
           </p>
           <p className={styles.p}>
             The MCP server is an OAuth 2.1 resource server. An agent signs a JWT with its ECDSA secp256k1 key and

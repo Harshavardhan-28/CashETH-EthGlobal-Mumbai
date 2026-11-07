@@ -11,7 +11,7 @@ Claude Code signs in once, as the seller. Its counterparties run inside the Cash
 | Worker | the seller's `buy_with_credit` | 2-of-2 spend wallet: worker key + policy co-signer |
 | Lenders | nobody: their Aqua strategies are filled by `open_facility` | their earlier `ship` |
 
-The demo sign-in has no owner login: whoever reaches the consent page can act as any demo agent. It is off unless `AUTH_DEMO_GRANT=true`, and both servers listen on `127.0.0.1` only. Never enable it on a public host.
+The demo sign-in has no owner login: whoever reaches the sign-in page can act as the demo seller (the only role it grants). It is off unless `AUTH_DEMO_GRANT=true`, and both servers listen on `127.0.0.1` only. Never enable it on a public host.
 
 ## 1. Build and start the servers
 
@@ -49,7 +49,7 @@ export CLAUDE_CONFIG_DIR=/Users/harsh/.claude-antigravity   # only if your Claud
 claude mcp login casheth-seller
 ```
 
-The consent page pre-selects the seller; click **Act as seller**. The token carries only the seller's scopes and refreshes on its own for 8 hours.
+The sign-in page shows the seller agent and what it will be able to do; click **Approve** (Enter works too, Cancel returns an error to Claude Code). The token carries only the seller's scopes and refreshes on its own for 8 hours.
 
 ## 3. Run
 
