@@ -2,7 +2,7 @@
  * Open-strategy discovery from Aqua's `Shipped` / `Docked` logs (decoded with `@1inch/aqua-sdk`), enriched with
  * the live Aqua virtual balances and the maker's real USDC balance and allowance.
  */
-import { limitConcurrency, RELAY_CONCURRENCY, retryEmptyResult } from "./relayRead.js";
+import { limitConcurrency, RELAY_CONCURRENCY, retryBehindHead, retryEmptyResult } from "./relayRead.js";
 import { DockedEvent, ShippedEvent } from "@1inch/aqua-sdk";
 import { AquaRouterAbi } from "@casheth/shared";
 import {
@@ -55,7 +55,7 @@ async function aquaLogs(client: Pick<Reader, "getLogs">, aqua: Address, from: bi
   const out: Log[] = [];
   for (let start = from; start <= to; start += LOG_CHUNK_BLOCKS) {
     const end = start + LOG_CHUNK_BLOCKS - 1n < to ? start + LOG_CHUNK_BLOCKS - 1n : to;
-    const logs = await client.getLogs({ address: aqua, events: LIFECYCLE_EVENTS, fromBlock: start, toBlock: end });
+    const logs = await retryBehindHead(() => client.getLogs({ address: aqua, events: LIFECYCLE_EVENTS, fromBlock: start, toBlock: end }));
     out.push(...logs);
   }
   return out;
