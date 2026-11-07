@@ -212,7 +212,7 @@ contract RepaymentRouterTest is CreditFacilityBase {
         _assertPaid(makerA, FILL_A, 26_849);
         _assertPaid(makerB, FILL_B, 16_301);
         _assertReputation(buyer, 0, 1, 0);
-        _assertReputation(seller, 1, 0, 0);
+        _assertReputation(seller, 0, 1, 0); // the seller carries the late mark too
     }
 
     function test_repay_afterDefault_stillLendersFirst_stateRepaid() public {
@@ -248,7 +248,7 @@ contract RepaymentRouterTest is CreditFacilityBase {
 
         // Ruling R20: the default counts against both parties; the late repayment against the buyer.
         _assertReputation(buyer, 0, 1, 1);
-        _assertReputation(seller, 1, 0, 1);
+        _assertReputation(seller, 0, 1, 1);
     }
 
     function test_repay_afterOverdue_paysLendersAndCloses() public {
@@ -327,7 +327,7 @@ contract RepaymentRouterTest is CreditFacilityBase {
         emit IKYARegistry.RepaymentRecorded(buyer, seller, false);
         _pay(id2, AMOUNT);
         _assertReputation(buyer, 1, 1, 0);
-        _assertReputation(seller, 2, 0, 0);
+        _assertReputation(seller, 1, 1, 0);
     }
 
     function test_close_sendsUndrawnToSeller_andDeletesSchedules() public {

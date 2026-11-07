@@ -103,14 +103,16 @@ contract KYARegistry is IKYARegistry, Ownable {
         return _agents[account];
     }
 
-    /// @notice Buyer gets an on-time or late mark; the seller gets an on-time mark for every repaid receivable.
+    /// @notice Buyer and seller both get the receivable's on-time or late mark: the seller's score
+    ///         (`RiskPricing`) prices its credit, so a late repayment must count against it.
     function recordRepayment(address buyer, address seller, bool onTime) external onlyRouter {
         if (onTime) {
             _reputation[buyer].onTime += 1;
+            _reputation[seller].onTime += 1;
         } else {
             _reputation[buyer].late += 1;
+            _reputation[seller].late += 1;
         }
-        _reputation[seller].onTime += 1;
         emit RepaymentRecorded(buyer, seller, onTime);
     }
 

@@ -184,8 +184,8 @@ contract KYARegistryTest is Test {
         assertEq(bDefaults, 0, "buyer defaults");
 
         (uint32 sOnTime, uint32 sLate, uint32 sDefaults) = kya.reputation(seller);
-        assertEq(sOnTime, 2, "seller onTime counts every repayment");
-        assertEq(sLate, 0, "seller late");
+        assertEq(sOnTime, 1, "seller gets the same mark as the receivable");
+        assertEq(sLate, 1, "a late repayment counts against the seller's score too");
         assertEq(sDefaults, 0, "seller defaults");
     }
 
