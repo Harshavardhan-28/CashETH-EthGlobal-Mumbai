@@ -3,8 +3,8 @@
  * the demo means editing this file only: the expected fills and payouts are derived from it, and the steps and
  * the tests read them from here.
  */
-import { LENDER_TIERS, type Tier } from "@casheth/aqua";
-import { parseUnits } from "viem";
+import type { RiskSlab } from "@casheth/aqua";
+import { parseUnits, type Address } from "viem";
 import { INVOICE_PO_1003, INVOICE_PO_1003_DUE_UNIX, INVOICE_PO_1003_PDF } from "../fixtures.js";
 
 /** USDC has 6 decimals. */
@@ -30,27 +30,27 @@ export const BORROWING_BASE = (INVOICE.amount * BigInt(ADVANCE_BPS)) / BPS;
 
 export type FreshLender = "A" | "B";
 
-/** The two lenders that ship a fresh credit strategy for the seller (their earlier ones funded PO-1002). */
-export const FRESH_LENDERS: Record<FreshLender, { tier: Tier; creditUsdc: bigint; maxPerBuyer?: bigint }> = {
-  // The buyer already owes lender A 3.5 USDC from PO-1002: the server's default 5 USDC per-buyer cap would leave
-  // 1.5 USDC of headroom, so A's cap covers both receivables.
-  A: { tier: "low", creditUsdc: usdc("3.5"), maxPerBuyer: usdc("10") },
-  B: { tier: "medium", creditUsdc: usdc("1.5") },
+/**
+ * The two lenders that ship a fresh credit strategy for the seller. They choose risk slabs, not a price: both
+ * fund medium risk, where a seller with little history scores (600-699), and every fill pays the seller's own rate.
+ */
+export const FRESH_LENDERS: Record<FreshLender, { slabs: RiskSlab[]; creditUsdc: bigint; maxPerBuyer?: bigint }> = {
+  // A's cap covers this receivable and an earlier one against the same buyer.
+  A: { slabs: ["low", "medium"], creditUsdc: usdc("3.5"), maxPerBuyer: usdc("10") },
+  B: { slabs: ["medium"], creditUsdc: usdc("1.5") },
 };
-
-const aprBpsOf = (lender: FreshLender): number => LENDER_TIERS[FRESH_LENDERS[lender].tier].aprBps;
 
 export interface Fill {
   lender: FreshLender;
   amount: bigint;
 }
 
-/** What the cheapest-first solver funds: the lowest APR first, each up to its credit, until `base` is covered. */
-export function expectedFills(base: bigint, lenders = FRESH_LENDERS): Fill[] {
-  const cheapestFirst = (Object.keys(lenders) as FreshLender[]).sort((a, b) => aprBpsOf(a) - aprBpsOf(b));
+/** What the solver funds: the largest strategy first (fewer fills), each up to its credit, until `base` is covered. */
+export function expectedFills(base: bigint, lenders: Record<FreshLender, { creditUsdc: bigint }> = FRESH_LENDERS): Fill[] {
+  const largestFirst = (Object.keys(lenders) as FreshLender[]).sort((a, b) => Number(lenders[b].creditUsdc - lenders[a].creditUsdc));
   let remaining = base;
   const fills: Fill[] = [];
-  for (const lender of cheapestFirst) {
+  for (const lender of largestFirst) {
     const amount = remaining < lenders[lender].creditUsdc ? remaining : lenders[lender].creditUsdc;
     if (amount === 0n) continue;
     fills.push({ lender, amount });
@@ -67,19 +67,22 @@ export function lenderFee(principal: bigint, aprBps: number, elapsedSeconds = 0n
 
 export const EXPECTED_FILLS = expectedFills(BORROWING_BASE);
 
-/** What each lender is paid when the buyer repays the whole invoice quickly: its principal plus the minimum fee. */
-export function expectedPayouts(fills: Fill[]): Record<FreshLender, bigint> {
+/** One lender position as `/receivables/:id` reports it: the principal and the seller's rate it was funded at. */
+export type Position = { maker: Address; principal: string; aprBps: number };
+
+/**
+ * The repayment split when the buyer repays `amount` quickly: each lender its principal plus the minimum fee at
+ * the rate its position recorded (the seller's own rate at funding), the seller the rest.
+ */
+export function expectedSplit(amount: bigint, positions: Position[], makers: Record<FreshLender, Address>): Record<FreshLender | "seller", bigint> {
   const payout = (lender: FreshLender): bigint => {
-    const principal = fills.find((f) => f.lender === lender)?.amount ?? 0n;
-    return principal + lenderFee(principal, aprBpsOf(lender));
+    const p = positions.find((x) => x.maker.toLowerCase() === makers[lender].toLowerCase());
+    return p ? BigInt(p.principal) + lenderFee(BigInt(p.principal), p.aprBps) : 0n;
   };
-  return { A: payout("A"), B: payout("B") };
+  const A = payout("A");
+  const B = payout("B");
+  return { A, B, seller: amount - A - B };
 }
-
-export const EXPECTED_PAYOUTS = expectedPayouts(EXPECTED_FILLS);
-
-/** Lenders are paid first; the seller receives the rest of the repayment. */
-export const EXPECTED_SELLER_PAYOUT = INVOICE.amount - EXPECTED_PAYOUTS.A - EXPECTED_PAYOUTS.B;
 
 /** Per-worker facility budgets. What the workers are not allocated stays as the facility's headroom. */
 export const BUDGETS = {

@@ -5,15 +5,16 @@ import type { TradesFile } from "./trader.js";
 const lender = (label: string, over: Partial<LenderYieldRow> = {}): LenderYieldRow => ({
   address: "0xc502fe381481aBD2E56921Dc58DFC3ca3776a096",
   label,
-  tier: "low",
+  slabs: ["low"],
   capital: "6000000",
   lent: "4000000",
   idle: "2000000",
   baseFees: "1200",
   creditFees: "0",
   baseApr: 3.65,
-  boostApr: 7,
+  creditApr: 7,
   blendedApr: 4.5,
+  extraEarned: "0",
   strategies: {},
   ...over,
 });
@@ -37,12 +38,12 @@ const trades: TradesFile = {
 
 describe("lenderYieldTable", () => {
   it("lists lenders in label order with USDC as decimals and APRs as percentages", () => {
-    const table = lenderYieldTable([lender("lenderB", { tier: "medium" }), lender("lenderA", { baseFees: "1234" })]);
+    const table = lenderYieldTable([lender("lenderB", { slabs: ["medium", "high"] }), lender("lenderA", { baseFees: "1234" })]);
     const rows = table.split("\n");
-    expect(rows[0]).toBe("| Lender | Tier | Capital (USDC) | Lent | Idle | Base fees | Credit fees | Base APR | Boost APR | Blended APR |");
+    expect(rows[0]).toBe("| Lender | Slabs | Capital (USDC) | Lent | Idle | Base fees | Credit fees | Farming APR | Lending APR | Blended APR |");
     expect(rows[1]).toBe("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
     expect(rows[2]).toBe("| lenderA | low | 6 | 4 | 2 | 0.001234 | 0 | 3.65% | 7% | 4.5% |");
-    expect(rows[3]).toMatch(/^\| lenderB \| medium /);
+    expect(rows[3]).toMatch(/^\| lenderB \| medium \+ high /);
   });
 });
 

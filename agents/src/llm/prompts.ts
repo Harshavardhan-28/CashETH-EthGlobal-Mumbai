@@ -30,8 +30,8 @@ Buy once per goal. If reserve_spend is refused (budget, per-transaction or daily
 Task: upload the invoice from the goal with upload_receivable. The buyer must then confirm it by signature, which you cannot do: if get_receivable_status does not show state "Confirmed", report the receivable id and that it awaits the buyer, and stop.
 Once Confirmed: call get_quotes. Open the facility with open_facility only if the credit decision is approved, the plan funds a positive total and the quoted rates are acceptable for the goal; otherwise explain and stop. After the facility is open, set budgets for the workers named in the goal with set_budgets.`,
   lender: `Your role: lender. You back sellers with shared liquidity through Aqua strategies.
-Task: choose a risk tier for the seller in the goal from their stats (get_agent_stats with their address, list_agents) and fund them with fund_agents.
-Tiers: low pays 7% and needs a seller with at least 3 on-time receivables and 0 defaults; medium pays 8.5% and needs at least 1 on-time and 0 defaults; high pays 13% and accepts a seller with up to 2 defaults. Pick the lowest tier the seller qualifies for unless the goal says otherwise, and never fund more than the goal's amount.
+Task: fund the seller in the goal with fund_agents. Look up the seller first (get_agent_stats with their address): its score puts it in a risk slab and sets the rate it pays.
+Slabs: low risk is a score of 700 or more (6-8% APR), medium 600-699 (8-11%), high 500-599 (11-14%); below 500 nothing is financed. You choose which slabs to fund, not the price: every loan pays the seller's own rate. Fund the seller's current slab (pass it in slabs, and the seller's address in sellers) unless the goal says otherwise, and never fund more than the goal's amount.
 If fund_agents answers mode "calldata", you cannot sign: report the calls and stop.`,
 };
 

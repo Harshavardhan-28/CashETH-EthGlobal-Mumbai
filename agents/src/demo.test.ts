@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Env } from "@casheth/shared";
 import { describe, expect, it } from "vitest";
-import { LENDER_TIERS, type LenderStrategy } from "@casheth/aqua";
+import { creditArgs, type LenderStrategy } from "@casheth/aqua";
 import { keccak256, toHex, type Address } from "viem";
 import { computeReceivableId } from "@casheth/shared";
 import { checkQuotePlan, expiredReservation, findShippedStrategy, formatTable, formatUsdc, purchaseAttempt, topUpShortfall } from "./demo/checks.js";
@@ -15,10 +15,8 @@ import {
   BORROWING_BASE,
   BUDGETS,
   EXPECTED_FILLS,
-  EXPECTED_PAYOUTS,
-  EXPECTED_SELLER_PAYOUT,
   expectedFills,
-  expectedPayouts,
+  expectedSplit,
   FRESH_LENDERS,
   INVOICE,
   lenderFee,
@@ -139,17 +137,24 @@ describe("plan", () => {
     expect(lenderFee(principal, 700, 60n * day)).toBe((principal * 700n * 60n) / (365n * 10_000n));
   });
 
-  it("fills the cheapest lender first and the next one only for what is left", () => {
-    const lenders = { A: { tier: "low", creditUsdc: usdc("3") }, B: { tier: "medium", creditUsdc: usdc("4") } } as const;
-    expect(expectedFills(usdc("5"), lenders)).toEqual([{ lender: "A", amount: usdc("3") }, { lender: "B", amount: usdc("2") }]);
-    expect(expectedFills(usdc("2"), lenders)).toEqual([{ lender: "A", amount: usdc("2") }]);
+  it("fills the largest strategy first and the next one only for what is left", () => {
+    const lenders = { A: { creditUsdc: usdc("3") }, B: { creditUsdc: usdc("4") } };
+    expect(expectedFills(usdc("5"), lenders)).toEqual([{ lender: "B", amount: usdc("4") }, { lender: "A", amount: usdc("1") }]);
+    expect(expectedFills(usdc("2"), lenders)).toEqual([{ lender: "B", amount: usdc("2") }]);
   });
 
-  it("derives fills and payouts that add up to the invoice and fit the budgets", () => {
+  it("splits a repayment at each position's recorded rate: lenders first, the seller the rest", () => {
+    const positions = [
+      { maker: makers.A, principal: usdc("3").toString(), aprBps: 1100 },
+      { maker: makers.B, principal: usdc("1").toString(), aprBps: 1100 },
+    ];
+    const split = expectedSplit(usdc("6"), positions, { A: makers.A, B: makers.B });
+    expect(split).toEqual({ A: usdc("3") + lenderFee(usdc("3"), 1100), B: usdc("1") + lenderFee(usdc("1"), 1100), seller: usdc("6") - split.A - split.B });
+    expect(split.A + split.B + split.seller).toBe(usdc("6"));
+  });
+
+  it("derives fills that cover the borrowing base and fit the budgets", () => {
     expect(EXPECTED_FILLS.reduce((sum, f) => sum + f.amount, 0n)).toBe(BORROWING_BASE);
-    expect(EXPECTED_PAYOUTS.A + EXPECTED_PAYOUTS.B + EXPECTED_SELLER_PAYOUT).toBe(INVOICE.amount);
-    expect(EXPECTED_SELLER_PAYOUT).toBeGreaterThan(0n);
-    expect(expectedPayouts(EXPECTED_FILLS)).toEqual(EXPECTED_PAYOUTS);
     expect(BUDGETS.research.alloc + BUDGETS.compute.alloc).toBeLessThanOrEqual(BORROWING_BASE);
     expect(SPEND.computeOverBudget).toBeGreaterThan(BUDGETS.compute.alloc);
     expect(SPEND.researchOverLimit).toBeGreaterThan(BUDGETS.research.maxPerTx);
@@ -169,7 +174,7 @@ function quotes(overrides: Partial<Quotes["plan"]> = {}): Quotes {
   const strategy = (lender: LenderKey) => ({ maker: makers[lender], strategyHash: hash(`credit-${lender}`), kind: "credit" as const, virtualUsdc: "1", realUsdc: "1" });
   return {
     id: hash("PO-1003"),
-    decision: { approved: true, score: 80, advanceBps: ADVANCE_BPS, limit: BORROWING_BASE.toString(), reasons: [] },
+    decision: { approved: true, score: 600, slab: "medium", aprBps: 1100, advanceBps: ADVANCE_BPS, limit: BORROWING_BASE.toString(), reasons: [] },
     borrowingBase: BORROWING_BASE.toString(),
     strategies: [strategy("A"), strategy("B"), strategy("C"), strategy("D")],
     plan: {
@@ -177,12 +182,12 @@ function quotes(overrides: Partial<Quotes["plan"]> = {}): Quotes {
         maker: makers[f.lender],
         strategyHash: hash(`credit-${f.lender}`),
         amount: f.amount.toString(),
-        aprBps: LENDER_TIERS[FRESH_LENDERS[f.lender].tier].aprBps,
+        aprBps: 1100,
       })),
       total: BORROWING_BASE.toString(),
       skipped: [
-        { strategyHash: hash("credit-C"), reason: "PRICE_ABOVE_CHEAPEST" },
-        { strategyHash: hash("credit-D"), reason: "SELLER_NOT_FUNDED_BY_LENDER" },
+        { strategyHash: hash("credit-C"), reason: "SLAB_NOT_FUNDED" },
+        { strategyHash: hash("credit-D"), reason: "SELLER_NOT_LISTED" },
       ],
       ...overrides,
     },
@@ -190,10 +195,10 @@ function quotes(overrides: Partial<Quotes["plan"]> = {}): Quotes {
 }
 
 describe("checkQuotePlan", () => {
-  it("accepts the planned fills with C skipped by price and D skipped for its seller set", () => {
+  it("accepts the planned fills with C skipped for its slab and D for its seller list", () => {
     const fills = EXPECTED_FILLS.map((f) => `${f.lender} ${formatUsdc(f.amount)}`).join(" + ");
     expect(checkQuotePlan(quotes(), makers)).toBe(
-      `fills ${fills} = ${formatUsdc(BORROWING_BASE)}; C skipped (PRICE_ABOVE_CHEAPEST); D skipped (SELLER_NOT_FUNDED_BY_LENDER)`,
+      `fills ${fills} = ${formatUsdc(BORROWING_BASE)}; C skipped (SLAB_NOT_FUNDED); D skipped (SELLER_NOT_LISTED)`,
     );
   });
 
@@ -210,22 +215,23 @@ describe("checkQuotePlan", () => {
     expect(() => checkQuotePlan(quotes({ fills: [a!, { ...b!, amount: (BigInt(b!.amount) + 1n).toString() }] }), makers)).toThrow(/expected fills/);
   });
 
-  it("rejects a plan where lender C was not skipped or D was skipped for another reason", () => {
+  it("rejects a plan where lender C was not skipped, or C or D was skipped for another reason", () => {
     const skipped = quotes().plan.skipped;
     expect(() => checkQuotePlan(quotes({ skipped: [skipped[1]!] }), makers)).toThrow(/lender C's strategy .* was not skipped/);
-    expect(() => checkQuotePlan(quotes({ skipped: [skipped[0]!, { ...skipped[1]!, reason: "NO_CAPACITY" }] }), makers)).toThrow(/SELLER_NOT_FUNDED_BY_LENDER/);
+    expect(() => checkQuotePlan(quotes({ skipped: [{ ...skipped[0]!, reason: "NOT_NEEDED" }, skipped[1]!] }), makers)).toThrow(/SLAB_NOT_FUNDED/);
+    expect(() => checkQuotePlan(quotes({ skipped: [skipped[0]!, { ...skipped[1]!, reason: "NO_CAPACITY" }] }), makers)).toThrow(/SELLER_NOT_LISTED/);
   });
 });
 
 /** An open credit strategy of lender `key` exactly as the demo plans to ship it for `seller`. */
 function openStrategy(key: "A" | "B", seller: Address, overrides: Partial<LenderStrategy> = {}): LenderStrategy {
   const usdcToken: Address = "0x0000000000000000000000000000000000000c0a";
-  const { tier, creditUsdc } = FRESH_LENDERS[key];
+  const { slabs, creditUsdc } = FRESH_LENDERS[key];
   return {
     kind: "credit",
     maker: makers[key],
     strategyHash: hash(`open-${key}`),
-    args: { ...LENDER_TIERS[tier], maxPerBuyer: FRESH_LENDERS[key].maxPerBuyer ?? usdc("5"), minReserve: 0n, sellerSet: [seller] },
+    args: creditArgs(slabs, { maxPerBuyer: FRESH_LENDERS[key].maxPerBuyer ?? usdc("5"), sellerSet: [seller] }),
     tokens: [usdcToken, "0x0000000000000000000000000000000000000c0b"],
     virtual: { [usdcToken]: creditUsdc },
     realUsdc: creditUsdc,
@@ -238,19 +244,19 @@ function openStrategy(key: "A" | "B", seller: Address, overrides: Partial<Lender
 
 describe("findShippedStrategy", () => {
   const seller: Address = "0x00000000000000000000000000000000000000f1";
-  const planned = { maker: makers.A, seller, creditUsdc: FRESH_LENDERS.A.creditUsdc, aprBps: LENDER_TIERS[FRESH_LENDERS.A.tier].aprBps };
+  const planned = { maker: makers.A, seller, creditUsdc: FRESH_LENDERS.A.creditUsdc, slabs: FRESH_LENDERS.A.slabs };
 
-  it("finds the lender's unspent strategy of the planned size, APR and seller set", () => {
+  it("finds the lender's unspent strategy of the planned size, slabs and seller list", () => {
     const strategy = openStrategy("A", seller);
     expect(findShippedStrategy([openStrategy("B", seller), strategy], planned)).toBe(strategy);
   });
 
-  it("ignores strategies that are spent, for another seller, another APR or another kind", () => {
+  it("ignores strategies that are spent, for another seller, other slabs or another kind", () => {
     const [usdcToken] = openStrategy("A", seller).tokens;
     const other: Address = "0x00000000000000000000000000000000000000f2";
     expect(findShippedStrategy([openStrategy("A", seller, { virtual: { [usdcToken]: 1n } })], planned)).toBeUndefined();
     expect(findShippedStrategy([openStrategy("A", other)], planned)).toBeUndefined();
-    expect(findShippedStrategy([openStrategy("A", seller)], { ...planned, aprBps: planned.aprBps + 1 })).toBeUndefined();
+    expect(findShippedStrategy([openStrategy("A", seller)], { ...planned, slabs: ["high"] })).toBeUndefined();
     expect(findShippedStrategy([openStrategy("A", seller, { kind: "base" })], planned)).toBeUndefined();
     const smallerCap = openStrategy("A", seller);
     expect(findShippedStrategy([{ ...smallerCap, args: { ...smallerCap.args!, maxPerBuyer: smallerCap.args!.maxPerBuyer - 1n } }], { ...planned, maxPerBuyer: smallerCap.args!.maxPerBuyer })).toBeUndefined();
@@ -483,6 +489,8 @@ function fakeContext() {
   const shipKeys: string[] = [];
   const open: LenderStrategy[] = [];
   const calls: string[] = [];
+  // The positions the facility records: the planned fills, each at the seller's own rate (a new seller: 11%).
+  const positions = EXPECTED_FILLS.map((f) => ({ maker: makers[f.lender], principal: f.amount.toString(), aprBps: 1100, fee: "0" }));
   // Lender A holds half of what it ships (so it is topped up); lender B holds exactly what it ships.
   const balances = new Map<Address, bigint>([[makers.A, FRESH_LENDERS.A.creditUsdc / 2n], [makers.B, FRESH_LENDERS.B.creditUsdc], [sellerAddress, 0n], [buyerAddress, INVOICE.amount]]);
   let repaid = false;
@@ -530,9 +538,10 @@ function fakeContext() {
         repay: async () => {
           calls.push("repay");
           repaid = true;
-          balances.set(makers.A, balances.get(makers.A)! + EXPECTED_PAYOUTS.A);
-          balances.set(makers.B, balances.get(makers.B)! + EXPECTED_PAYOUTS.B);
-          balances.set(sellerAddress, EXPECTED_SELLER_PAYOUT);
+          const split = expectedSplit(INVOICE.amount, positions, makers);
+          balances.set(makers.A, balances.get(makers.A)! + split.A);
+          balances.set(makers.B, balances.get(makers.B)! + split.B);
+          balances.set(sellerAddress, split.seller);
           return { id, mode: "sent", txHash: "0xrepay" };
         },
       },
@@ -557,7 +566,7 @@ function fakeContext() {
         [key]: {
           address: makers[key as "A" | "B"],
           accountId: `0.0.${key.charCodeAt(0)}`,
-          agent: { ship: async (params: { tier: string; idempotencyKey?: string }) => (calls.push(`ship-${key}`), shipKeys.push(String(params.idempotencyKey)), { mode: "shipped", tier: params.tier, aprBps: key === "A" ? 700 : 850, credit: { txHash: `0xship${key}` } }) },
+          agent: { ship: async (params: { slabs: string[]; idempotencyKey?: string }) => (calls.push(`ship-${key}`), shipKeys.push(String(params.idempotencyKey)), { mode: "shipped", slabs: params.slabs, credit: { txHash: `0xship${key}` } }) },
         },
       }),
       {},
@@ -566,9 +575,12 @@ function fakeContext() {
     merchant: "0x0000000000000000000000000000000000000a01",
     read: {
       events: async () => events,
-      agents: async () => [{ address: buyerAddress, label: "buyer", role: "buyer", level: 3, score: 70, tier: "none", onTimePct: 100, receivablesFunded: 1, receivablesRepaid: repaid ? 1 : 0, receivablesDefaulted: 0, avgDaysToRepay: 0, lenderReturnPct: 0 }],
-      lenders: async () => [{ address: makers.A, label: "lenderA", tier: "low", capital: "1", lent: "0", idle: "1", baseFees: "0", creditFees: "0", baseApr: 0, boostApr: 7, blendedApr: 7 }],
-      receivable: async () => !calls.includes("open") ? undefined : ({ id, state: "Repaid", amount: INVOICE.amount.toString(), funded: BORROWING_BASE.toString(), debt: "0", positions: [] }),
+      agents: async () => [{ address: buyerAddress, label: "buyer", role: "buyer", level: 3, score: 615, slab: "medium", aprBps: 1055, onTimePct: 100, receivablesFunded: 1, receivablesRepaid: repaid ? 1 : 0, receivablesDefaulted: 0, avgDaysToRepay: 0, lenderReturnPct: 0 }],
+      lenders: async () => [{ address: makers.A, label: "lenderA", slabs: ["low", "medium"], sellers: [sellerAddress], capital: "1", lent: "0", idle: "1", baseFees: "0", creditFees: "0", baseApr: 0, creditApr: 11, blendedApr: 0, extraEarned: "0" }],
+      receivable: async () =>
+        !calls.includes("open")
+          ? undefined
+          : { id, state: repaid ? "Repaid" : "Financed", amount: INVOICE.amount.toString(), funded: BORROWING_BASE.toString(), debt: repaid ? "0" : "1", positions },
     },
     usdcBalance: async (address: Address) => balances.get(address) ?? 0n,
     openStrategies: async () => open,
@@ -634,7 +646,8 @@ describe("the eight lifecycle steps against fake agents", () => {
     const results = await runSteps(STEPS, ctx);
     const last = results[results.length - 1]!;
     expect(last.label).toContain("8. buyer repays");
-    expect(last.error).toMatch(new RegExp(`payouts differ from lender A ${EXPECTED_PAYOUTS.A}`));
+    const positions = EXPECTED_FILLS.map((f) => ({ maker: makers[f.lender], principal: f.amount.toString(), aprBps: 1100 }));
+    expect(last.error).toMatch(new RegExp(`payouts differ from lender A ${expectedSplit(INVOICE.amount, positions, makers).A}`));
     expect(exitCode(results)).toBe(1);
   });
 

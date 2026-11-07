@@ -1,5 +1,5 @@
 /** Pure checks and arithmetic behind the demo's assertions; they throw when the run does not match the script. */
-import type { LenderStrategy } from "@casheth/aqua";
+import { slabMask, type LenderStrategy, type RiskSlab } from "@casheth/aqua";
 import { formatUnits, type Address } from "viem";
 import type { Quotes } from "../seller.js";
 import { EXPECTED_FILLS } from "./plan.js";
@@ -19,14 +19,14 @@ export interface PlannedShip {
   maker: Address;
   seller: Address;
   creditUsdc: bigint;
-  aprBps: number;
+  slabs: RiskSlab[];
   /** Only compared when the demo asks for a specific per-buyer cap. */
   maxPerBuyer?: bigint;
 }
 
 /**
- * An open credit strategy of `maker` that is what the demo would ship: the planned size, still unspent, at the
- * planned APR and open to the seller. Finding one means a rerun must not ship again.
+ * An open credit strategy of `maker` that is what the demo would ship: the planned size, still unspent, funding the
+ * planned slabs and open to the seller. Finding one means a rerun must not ship again.
  */
 export function findShippedStrategy(strategies: LenderStrategy[], planned: PlannedShip): LenderStrategy | undefined {
   return strategies.find(
@@ -34,7 +34,7 @@ export function findShippedStrategy(strategies: LenderStrategy[], planned: Plann
       s.kind === "credit" &&
       same(s.maker, planned.maker) &&
       s.virtual[s.tokens[0]] === planned.creditUsdc &&
-      s.args?.aprBps === planned.aprBps &&
+      s.args?.slabMask === slabMask(planned.slabs) &&
       (planned.maxPerBuyer === undefined || s.args.maxPerBuyer === planned.maxPerBuyer) &&
       s.args.sellerSet.some((seller) => same(seller, planned.seller)),
   );
@@ -63,8 +63,9 @@ function fillsByMaker(fills: Quotes["plan"]["fills"]): { maker: Address; amount:
 }
 
 /**
- * The solver's plan must be the script (`EXPECTED_FILLS` per lender, cheapest first, the last one possibly partial), lender C
- * skipped by price, lender D skipped because the seller is not in its seller set. Returns the one-line summary.
+ * The solver's plan must be the script (`EXPECTED_FILLS` per lender, largest first, the last one possibly partial), lender C
+ * skipped because it funds only high risk, lender D because its seller list leaves the seller out. Returns the one-line
+ * summary.
  */
 export function checkQuotePlan(quotes: Quotes, makers: Record<LenderKey, Address>): string {
   const { total } = quotes.plan;
@@ -76,8 +77,11 @@ export function checkQuotePlan(quotes: Quotes, makers: Record<LenderKey, Address
 
   const reasonsC = skipReasons(quotes, makers.C, "C");
   const reasonsD = skipReasons(quotes, makers.D, "D");
-  if (!reasonsD.some((r) => r.includes("SELLER_NOT_FUNDED_BY_LENDER"))) {
-    throw new Error(`expected lender D skipped with SELLER_NOT_FUNDED_BY_LENDER, got ${reasonsD.join(", ")}`);
+  if (!reasonsC.some((r) => r.includes("SLAB_NOT_FUNDED"))) {
+    throw new Error(`expected lender C skipped with SLAB_NOT_FUNDED, got ${reasonsC.join(", ")}`);
+  }
+  if (!reasonsD.some((r) => r.includes("SELLER_NOT_LISTED"))) {
+    throw new Error(`expected lender D skipped with SELLER_NOT_LISTED, got ${reasonsD.join(", ")}`);
   }
   return `fills ${wanted} = ${formatUnits(BigInt(total), 6)}; C skipped (${reasonsC.join(", ")}); D skipped (${reasonsD.join(", ")})`;
 }
@@ -112,14 +116,14 @@ export function formatTable(headers: string[], rows: string[][]): string {
 
 export function formatLenderTable(lenders: LenderYield[]): string {
   return formatTable(
-    ["lender", "tier", "capital", "lent", "idle", "creditFees", "baseFees", "blended APR %"],
-    lenders.map((l) => [l.label, l.tier, l.capital, l.lent, l.idle, l.creditFees, l.baseFees, l.blendedApr.toFixed(2)]),
+    ["lender", "slabs", "capital", "lent", "idle", "creditFees", "baseFees", "farming APR %", "lending APR %", "extra over farming"],
+    lenders.map((l) => [l.label, l.slabs.join("+") || "none", l.capital, l.lent, l.idle, l.creditFees, l.baseFees, l.baseApr.toFixed(2), l.creditApr.toFixed(2), l.extraEarned]),
   );
 }
 
 export function formatAgentTable(agents: AgentStats[]): string {
   return formatTable(
-    ["agent", "role", "level", "score", "tier", "on-time %", "funded", "repaid", "defaulted"],
-    agents.map((a) => [a.label, a.role, String(a.level), String(a.score), a.tier, String(a.onTimePct), String(a.receivablesFunded), String(a.receivablesRepaid), String(a.receivablesDefaulted)]),
+    ["agent", "role", "level", "score", "slab", "rate %", "on-time %", "funded", "repaid", "defaulted"],
+    agents.map((a) => [a.label, a.role, String(a.level), String(a.score), a.slab, (a.aprBps / 100).toFixed(2), String(a.onTimePct), String(a.receivablesFunded), String(a.receivablesRepaid), String(a.receivablesDefaulted)]),
   );
 }

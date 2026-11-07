@@ -61,7 +61,7 @@ const strategyOf = (hash: Hex) => shipped.find((s) => s.strategyHash === hash);
 async function decideAndPlan(): Promise<{ decision: Decision; plan: Plan }> {
   const r = await registry.read.get([receivableId]);
   const [reputation, buyerLevel, sellerLevel, block, strategies] = await Promise.all([
-    kya.read.reputation([r.buyer]),
+    kya.read.reputation([r.seller]),
     kya.read.level([r.buyer]),
     kya.read.level([r.seller]),
     pub.getBlock(),
@@ -72,17 +72,19 @@ async function decideAndPlan(): Promise<{ decision: Decision; plan: Plan }> {
     amount: r.amount,
     dueDate,
     now: block.timestamp,
-    buyerReputation: { onTime: reputation[0], late: reputation[1], defaults: reputation[2] },
+    sellerReputation: { onTime: reputation[0], late: reputation[1], defaults: reputation[2] },
     sellerLevel,
     buyerLevel,
   });
   if (!decision.approved) throw new Error(`engine declined ${receivableId}: ${decision.reasons.join("; ")}`);
-  console.log(`  score ${decision.score}: advance ${decision.advanceBps} bps, limit ${decision.limit} USDC units`);
+  console.log(`  score ${decision.score} (${decision.slab} risk, ${decision.aprBps} bps): advance ${decision.advanceBps} bps, limit ${decision.limit} USDC units`);
+  if (decision.slab === "none") throw new Error(`score ${decision.score} is not financeable`);
 
   const plan = await solve(pub, aqua, {
     receivable: { id: receivableId, seller: r.seller, buyer: r.buyer, amount: r.amount, dueDate },
     strategies,
     advanceBps: decision.advanceBps,
+    price: { slab: decision.slab, aprBps: decision.aprBps },
     limit: decision.limit,
     facility,
     coordinator: accountEvm("COORDINATOR"),

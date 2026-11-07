@@ -10,15 +10,16 @@ import type { TradesFile } from "./trader.js";
 export interface LenderYieldRow {
   address: string;
   label: string;
-  tier: string;
+  slabs: string[];
   capital: string;
   lent: string;
   idle: string;
   baseFees: string;
   creditFees: string;
   baseApr: number;
-  boostApr: number;
+  creditApr: number;
   blendedApr: number;
+  extraEarned: string;
   strategies: { credit?: string; base?: string };
 }
 
@@ -35,7 +36,7 @@ export async function fetchLenders(baseUrl: string, fetchFn: typeof fetch = fetc
 }
 
 const AMOUNT_FIELDS = ["capital", "lent", "idle", "baseFees", "creditFees"] as const;
-const PERCENT_FIELDS = ["baseApr", "boostApr", "blendedApr"] as const;
+const PERCENT_FIELDS = ["baseApr", "creditApr", "blendedApr"] as const;
 
 /** Checks the shape the table code relies on, so a server-side rename fails here with the field named. */
 function parseLenders(json: unknown, source: string): LenderYieldRow[] {
@@ -44,7 +45,7 @@ function parseLenders(json: unknown, source: string): LenderYieldRow[] {
     const entry = row as Record<string, unknown> | null;
     const bad = (field: string) => new Error(`${source} lender ${i}: field ${field} is missing or has the wrong type`);
     if (typeof entry?.label !== "string") throw bad("label");
-    if (typeof entry.tier !== "string") throw bad("tier");
+    if (!Array.isArray(entry.slabs)) throw bad("slabs");
     for (const field of AMOUNT_FIELDS) if (typeof entry[field] !== "string" || !/^\d+$/.test(entry[field])) throw bad(field);
     for (const field of PERCENT_FIELDS) if (typeof entry[field] !== "number") throw bad(field);
   }
@@ -54,13 +55,13 @@ function parseLenders(json: unknown, source: string): LenderYieldRow[] {
 /** Markdown table, one row per lender in label order. */
 export function lenderYieldTable(lenders: LenderYieldRow[]): string {
   const header = [
-    "| Lender | Tier | Capital (USDC) | Lent | Idle | Base fees | Credit fees | Base APR | Boost APR | Blended APR |",
+    "| Lender | Slabs | Capital (USDC) | Lent | Idle | Base fees | Credit fees | Farming APR | Lending APR | Blended APR |",
     "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
   const rows = [...lenders]
     .sort((a, b) => a.label.localeCompare(b.label))
     .map((l) =>
-      [l.label, l.tier, usdc(l.capital), usdc(l.lent), usdc(l.idle), usdc(l.baseFees), usdc(l.creditFees), percent(l.baseApr), percent(l.boostApr), percent(l.blendedApr)].join(" | "),
+      [l.label, l.slabs.join(" + ") || "none", usdc(l.capital), usdc(l.lent), usdc(l.idle), usdc(l.baseFees), usdc(l.creditFees), percent(l.baseApr), percent(l.creditApr), percent(l.blendedApr)].join(" | "),
     )
     .map((row) => `| ${row} |`);
   return [...header, ...rows].join("\n");

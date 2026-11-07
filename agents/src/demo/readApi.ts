@@ -24,7 +24,9 @@ export interface AgentStats {
   role: string;
   level: number;
   score: number;
-  tier: string;
+  /** Risk slab and the APR the agent would pay as a seller now. */
+  slab: string;
+  aprBps: number;
   onTimePct: number;
   receivablesFunded: number;
   receivablesRepaid: number;
@@ -36,15 +38,17 @@ export interface AgentStats {
 export interface LenderYield {
   address: Address;
   label: string;
-  tier: string;
+  slabs: string[];
+  sellers: Address[];
   capital: string;
   lent: string;
   idle: string;
   baseFees: string;
   creditFees: string;
   baseApr: number;
-  boostApr: number;
+  creditApr: number;
   blendedApr: number;
+  extraEarned: string;
 }
 
 export interface ReceivableDetails {

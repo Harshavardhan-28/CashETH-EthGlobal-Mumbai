@@ -4,11 +4,14 @@
  *
  *   pnpm -r build && pnpm tsx scripts/c4-ship-strategies.ts      (after scripts/c4-register.ts)
  *
- * | Lender | tier   | sellerSet     | credit USDC | base USDC + tUSDT |
- * | A      | low    | seller        | 3.5         | 0.5 + 0.5         |
- * | B      | medium | seller        | 1.5         | 0.5 + 0.5         |
- * | C      | high   | (any seller)  | 0.5         | 0.5 + 0.5         |
- * | D      | low    | workerResearch| 1           | none              |
+ * | Lender | slabs funded      | sellers        | credit USDC | base USDC + tUSDT |
+ * | A      | low, medium       | seller         | 3.5         | 0.5 + 0.5         |
+ * | B      | medium            | seller         | 1.5         | 0.5 + 0.5         |
+ * | C      | high              | (any seller)   | 0.5         | 0.5 + 0.5         |
+ * | D      | low, medium, high | workerResearch | 1           | none              |
+ *
+ * Lenders choose risk, not price: every fill pays the seller's own rate (`RiskPricing.sol`). A new seller scores
+ * 600 (medium risk, 11%), so A and B fund it, C is skipped for its slab and D for its seller list.
  *
  * Sized to the lenders' real USDC (credit + base never exceeds a wallet), so base-yield swaps can draw on it.
  * Each record also carries the full `order`, which the trader agent rebuilds and hash-checks.
@@ -26,11 +29,12 @@ import {
   listOpenStrategies,
   shipBaseYield,
   shipLenderStrategy,
-  tierArgs,
+  creditArgs,
+  slabsOf,
   type LenderStrategy,
   type LenderWallet,
+  type RiskSlab,
   type ShippedStrategy,
-  type Tier,
 } from "@casheth/aqua";
 import { erc20Abi, keccak256, type Address, type Hex } from "viem";
 import { LENDER_NAMES, accountEvm, loadDeployment, walletFor, type LenderName } from "./lib/c4.js";
@@ -43,15 +47,15 @@ const BASE_SALT = 2n;
 const MAX_PER_BUYER = USD(5);
 const MIN_RESERVE = 0n;
 
-type LenderPlan = { tier: Tier; sellerSet: Address[]; credit: bigint; base?: bigint };
+type LenderPlan = { slabs: RiskSlab[]; sellerSet: Address[]; credit: bigint; base?: bigint };
 
 const seller = accountEvm("SELLER");
 const worker = accountEvm("WORKER_RESEARCH");
 const LENDERS: Record<LenderName, LenderPlan> = {
-  A: { tier: "low", sellerSet: [seller], credit: USD(3.5), base: USD(0.5) },
-  B: { tier: "medium", sellerSet: [seller], credit: USD(1.5), base: USD(0.5) },
-  C: { tier: "high", sellerSet: [], credit: USD(0.5), base: USD(0.5) },
-  D: { tier: "low", sellerSet: [worker], credit: USD(1) },
+  A: { slabs: ["low", "medium"], sellerSet: [seller], credit: USD(3.5), base: USD(0.5) },
+  B: { slabs: ["medium"], sellerSet: [seller], credit: USD(1.5), base: USD(0.5) },
+  C: { slabs: ["high"], sellerSet: [], credit: USD(0.5), base: USD(0.5) },
+  D: { slabs: ["low", "medium", "high"], sellerSet: [worker], credit: USD(1) },
 };
 
 type StrategyRecord = {
@@ -83,7 +87,7 @@ type Shipment = {
 
 function shipmentsOf(wallet: LenderWallet, plan: LenderPlan): Shipment[] {
   const maker = wallet.account.address;
-  const args = tierArgs(plan.tier, { sellerSet: plan.sellerSet, maxPerBuyer: MAX_PER_BUYER, minReserve: MIN_RESERVE });
+  const args = creditArgs(plan.slabs, { sellerSet: plan.sellerSet, maxPerBuyer: MAX_PER_BUYER, minReserve: MIN_RESERVE });
   const credit: Shipment = {
     kind: "credit",
     salt: CREDIT_SALT,
@@ -183,5 +187,5 @@ console.log("verify: discovery from the Aqua deployment block");
 const found = await verify(file);
 for (const s of found) {
   const r = file.strategies.find((x) => x.strategyHash === s.strategyHash)!;
-  console.log(`  ${r.kind} ${r.lender} ${s.args ? `${s.args.aprBps} bps` : `fee ${s.feeBps} bps`} ${r.tx.hashscan}`);
+  console.log(`  ${r.kind} ${r.lender} ${s.args ? `slabs ${slabsOf(s.args.slabMask).join("+")}` : `fee ${s.feeBps} bps`} ${r.tx.hashscan}`);
 }

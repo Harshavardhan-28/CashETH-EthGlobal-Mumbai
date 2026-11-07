@@ -2,14 +2,13 @@
  * The demo's lifecycle (BUILD.md section 16), one small step per Hedera transaction. Every step drives an agent
  * (which talks to the MCP server) and returns the proof it produced; none of them sends a chain call itself.
  */
-import { LENDER_TIERS } from "@casheth/aqua";
 import { computeReceivableId, hashscan } from "@casheth/shared";
 import { keccak256, toHex, type Address, type Hex } from "viem";
 import { idempotencyKey as stableKey, ToolCallError } from "../mcpClient.js";
 import type { ShipOutcome } from "../lender.js";
 import type { PurchaseOutcome } from "../worker.js";
 import { checkQuotePlan, expiredReservation, purchaseAttempt, findShippedStrategy, formatAgentTable, formatLenderTable, formatUsdc, topUpShortfall } from "./checks.js";
-import { ADVANCE_BPS, BUDGETS, EXPECTED_PAYOUTS, EXPECTED_SELLER_PAYOUT, FRESH_LENDERS, INVOICE, PURCHASE_ATTEMPT_BASE, SPEND } from "./plan.js";
+import { ADVANCE_BPS, BUDGETS, expectedSplit, FRESH_LENDERS, INVOICE, PURCHASE_ATTEMPT_BASE, SPEND } from "./plan.js";
 import { poll } from "./poll.js";
 import { findEvent, type AuditEvent } from "./readApi.js";
 import type { DemoContext, DemoWorker, Step, StepOutcome } from "./types.js";
@@ -122,21 +121,21 @@ async function shippedEarlier(ctx: DemoContext, strategyHash: Hex): Promise<Step
 }
 
 function shipStep(key: "A" | "B"): Step {
-  const { tier, creditUsdc } = FRESH_LENDERS[key];
+  const { slabs, creditUsdc } = FRESH_LENDERS[key];
   return {
-    label: `1. lender ${key} ships a ${formatUsdc(creditUsdc)} USDC ${tier}-tier credit strategy`,
+    label: `1. lender ${key} ships a ${formatUsdc(creditUsdc)} USDC credit strategy for ${slabs.join(" + ")} risk`,
     async run(ctx) {
       if (await facilityFunded(ctx)) return FUNDED_ALREADY;
       const lender = ctx.lenders[key];
       const { maxPerBuyer } = FRESH_LENDERS[key];
-      const planned = { maker: lender.address, seller: ctx.seller.address, creditUsdc, aprBps: LENDER_TIERS[tier].aprBps, ...(maxPerBuyer ? { maxPerBuyer } : {}) };
+      const planned = { maker: lender.address, seller: ctx.seller.address, creditUsdc, slabs, ...(maxPerBuyer ? { maxPerBuyer } : {}) };
       const open = findShippedStrategy(await ctx.openStrategies(), planned);
       if (open) return shippedEarlier(ctx, open.strategyHash);
 
       // A stable key per invoice and lender: a rerun whose strategy is not yet visible replays a ship that landed.
       const idempotencyKey = stableKey("demo-ship", INVOICE.buyerRef, key);
-      const outcome = await ctx.lenders[key].agent.ship({ tier, sellerSet: [ctx.seller.address], creditUsdc, idempotencyKey, ...(maxPerBuyer ? { maxPerBuyer } : {}) });
-      return { ...(await proofOfEvmTx(ctx, shipTxHash(outcome))), note: `${tier} tier at ${outcome.aprBps / 100}% APR, seller set [seller]` };
+      const outcome = await ctx.lenders[key].agent.ship({ slabs, sellers: [ctx.seller.address], creditUsdc, idempotencyKey, ...(maxPerBuyer ? { maxPerBuyer } : {}) });
+      return { ...(await proofOfEvmTx(ctx, shipTxHash(outcome))), note: `funds ${outcome.slabs.join(" + ")} risk at the seller's own rate, seller list [seller]` };
     },
   };
 }
@@ -344,11 +343,14 @@ const repayStep: Step = {
     const balances = async () => ({ A: await ctx.usdcBalance(A), B: await ctx.usdcBalance(B), seller: await ctx.usdcBalance(ctx.seller.address) });
     const buyerRepaid = async () => (await ctx.read.agents()).find((a) => a.address.toLowerCase() === ctx.buyer.address.toLowerCase())?.receivablesRepaid ?? 0;
     const [before, repaidBefore] = [await balances(), await buyerRepaid()];
+    // Each lender is owed at the rate its position recorded: the seller's own rate when the facility was funded.
+    const funded = await ctx.read.receivable(id);
+    if (!funded) throw new Error(`the server does not know receivable ${id}`);
+    const expected = expectedSplit(INVOICE.amount, funded.positions, ctx.makers);
 
     const result = await ctx.buyer.agent.repay(id, INVOICE.amount);
     const proof = await proofOfEvmTx(ctx, repayTxHash(result));
 
-    const expected = { ...EXPECTED_PAYOUTS, seller: EXPECTED_SELLER_PAYOUT };
     const paid = await poll("the repayment payouts", async () => {
       const after = await balances();
       const delta = { A: after.A - before.A, B: after.B - before.B, seller: after.seller - before.seller };
