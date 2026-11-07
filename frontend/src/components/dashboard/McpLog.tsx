@@ -5,10 +5,11 @@ import a from "@/components/admin/Admin.module.css";
 import { RangeControl } from "@/components/admin/Chrome";
 import { Avatar, Empty } from "@/components/admin/primitives";
 import type { AuditEvent } from "@/lib/admin/api";
-import { HCS_TOPIC_ID } from "@/lib/admin/api";
+import { API_URL, HCS_TOPIC_ID } from "@/lib/admin/api";
 import { inRange, type Range } from "@/lib/admin/derive";
-import { formatUsdc, humanizeCode, relativeTime, shortAddress } from "@/lib/admin/format";
+import { formatUsdc, humanizeCode, relativeTime } from "@/lib/admin/format";
 import type { Narrated } from "@/lib/admin/narrate";
+import { proofLinks } from "@/lib/admin/proofLinks";
 import { toolOf } from "@/lib/dashboard/derive";
 import d from "./Dashboard.module.css";
 import { Panel } from "./console";
@@ -83,31 +84,18 @@ function Details({ e }: { e: AuditEvent }) {
           <code>{e.jti}</code>
         </Field>
       )}
-      {e.txHash && (
-        <Field label="EVM transaction">
-          <a href={e.hashscan ?? `https://hashscan.io/testnet/transaction/${e.txHash}`} target="_blank" rel="noopener noreferrer">
-            <code>{shortAddress(e.txHash)} ↗</code>
+      {proofLinks(e, HCS_TOPIC_ID, API_URL).map((l) => (
+        <Field key={l.label} label={l.label}>
+          <a href={l.url} target="_blank" rel="noopener noreferrer">
+            <code>{l.text} ↗</code>
           </a>
         </Field>
-      )}
-      {str("paymentHashscan") && (
-        <Field label="x402 payment">
-          <a href={str("paymentHashscan")} target="_blank" rel="noopener noreferrer">
-            <code>{e.txId ?? "HashScan"} ↗</code>
-          </a>
-        </Field>
-      )}
-      <Field label="Hedera audit message">
-        {typeof e.hcsSeq === "number" ? (
-          <a href={`https://hashscan.io/testnet/topic/${HCS_TOPIC_ID}/message/${e.hcsSeq}`} target="_blank" rel="noopener noreferrer">
-            <code>
-              {HCS_TOPIC_ID} #{e.hcsSeq} ↗
-            </code>
-          </a>
-        ) : (
+      ))}
+      {typeof e.hcsSeq !== "number" && (
+        <Field label="Hedera audit message">
           <code>{e.hcsError ? "not published" : "—"}</code>
-        )}
-      </Field>
+        </Field>
+      )}
     </div>
   );
 }
