@@ -12,7 +12,6 @@ import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } fr
 import { afterEach, describe, expect, it } from "vitest";
 import { type Stack, startStack } from "./test/stack.js";
 
-const WORKER_SCOPES = ["receivable:read", "credit:read", "spend:reserve", "spend:pay", "spend:commit", "stats:read"];
 
 /** The repo's `.mcp.json`: Claude Code signs in once, as the seller (the main agent); the buyer and worker are server-run counterparties. */
 const MCP_JSON = JSON.parse(readFileSync(new URL("../../.mcp.json", import.meta.url), "utf8")) as {
@@ -75,17 +74,18 @@ class ClaudeCodeLikeProvider implements OAuthClientProvider {
   }
 }
 
-/** Opens the consent page, submits the "Act as <role>" form and returns the code from the redirect. */
-async function consent(authorizationUrl: URL, role: string): Promise<string> {
+/** Opens the consent page, approves the preselected seller and returns the code from the redirect. */
+async function approve(authorizationUrl: URL): Promise<{ code: string; page: string }> {
   const page = await (await fetch(authorizationUrl)).text();
-  const form = page.split("<form").find((f) => f.includes(`Act as ${role}<`));
-  if (!form) throw new Error(`no "Act as ${role}" choice on the consent page`);
-  const action = /action="([^"]+)"/.exec(form)![1]!;
-  const fields = new URLSearchParams([...form.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((m) => [m[1]!, m[2]!.replaceAll("&amp;", "&")]));
-  const res = await fetch(action, { method: "POST", body: fields, redirect: "manual" });
+  const action = /<form method="post" action="([^"]+)"/.exec(page)?.[1];
+  if (!action) throw new Error("no approval form on the consent page");
+  const fields = new URLSearchParams([...page.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((m) => [m[1]!, m[2]!.replaceAll("&amp;", "&")]));
+  fields.set("agent", /type="radio" name="agent" value="([^"]+)" checked/.exec(page)![1]!);
+  fields.set("grant", "1"); // the Approve button
+  const res = await fetch(action.replaceAll("&amp;", "&"), { method: "POST", body: fields, redirect: "manual" });
   const location = new URL(res.headers.get("location")!);
   expect(location.searchParams.get("state")).toBe("claude-code-state");
-  return location.searchParams.get("code")!;
+  return { code: location.searchParams.get("code")!, page };
 }
 
 async function connect(stack: Stack, provider: OAuthClientProvider) {
@@ -99,10 +99,11 @@ describe("Claude Code as a remote MCP client (AUTH_DEMO_GRANT=true)", () => {
   let stack: Stack;
   afterEach(async () => stack?.stop());
 
-  it("registers, authorizes with PKCE as the worker, exchanges the code and lists the tools", async () => {
+  it("registers, approves the seller with PKCE, exchanges the code and lists the seller's tools", async () => {
     stack = await startStack({ authEnv: { AUTH_DEMO_GRANT: "true" } });
-    const worker = stack.registerAgent(3);
-    stack.registerAgent(1);
+    const seller = stack.registerAgent(1);
+    const buyer = stack.registerAgent(2, 3);
+    stack.registerAgent(3);
     const provider = new ClaudeCodeLikeProvider();
 
     // First contact: 401 -> metadata discovery -> dynamic registration -> browser redirect.
@@ -113,49 +114,39 @@ describe("Claude Code as a remote MCP client (AUTH_DEMO_GRANT=true)", () => {
     expect(url.searchParams.get("resource")).toBe(stack.mcpUrl);
     expect(url.searchParams.get("scope")).toContain("agent:admin"); // the client asks for every advertised scope...
 
-    const code = await consent(url, "worker");
+    const { code, page } = await approve(url);
+    expect(page).toContain(seller.address);
+    expect(page).not.toContain(buyer.address); // only the seller is offered
     const pending = new StreamableHTTPClientTransport(new URL(stack.mcpUrl), { authProvider: provider });
     await pending.finishAuth(code);
     const tokens = provider.tokens()!;
-    expect(tokens.scope!.split(" ").sort()).toEqual([...WORKER_SCOPES].sort()); // ...and gets the worker's, never admin
+    expect(tokens.scope!.split(" ").sort()).toEqual([...ROLE_SCOPES[1]!].sort()); // ...and gets the seller's, never admin
     expect(tokens.refresh_token).toEqual(expect.any(String));
 
     const { client } = await connect(stack, provider);
     const names = (await client.listTools()).tools.map((t) => t.name);
-    expect(names).toEqual(expect.arrayContaining(["reserve_spend", "pay_x402", "commit_spend", "release_spend"]));
+    expect(names).toEqual(expect.arrayContaining(["upload_receivable", "open_facility", "buy_with_credit", "settle_receivable"]));
     const admin = await client.callTool({
       name: "register_agent",
-      arguments: { account: worker.address, accountId: "0.0.1234", name: "x", role: "worker", level: 3, ownerGroup: "x", idempotencyKey: "claude-code-admin" },
+      arguments: { account: seller.address, accountId: "0.0.1234", name: "x", role: "seller", level: 3, ownerGroup: "x", idempotencyKey: "claude-code-admin" },
     });
     expect(JSON.parse((admin.content as { text: string }[])[0]!.text)).toMatchObject({ code: "INSUFFICIENT_SCOPE", required: "agent:admin" });
     await client.close();
 
     const claims = JSON.parse(Buffer.from(tokens.access_token.split(".")[1]!, "base64url").toString()) as { agent: string; role: number };
-    expect(claims).toMatchObject({ agent: worker.address, role: 3 });
+    expect(claims).toMatchObject({ agent: seller.address, role: 1 });
   });
 
-  it("pre-selects and signs in the role whose scopes a client requests (seller, buyer, worker)", async () => {
+  it("grants exactly the scopes .mcp.json pins for casheth-seller", async () => {
     stack = await startStack({ authEnv: { AUTH_DEMO_GRANT: "true" } });
-    const agents = { seller: stack.registerAgent(1), buyer: stack.registerAgent(2, 3), worker: stack.registerAgent(3) };
-    stack.registerAgent(4);
+    stack.registerAgent(1);
+    const provider = new ClaudeCodeLikeProvider();
+    await expect(connect(stack, provider)).rejects.toBeInstanceOf(UnauthorizedError);
+    const url = new URL(provider.authorizationUrl!);
+    url.searchParams.set("scope", ROLE_SCOPES[1]!.join(" "));
 
-    for (const [role, roleId] of [["seller", 1], ["buyer", 2], ["worker", 3]] as const) {
-      const provider = new ClaudeCodeLikeProvider();
-      await expect(connect(stack, provider)).rejects.toBeInstanceOf(UnauthorizedError);
-      // A client that pins a role's `oauth.scopes` (as .mcp.json does for the seller) gets that role pre-selected.
-      const url = new URL(provider.authorizationUrl!);
-      url.searchParams.set("scope", ROLE_SCOPES[roleId]!.join(" "));
-
-      const page = await (await fetch(url)).text();
-      const preselected = page.split("<form").find((f) => f.includes("autofocus"));
-      expect(preselected, `${role}: a pre-selected choice`).toContain(`Act as ${role}<`);
-      await new StreamableHTTPClientTransport(new URL(stack.mcpUrl), { authProvider: provider }).finishAuth(await consent(url, role));
-
-      const tokens = provider.tokens()!;
-      const claims = JSON.parse(Buffer.from(tokens.access_token.split(".")[1]!, "base64url").toString()) as { agent: string; role: number };
-      expect(claims).toMatchObject({ agent: agents[role].address, role: roleId });
-      expect(tokens.scope!.split(" ").sort()).toEqual([...ROLE_SCOPES[roleId]!].sort());
-    }
+    await new StreamableHTTPClientTransport(new URL(stack.mcpUrl), { authProvider: provider }).finishAuth((await approve(url)).code);
+    expect(provider.tokens()!.scope!.split(" ").sort()).toEqual([...ROLE_SCOPES[1]!].sort());
   });
 
   it("gets no authorization-code grant while AUTH_DEMO_GRANT is off", async () => {
