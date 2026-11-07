@@ -17,7 +17,7 @@ import { dedupeLinks, mirrorPath, parseEvidence, type DistinctLink, type Pending
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const MIRROR = process.env.MIRROR_NODE_URL ?? "https://testnet.mirrornode.hedera.com";
-const FILES = ["docs/EVIDENCE.md", "README.md"];
+const FILES = ["docs/EVIDENCE.md", "docs/SUBMISSION.md", "README.md"];
 /** At most 5 requests per second. */
 const MIN_INTERVAL_MS = 220;
 const MAX_ATTEMPTS = 6;

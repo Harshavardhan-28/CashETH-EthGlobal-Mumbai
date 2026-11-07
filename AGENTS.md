@@ -1,6 +1,6 @@
 # AGENTS.md — context for coding agents working on CashETH
 
-Read this before touching the repo. It is written for AI coding agents (Claude Code, Cursor, Codex, etc.) and for humans who have not seen the codebase. `README.md` is the judge-facing document; this file is the working brief.
+Read this before touching the repo. It is written for AI coding agents (Claude Code, Cursor, Codex, etc.) and for humans who have not seen the codebase. `README.md` is the public overview, `docs/SUBMISSION.md` is the detailed hackathon record, and this file is the working brief. Human contributors: see `CONTRIBUTING.md`.
 
 ## 1. What CashETH is
 
@@ -14,7 +14,7 @@ The eight-step flow:
 4. The seller sets per-worker budgets.
 5. **Worker agents** spend through **x402** (`exact` scheme, facilitator `https://x402.org/facilitator`) from 2-of-2 co-signed spend wallets: reserve → pay → commit. The co-signer (engine policy) only signs payments that match an open reservation.
 6. A scripted **trader agent** swaps against the lenders' base-yield strategies so swap fees exist ("scripted volume").
-7. Hedera Schedule Service (HSS) flips the receivable to overdue / defaulted on time with no cron. **One `scheduleCall` per transaction** is a hard Hedera rule (we hit it: see README §8 and `docs/EVIDENCE.md` "C4 redeploy").
+7. Hedera Schedule Service (HSS) flips the receivable to overdue / defaulted on time with no cron. **One `scheduleCall` per transaction** is a hard Hedera rule (we hit it: see docs/SUBMISSION.md §8 and `docs/EVIDENCE.md` "C4 redeploy").
 8. The buyer repays `RepaymentRouter`: lenders get principal + fee first, the seller the remainder; reputation counters update in `KYARegistry`.
 
 Lenders are a **shared liquidity** story (never say "pool"): one wallet backs a base-yield strategy (USDC/tUSDT constant product, 30 bps) and a credit strategy with a risk tier (low 700 / medium 850 / high 1300 bps) enforced by the opcode at fill time.
@@ -74,7 +74,7 @@ Deploys go through the Hashio relay with `forge script ... --rpc-url https://tes
 - Commits: small and meaningful, conventional prefixes (`feat(mcp): …`, `fix(contracts): …`, `docs: …`). **No `Co-Authored-By` trailers.** `main` is pushed after every ~5 commits.
 - Every on-chain action gets a HashScan link in `docs/EVIDENCE.md`; `pnpm verify:evidence` checks them against the mirror node.
 - Error codes are a typed union in `packages/shared/src/errors.ts` (+ MCP-side codes in `apps/mcp-server`); keep `docs/API.md` in sync.
-- Known limitations and the controller's rulings are listed in README §8 and `.superpowers/sdd/2026-11-06-casheth-build/progress.md` (gitignored, local). Read them before "fixing" something that was deliberately deferred.
+- Known limitations and the controller's rulings are listed in docs/SUBMISSION.md §8 and `.superpowers/sdd/2026-11-06-casheth-build/progress.md` (gitignored, local). Read them before "fixing" something that was deliberately deferred.
 
 ## 6. Frontend integration (for the frontend teammate's agents)
 
