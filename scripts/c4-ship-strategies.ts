@@ -159,13 +159,14 @@ async function topUp(file: StrategiesFile, open: Set<Hex>, lender: LenderName, m
   if (balance >= required) return;
   const units = required - balance;
   const vars = env as unknown as Record<string, string>;
-  const transactionId = await transferUsdc(hieroClient(env), {
+  const client = hieroClient(env);
+  const transactionId = await transferUsdc(client, {
     tokenId: env.USDC_TOKEN_ID,
     from: env.HEDERA_OPERATOR_ID,
     fromKey: env.HEDERA_OPERATOR_KEY,
     to: vars[`LENDER_${lender}_ID`]!,
     units,
-  });
+  }).finally(() => client.close());
   file.topUps = [...(file.topUps ?? []), { lender, units: units.toString(), transactionId, hashscan: hashscan.tx(transactionId) }];
   writeJson(STRATEGIES_FILE, file);
   console.log(`  ${lender}: topped up ${units} USDC units from the operator ${hashscan.tx(transactionId)}`);
