@@ -10,7 +10,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { decodeStrategy, discoverStrategies, listOpenStrategies, LOG_CHUNK_BLOCKS } from "./discover.js";
+import { decodeStrategy, discoverStrategies, listOpenStrategies, LOG_CHUNK_BLOCKS, openStrategyHashes } from "./discover.js";
 import { creditArgs } from "./types.js";
 
 const A = "0x00000000000000000000000000000000000000a1" as const;
@@ -154,6 +154,27 @@ describe("listOpenStrategies log scanning", () => {
       [1_010n, 2_009n],
       [2_010n, 2_500n],
     ]);
+  });
+});
+
+describe("openStrategyHashes", () => {
+  it("lists shipped strategies that were not docked, without decoding them", async () => {
+    const kept = orderBytes(LENDER);
+    const docked = orderBytes(LENDER_ONE_TOKEN);
+    const dockedLog = {
+      address: AQUA,
+      data: encodeAbiParameters([{ type: "address" }, { type: "address" }, { type: "bytes32" }], [LENDER_ONE_TOKEN, ROUTER, keccak256(docked)]),
+      topics: encodeEventTopics({ abi: AquaRouterAbi, eventName: "Docked" }),
+    };
+    const client = {
+      getBlockNumber: async () => 10n,
+      getLogs: async () => [shippedLog(LENDER, kept), shippedLog(LENDER_ONE_TOKEN, docked), dockedLog],
+      readContract: async () => {
+        throw new Error("openStrategyHashes must not read contracts");
+      },
+    } as unknown as Parameters<typeof openStrategyHashes>[0];
+
+    expect(await openStrategyHashes(client, { aqua: AQUA, swapRouter: ROUTER })).toEqual([keccak256(kept)]);
   });
 });
 

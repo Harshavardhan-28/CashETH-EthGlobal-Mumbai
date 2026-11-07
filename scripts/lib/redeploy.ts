@@ -2,7 +2,7 @@
  * Helpers for redeploying the core stack (scripts/c4-redeploy-prepare.ts): balances, the coordinator's HBAR
  * top-up, docking the replaced strategies and archiving the stack that is replaced.
  */
-import { dockStrategy, listOpenStrategies, approveAquaExact, type LenderWallet } from "@casheth/aqua";
+import { dockStrategy, openStrategyHashes, approveAquaExact, type LenderWallet } from "@casheth/aqua";
 import { mirror } from "@casheth/hedera";
 import { erc20Abi, parseEther, type Hex } from "viem";
 import { LENDER_NAMES, accountEvm, walletFor, type Deployment } from "./c4.js";
@@ -58,7 +58,7 @@ export type OldStrategy = { lender: (typeof LENDER_NAMES)[number]; kind: "credit
 
 /** Docks every still-open old strategy (credit: USDC + RCN, base: USDC + tUSDT) and returns the dock transactions. */
 export async function dockOldStrategies(old: Deployment, strategies: OldStrategy[]): Promise<TxRecord[]> {
-  const open = new Set((await listOpenStrategies(pub, old.aqua, { fromBlock: old.fromBlock })).map((s) => s.strategyHash));
+  const open = new Set(await openStrategyHashes(pub, old.aqua, { fromBlock: old.fromBlock }));
   const txs: TxRecord[] = [];
   for (const s of strategies) {
     const label = `Aqua.dock(${s.lender} ${s.kind})`;

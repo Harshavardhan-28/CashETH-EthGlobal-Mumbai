@@ -241,6 +241,21 @@ async function inspect(
 }
 
 /**
+ * Hashes of the strategies shipped to `addrs.swapRouter` and not docked since, in shipping order, read from Aqua's
+ * logs alone. Unlike `listOpenStrategies` nothing is decoded, so it also works for strategies of a replaced stack
+ * whose order builder speaks an older argument format (a redeploy docks them).
+ */
+export async function openStrategyHashes(
+  client: Pick<Reader, "getBlockNumber" | "getLogs">,
+  addrs: Pick<AquaAddresses, "aqua" | "swapRouter">,
+  opts: { fromBlock?: bigint; toBlock?: bigint } = {},
+): Promise<Hex[]> {
+  const to = opts.toBlock ?? (await client.getBlockNumber({ cacheTime: 0 }));
+  const logs = await aquaLogs(client, addrs.aqua, opts.fromBlock ?? 0n, to);
+  return openFromLogs(logs, getAddress(addrs.swapRouter)).map((s) => s.strategyHash);
+}
+
+/**
  * Open CashETH strategies on `addrs.swapRouter`: credit strategies, then base-yield strategies, each in shipping
  * order. Untrusted or foreign `Shipped` data is
  * skipped; use `discoverStrategies` to also see what was skipped and why.

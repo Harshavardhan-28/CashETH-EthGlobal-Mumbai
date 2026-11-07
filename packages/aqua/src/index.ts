@@ -19,7 +19,7 @@ export {
   shipStrategy,
 } from "./ship.js";
 export type { LenderWallet, ShipResult, ShippedStrategy } from "./ship.js";
-export { DISCOVERY_SKIP, LOG_CHUNK_BLOCKS, createAquaLogCache, decodeStrategy, discoverStrategies, listOpenStrategies } from "./discover.js";
+export { DISCOVERY_SKIP, LOG_CHUNK_BLOCKS, createAquaLogCache, decodeStrategy, discoverStrategies, listOpenStrategies, openStrategyHashes } from "./discover.js";
 export type { AquaLogCache, DiscoverySkip } from "./discover.js";
 export { SKIP, planFills, preCheck, revertReason, solve, strategyCapacity } from "./solver.js";
 export type { Plan, Skipped, SolveInput } from "./solver.js";
