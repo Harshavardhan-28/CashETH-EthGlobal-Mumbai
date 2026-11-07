@@ -4,8 +4,8 @@
  * with `packages/stats` behind the same `StatsProvider` interface.
  *
  * Definitions (documented in docs/API.md):
- * - score: `scoreReceivable` on the agent's own reputation with a zero-tenor receivable (the base score);
- *   tier: the riskiest-first lender tier whose seller thresholds the agent meets (`LENDER_TIERS`), else `none`.
+ * - score: `creditScore` on the agent's own reputation at a short tenor; slab and aprBps: its risk slab and the APR
+ *   it would pay as a seller (`pricing.ts`, the curve the credit opcode charges on chain).
  * - onTimePct: on-time / (on-time + late + defaults) x 100 from `KYARegistry.reputation`, 0 without history.
  * - receivablesFunded / Repaid / Defaulted: `StateChanged` transitions into Financed / Repaid / Defaulted of
  *   receivables where the agent is seller or buyer; avgDaysToRepay: Financed -> Repaid in days.
@@ -14,15 +14,16 @@
  * - lender capital = wallet USDC + outstanding principal; lent = Σ `PositionOpened.principal` - Σ
  *   `LenderPaid.principal`; idle = wallet USDC; creditFees = Σ `LenderPaid.fee`; baseFees = Σ Aqua `Pushed`
  *   swap inputs into the lender's base strategy (not the ship deposits) x the base fee; baseApr annualises baseFees over the base
- *   strategy's shipped balance since its first swap; boostApr = the credit strategy's aprBps / 100; blendedApr =
- *   (baseApr x idle + boostApr x lent) / capital.
+ *   strategy's shipped balance since its first swap; creditApr = Σ principal x aprBps / Σ principal over the
+ *   lender's `PositionOpened` events / 100; blendedApr = (baseApr x idle + creditApr x lent) / capital;
+ *   extraEarned = for each `LenderPaid`, its fee minus the principal x baseApr over the time since its position
+ *   opened (what farming alone would have paid); slabs and sellers come from the lender's open credit strategies.
  */
 import { CreditFacilityAbi, AquaRouterAbi, ReceivableRegistryAbi, RepaymentRouterAbi } from "@casheth/shared";
-import { LENDER_TIERS, type LenderStrategy, type Tier } from "@casheth/aqua";
-import { scoreReceivable, type EventStore } from "@casheth/engine";
+import { slabsOf, type LenderStrategy, type RiskSlab } from "@casheth/aqua";
+import { aprBpsFor, creditScore, slabOf, type EventStore } from "@casheth/engine";
 import { decodeEventLog, getAddress, type Abi, type Address, type Hex } from "viem";
 import { ROLE_NAMES, sameAddress, STATE } from "./common.js";
-import { tierOfApr } from "./facility.js";
 import { staleWhileRevalidate, type SwrCache } from "./swr.js";
 import type {
   AgentDirectoryEntry,
@@ -72,7 +73,36 @@ function swapVolume(aqua: Decoded[], maker: Address, strategyHash: Hex): { pushe
   return { pushed, firstSwap };
 }
 
-const round =(x: number, digits = 2): number => (Number.isFinite(x) ? Number(x.toFixed(digits)) : 0);
+const round = (x: number, digits = 2): number => (Number.isFinite(x) ? Number(x.toFixed(digits)) : 0);
+
+/** Principal-weighted APR of `PositionOpened` events, in percent. */
+function weightedApr(positions: Decoded[]): number {
+  const principal = positions.reduce((sum, e) => sum + (e.args.principal as bigint), 0n);
+  if (principal === 0n) return 0;
+  const weighted = positions.reduce((sum, e) => sum + (e.args.principal as bigint) * BigInt(Number(e.args.aprBps)), 0n);
+  return round(Number(weighted) / Number(principal) / 100);
+}
+
+/**
+ * Credit fees received minus what the same principal would have earned at the farming APR between its position
+ * opening and each repayment: what lending added on top of yield farming, in USDC units.
+ */
+function extraOverFarming(positions: Decoded[], paid: Decoded[], baseApr: number): bigint {
+  let extra = 0n;
+  for (const p of paid) {
+    const opened = positions.find((e) => String(e.args.id).toLowerCase() === String(p.args.id).toLowerCase());
+    const seconds = opened ? Math.max(p.timestamp - opened.timestamp, 0) : 0;
+    const farming = Math.floor((Number(p.args.principal as bigint) * baseApr * seconds) / (100 * YEAR));
+    extra += (p.args.fee as bigint) - BigInt(farming);
+  }
+  return extra;
+}
+
+/** Slabs funded by any of the lender's open credit strategies, safest first. */
+function fundedSlabs(credit: LenderStrategy[]): RiskSlab[] {
+  const mask = credit.reduce((m, x) => m | x.args!.slabMask, 0);
+  return mask ? slabsOf(mask) : [];
+}
 
 type Snapshot = {
   at: number;
@@ -180,19 +210,7 @@ export class BasicStatsProvider implements StatsProvider {
     const entry = this.agents().find((a) => sameAddress(a.address, address));
     const [kya, rep] = await Promise.all([this.opts.chain.kyaAgent(address), this.opts.chain.reputation(address)]);
     const role: AgentRoleName = entry?.role ?? ROLE_NAMES[kya.role as 1 | 2 | 3 | 4] ?? "seller";
-    const now = BigInt(s.at);
-    const score = scoreReceivable({
-      amount: 0n,
-      dueDate: now,
-      now,
-      buyerReputation: rep,
-      sellerLevel: kya.level,
-      buyerLevel: kya.level,
-    }).score;
-    const tier =
-      (["low", "medium", "high"] as Tier[]).find(
-        (t) => rep.onTime >= LENDER_TIERS[t].minSellerOnTime && rep.defaults <= LENDER_TIERS[t].maxSellerDefaults,
-      ) ?? "none";
+    const score = creditScore(rep, 0n);
     const history = rep.onTime + rep.late + rep.defaults;
 
     // Receivables where the agent is a party, and their state transitions.
@@ -254,7 +272,8 @@ export class BasicStatsProvider implements StatsProvider {
       label: entry?.label ?? getAddress(address),
       level: kya.level,
       score,
-      tier,
+      slab: slabOf(score),
+      aprBps: aprBpsFor(score) ?? 0,
       onTimePct: history > 0 ? round((rep.onTime / history) * 100, 1) : 0,
       receivablesFunded: count(STATE.Financed),
       receivablesRepaid: count(STATE.Repaid),
@@ -284,18 +303,14 @@ export class BasicStatsProvider implements StatsProvider {
   async #lenderYield(address: Address, s: Snapshot): Promise<LenderYield> {
     const label = this.agents().find((a) => sameAddress(a.address, address))?.label ?? getAddress(address);
     const own = s.strategies.filter((x) => sameAddress(x.maker, address));
-    const credit = own.filter((x) => x.kind === "credit" && x.args).sort((a, b) => a.args!.aprBps - b.args!.aprBps)[0];
+    const credit = own.filter((x) => x.kind === "credit" && x.args);
     const base = own.find((x) => x.kind === "base");
 
-    let opened = 0n;
-    for (const e of s.facility) if (e.name === "PositionOpened" && sameAddress(String(e.args.maker), address)) opened += e.args.principal as bigint;
-    let repaidPrincipal = 0n;
-    let creditFees = 0n;
-    for (const e of s.router) {
-      if (e.name !== "LenderPaid" || !sameAddress(String(e.args.maker), address)) continue;
-      repaidPrincipal += e.args.principal as bigint;
-      creditFees += e.args.fee as bigint;
-    }
+    const positions = s.facility.filter((e) => e.name === "PositionOpened" && sameAddress(String(e.args.maker), address));
+    const paid = s.router.filter((e) => e.name === "LenderPaid" && sameAddress(String(e.args.maker), address));
+    const opened = positions.reduce((sum, e) => sum + (e.args.principal as bigint), 0n);
+    const repaidPrincipal = paid.reduce((sum, e) => sum + (e.args.principal as bigint), 0n);
+    const creditFees = paid.reduce((sum, e) => sum + (e.args.fee as bigint), 0n);
     const lent = opened > repaidPrincipal ? opened - repaidPrincipal : 0n;
 
     const feeBps = base?.feeBps ?? 30;
@@ -307,23 +322,24 @@ export class BasicStatsProvider implements StatsProvider {
     const baseCapital = base ? Object.values(base.virtual).reduce((x, y) => x + y, 0n) : 0n;
     const elapsed = firstSwap !== undefined ? s.at - firstSwap : 0;
     const baseApr = baseCapital > 0n && elapsed > 0 ? round((Number(baseFees) / Number(baseCapital)) * (YEAR / elapsed) * 100) : 0;
-    const boostApr = credit ? credit.args!.aprBps / 100 : 0;
-    const blendedApr = capital > 0n ? round((baseApr * Number(idle) + boostApr * Number(lent)) / Number(capital)) : 0;
-    const tier = credit ? tierOfApr(credit.args!.aprBps) : "none";
+    const creditApr = weightedApr(positions);
+    const blendedApr = capital > 0n ? round((baseApr * Number(idle) + creditApr * Number(lent)) / Number(capital)) : 0;
 
     return {
       address: getAddress(address),
       label,
-      tier,
+      slabs: fundedSlabs(credit),
+      sellers: [...new Map(credit.flatMap((x) => x.args!.sellerSet).map((a) => [a.toLowerCase(), getAddress(a)])).values()],
       capital: capital.toString(),
       lent: lent.toString(),
       idle: idle.toString(),
       baseFees: baseFees.toString(),
       creditFees: creditFees.toString(),
       baseApr,
-      boostApr,
+      creditApr,
       blendedApr,
-      strategies: { ...(credit ? { credit: credit.strategyHash } : {}), ...(base ? { base: base.strategyHash } : {}) },
+      extraEarned: extraOverFarming(positions, paid, baseApr).toString(),
+      strategies: { ...(credit[0] ? { credit: credit[0].strategyHash } : {}), ...(base ? { base: base.strategyHash } : {}) },
     };
   }
 }

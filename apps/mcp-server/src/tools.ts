@@ -400,27 +400,17 @@ export function registerTools(server: McpServer, o: Orchestrator): void {
   add({
     name: "fund_agents",
     description:
-      "Lender: ship a credit (boost) strategy for a risk tier (low 7%, medium 8.5%, high 13%) or explicit args, plus an optional base-yield strategy from the same wallet. Ships only when the server holds the lender key (demo); otherwise returns the approve and ship calldatas.",
+      "Lender: ship a credit strategy for the risk slabs you fund (low: score 700+, 6-8% APR; medium: 600-699, 8-11%; high: 500-599, 11-14%) and optionally up to 3 sellers you back, plus an optional base-yield strategy from the same wallet. The rate is the seller's own, computed on chain from its score; lenders choose risk, not price. Ships only when the server holds the lender key (demo); otherwise returns the approve and ship calldatas.",
     roles: ["lender"],
     scope: "lend:write",
     mutating: true,
     input: {
-      tier: z.enum(["low", "medium", "high"]).optional(),
-      args: z
-        .object({
-          maxTenorDays: z.number().int().min(1).max(65535),
-          maxAdvanceBps: z.number().int().min(0).max(10000),
-          minBuyerOnTime: z.number().int().nonnegative(),
-          maxPerBuyer: amount,
-          aprBps: z.number().int().min(0).max(65535),
-          minSellerOnTime: z.number().int().nonnegative(),
-          maxSellerDefaults: z.number().int().min(0).max(255),
-          minReserve: amount,
-        })
-        .optional(),
-      sellerSet: z.array(address).max(3).optional(),
+      slabs: z.array(z.enum(["low", "medium", "high"])).min(1).describe("Risk slabs this strategy funds"),
+      sellers: z.array(address).max(3).optional().describe("Only these sellers (still only within the funded slabs)"),
       maxPerBuyer: amount.optional(),
       minReserve: amount.optional(),
+      maxTenorDays: z.number().int().min(1).max(65535).optional().describe("Default 60"),
+      maxAdvanceBps: z.number().int().min(0).max(10000).optional().describe("Default 8000"),
       creditUsdc: amount.describe("USDC shipped to the credit strategy"),
       base: z
         .object({ usdc: amount, tUsdt: amount, feeBps: z.number().int().min(0).max(9999).optional().describe("Default 30 (0.3%)") })

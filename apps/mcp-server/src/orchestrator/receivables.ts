@@ -3,7 +3,7 @@
  * server verifies, dedupes, scores and runs the KYA checks off-chain before `ReceivableRegistry.register`, then
  * mints the HTS receivable NFT and records it on HCS.
  */
-import { scoreReceivable, type Decision } from "@casheth/engine";
+import { scoreReceivable, type Decision, type Reputation } from "@casheth/engine";
 import {
   computeReceivableId,
   hashscan,
@@ -150,11 +150,20 @@ async function reject(o: Orchestrator, caller: Caller, id: Hex, code: ToolErrorC
 export type StoredDecision = Omit<Decision, "limit"> & { limit: string };
 
 export function storedDecision(d: Decision): StoredDecision {
-  return { approved: d.approved, score: d.score, advanceBps: d.advanceBps, limit: d.limit.toString(), reasons: [...d.reasons] };
+  return {
+    approved: d.approved,
+    score: d.score,
+    slab: d.slab,
+    aprBps: d.aprBps,
+    advanceBps: d.advanceBps,
+    limit: d.limit.toString(),
+    reasons: [...d.reasons],
+  };
 }
 
 export type DecisionInputs = {
-  buyerReputation: { onTime: number; late: number; defaults: number };
+  /** The seller's on-chain record: it sets the score, the slab and the rate. */
+  sellerReputation: Reputation;
   sellerLevel: number;
   buyerLevel: number;
   tenorDays: number;
@@ -204,17 +213,17 @@ export async function confirmReceivable(o: Orchestrator, caller: Caller, input: 
     return reject(o, caller, id, "DUPLICATE_RECEIVABLE", "this obligation is already registered");
   }
 
-  const buyerReputation = await o.chain.reputation(pending.buyer);
+  const sellerReputation = await o.chain.reputation(pending.seller);
   const decision = scoreReceivable({
     amount: BigInt(pending.amount),
     dueDate,
     now,
-    buyerReputation,
+    sellerReputation,
     sellerLevel: sellerKya.level,
     buyerLevel: buyerKya.level,
   });
   const decisionInputs: DecisionInputs = {
-    buyerReputation,
+    sellerReputation,
     sellerLevel: sellerKya.level,
     buyerLevel: buyerKya.level,
     tenorDays: Number((dueDate - now) / DAY),
@@ -295,16 +304,16 @@ export async function decisionFor(o: Orchestrator, id: Hex): Promise<{ decision:
   }
   const r = await o.chain.receivable(id);
   if (r.state === STATE.None) fail("NOT_FOUND", `receivable ${id} is not registered`);
-  const [now, buyerReputation, buyerKya, sellerKya] = await Promise.all([
+  const [now, sellerReputation, buyerKya, sellerKya] = await Promise.all([
     o.chain.latestTimestamp(),
-    o.chain.reputation(r.buyer),
+    o.chain.reputation(r.seller),
     o.chain.kyaAgent(r.buyer),
     o.chain.kyaAgent(r.seller),
   ]);
-  const decision = scoreReceivable({ amount: r.amount, dueDate: r.dueDate, now, buyerReputation, sellerLevel: sellerKya.level, buyerLevel: buyerKya.level });
+  const decision = scoreReceivable({ amount: r.amount, dueDate: r.dueDate, now, sellerReputation, sellerLevel: sellerKya.level, buyerLevel: buyerKya.level });
   return {
     decision: storedDecision(decision),
-    inputs: { buyerReputation, sellerLevel: sellerKya.level, buyerLevel: buyerKya.level, tenorDays: Number((r.dueDate - now) / DAY) },
+    inputs: { sellerReputation, sellerLevel: sellerKya.level, buyerLevel: buyerKya.level, tenorDays: Number((r.dueDate - now) / DAY) },
     source: "recomputed",
   };
 }

@@ -1,32 +1,26 @@
 /**
- * Lender tools (plan Addendum A): `fund_agents` ships a credit (boost) strategy for a risk tier, and optionally a
- * base-yield strategy, from the same wallet; `close_strategy` docks one. The lender key signs: the server ships
- * itself only when it holds that key (`LENDER_KEYS_IN_PROCESS=true`, demo), otherwise it returns the calldatas.
+ * Lender tools: `fund_agents` ships a credit strategy for the risk slabs the lender chooses (and optionally up to 3
+ * sellers it backs), plus an optional base-yield strategy, from the same wallet; `close_strategy` docks one. The
+ * lender does not set a price: every fill pays the seller's own rate, computed on chain from its score. The lender
+ * key signs: the server ships itself only when it holds that key (`LENDER_KEYS_IN_PROCESS=true`, demo), otherwise
+ * it returns the calldatas.
  */
-import { tierArgs, type CreditArgs, type Tier } from "@casheth/aqua";
+import { creditArgs, type RiskSlab } from "@casheth/aqua";
 import { keccak256, toHex } from "viem";
 import { record } from "./audit.js";
 import { actor, addr, bytes32, sameAddress, txLink, units } from "./common.js";
 import { fail } from "./errors.js";
-import { tierOfApr } from "./facility.js";
 import type { Caller, FundPlan, Orchestrator } from "./types.js";
 
 export type FundInput = {
-  tier?: Tier;
-  /** Explicit credit args instead of a tier preset (amounts as base-unit strings). */
-  args?: {
-    maxTenorDays: number;
-    maxAdvanceBps: number;
-    minBuyerOnTime: number;
-    maxPerBuyer: string;
-    aprBps: number;
-    minSellerOnTime: number;
-    maxSellerDefaults: number;
-    minReserve: string;
-  };
-  sellerSet?: string[];
+  /** Risk slabs funded: low (score 700+, 6-8%), medium (600-699, 8-11%), high (500-599, 11-14%). */
+  slabs: RiskSlab[];
+  /** Optional: only these sellers (at most 3), and only while their score is in a funded slab. */
+  sellers?: string[];
   maxPerBuyer?: string;
   minReserve?: string;
+  maxTenorDays?: number;
+  maxAdvanceBps?: number;
   creditUsdc: string;
   base?: { usdc: string; tUsdt: string; feeBps?: number };
   idempotencyKey: string;
@@ -39,26 +33,17 @@ function saltOf(lender: string, key: string): bigint {
 
 export async function fundAgents(o: Orchestrator, caller: Caller, input: FundInput) {
   const lender = caller.agent;
-  const sellerSet = (input.sellerSet ?? []).map((s, i) => addr(s, `sellerSet[${i}]`));
-  if (sellerSet.length > 3) fail("BAD_INPUT", "sellerSet holds at most 3 sellers");
-  let args: CreditArgs;
-  if (input.args && input.tier) fail("BAD_INPUT", "give either tier or args, not both");
-  if (input.args) {
-    args = {
-      ...input.args,
-      maxPerBuyer: units(input.args.maxPerBuyer, "args.maxPerBuyer"),
-      minReserve: units(input.args.minReserve, "args.minReserve", { allowZero: true }),
-      sellerSet,
-    };
-  } else if (input.tier) {
-    args = tierArgs(input.tier, {
-      sellerSet,
-      ...(input.maxPerBuyer ? { maxPerBuyer: units(input.maxPerBuyer, "maxPerBuyer") } : {}),
-      ...(input.minReserve ? { minReserve: units(input.minReserve, "minReserve", { allowZero: true }) } : {}),
-    });
-  } else {
-    fail("BAD_INPUT", "give a tier (low, medium, high) or explicit args");
-  }
+  if (input.slabs.length === 0) fail("BAD_INPUT", "choose at least one risk slab (low, medium, high)");
+  const sellers = (input.sellers ?? []).map((s, i) => addr(s, `sellers[${i}]`));
+  if (sellers.length > 3) fail("BAD_INPUT", "a strategy backs at most 3 sellers");
+  const slabs = [...new Set(input.slabs)];
+  const args = creditArgs(slabs, {
+    sellerSet: sellers,
+    ...(input.maxPerBuyer ? { maxPerBuyer: units(input.maxPerBuyer, "maxPerBuyer") } : {}),
+    ...(input.minReserve ? { minReserve: units(input.minReserve, "minReserve", { allowZero: true }) } : {}),
+    ...(input.maxTenorDays !== undefined ? { maxTenorDays: input.maxTenorDays } : {}),
+    ...(input.maxAdvanceBps !== undefined ? { maxAdvanceBps: input.maxAdvanceBps } : {}),
+  });
   const plan: FundPlan = {
     args,
     creditUsdc: units(input.creditUsdc, "creditUsdc"),
@@ -67,14 +52,13 @@ export async function fundAgents(o: Orchestrator, caller: Caller, input: FundInp
       : {}),
     salt: saltOf(lender, input.idempotencyKey),
   };
-  const tier = input.tier ?? tierOfApr(args.aprBps);
   const inProcess = o.chain.holdsKey(lender);
   const result = await o.aqua.fund(lender, plan, inProcess);
   if (result.mode === "calldata") {
     return {
       mode: "calldata" as const,
-      tier,
-      aprBps: args.aprBps,
+      slabs,
+      sellers,
       calls: result.calls,
       strategies: { credit: result.credit.strategyHash, ...(result.base ? { base: result.base.strategyHash } : {}) },
     };
@@ -84,9 +68,8 @@ export async function fundAgents(o: Orchestrator, caller: Caller, input: FundInp
     kind: "credit",
     maker: lender,
     strategyHash: result.credit.strategyHash,
-    tier,
-    aprBps: args.aprBps,
-    sellerSet,
+    slabs,
+    sellers,
     amount: plan.creditUsdc.toString(),
     txHash: result.credit.txHash,
     hashscan: txLink(result.credit.txHash),
@@ -108,8 +91,8 @@ export async function fundAgents(o: Orchestrator, caller: Caller, input: FundInp
   }
   return {
     mode: "shipped" as const,
-    tier,
-    aprBps: args.aprBps,
+    slabs,
+    sellers,
     credit: { strategyHash: result.credit.strategyHash, txHash: result.credit.txHash, hashscan: txLink(result.credit.txHash) },
     ...(result.base ? { base: { strategyHash: result.base.strategyHash, txHash: result.base.txHash, hashscan: txLink(result.base.txHash) } } : {}),
   };

@@ -1,4 +1,4 @@
-import { tierArgs } from "@casheth/aqua";
+import { creditArgs } from "@casheth/aqua";
 import { AquaRouterAbi, CreditFacilityAbi, RepaymentRouterAbi, type Env } from "@casheth/shared";
 import { BaseError, decodeFunctionData, encodeErrorResult, erc20Abi, getAddress, keccak256, maxUint256, RawContractError, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
@@ -129,7 +129,7 @@ describe("fundCalldata (fund_agents without the lender key)", () => {
     }) as unknown as Parameters<typeof fundCalldata>[0];
 
   it("raises the existing USDC and tUSDT allowances by the shipped amounts, then ships both strategies", async () => {
-    const plan = { args: tierArgs("medium"), creditUsdc: 2_000_000n, base: { usdc: 1_000_000n, tUsdt: 1_500_000n, feeBps: 30 }, salt: 7n };
+    const plan = { args: creditArgs(["medium"]), creditUsdc: 2_000_000n, base: { usdc: 1_000_000n, tUsdt: 1_500_000n, feeBps: 30 }, salt: 7n };
     const result = await fundCalldata(reader({ [addrs.usdc]: 4_000_000n, [addrs.tUsdt]: 500_000n }), addrs, lender, plan);
 
     const [usdcApprove, tUsdtApprove, shipCredit, shipBase] = result.calls;
@@ -150,7 +150,7 @@ describe("fundCalldata (fund_agents without the lender key)", () => {
   });
 
   it("approves only the credit amount on top of the current allowance when no base strategy is shipped", async () => {
-    const plan = { args: tierArgs("low"), creditUsdc: 3_000_000n, salt: 1n };
+    const plan = { args: creditArgs(["low"]), creditUsdc: 3_000_000n, salt: 1n };
     const result = await fundCalldata(reader({ [addrs.usdc]: 2_000_000n }), addrs, lender, plan);
     expect(result.calls).toHaveLength(2);
     expect(decodeFunctionData({ abi: erc20Abi, data: result.calls[0]!.data }).args).toEqual([addrs.aqua, 5_000_000n]);

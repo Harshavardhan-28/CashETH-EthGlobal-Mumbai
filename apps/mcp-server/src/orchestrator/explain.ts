@@ -37,14 +37,16 @@ function usdc(units: string): string {
 /** Deterministic explanation used when no model is configured (or the model call fails). */
 export function templateExplanation(decision: StoredDecision, inputs?: DecisionInputs): string {
   const parts: string[] = [];
-  if (inputs) {
-    const r = inputs.buyerReputation;
-    const terms = [`base 600`, `+15 x ${Math.min(r.onTime, 10)} on-time repayments`];
+  // Decisions recorded before 2026-11-07 scored the buyer and carry no seller record or price.
+  const r = inputs?.sellerReputation;
+  if (inputs && r) {
+    const terms = [`base 600`, `+15 x ${Math.min(r.onTime, 10)} on-time repayments by the seller`];
     if (r.late) terms.push(`-40 x ${r.late} late`);
     if (r.defaults) terms.push(`-200 x ${r.defaults} defaults`);
     if (inputs.tenorDays > 60) terms.push(`-50 for a ${inputs.tenorDays}-day tenor`);
     parts.push(`Score ${decision.score} (${terms.join(", ")}).`);
     parts.push(`KYA levels: buyer ${inputs.buyerLevel}, seller ${inputs.sellerLevel}.`);
+    if (decision.aprBps) parts.push(`That is ${decision.slab} risk: the seller pays ${decision.aprBps / 100}% APR.`);
   } else {
     parts.push(`Score ${decision.score}.`);
   }

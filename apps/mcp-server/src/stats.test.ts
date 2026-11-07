@@ -37,7 +37,7 @@ function strategy(kind: "credit" | "base", hash: Hex): LenderStrategy {
     strategyHash: hash,
     order: { maker: lender, traits: 0n, data: "0x" },
     ...(kind === "credit"
-      ? { args: { maxTenorDays: 60, maxAdvanceBps: 8000, minBuyerOnTime: 0, maxPerBuyer: 5_000_000n, aprBps: 700, minSellerOnTime: 3, maxSellerDefaults: 0, minReserve: 0n, sellerSet: [] } }
+      ? { args: { maxTenorDays: 60, maxAdvanceBps: 8000, maxPerBuyer: 5_000_000n, slabMask: 1, minReserve: 0n, sellerSet: [seller] } }
       : { feeBps: 30 }),
     salt: 1n,
     tokens: kind === "credit" ? [ADDRS.usdc, AQUA_ADDRS.rcn] : [ADDRS.usdc, tUsdt],
@@ -116,8 +116,10 @@ describe("BasicStatsProvider", () => {
       role: "seller",
       label: "seller",
       level: 2,
+      // 600 + 15 (one on-time) - 40 (one late): high risk, 14% - 3 bps x 75 points = 11.75%.
       score: 575,
-      tier: "medium",
+      slab: "high",
+      aprBps: 1175,
       onTimePct: 50,
       receivablesFunded: 1,
       receivablesRepaid: 1,
@@ -138,7 +140,8 @@ describe("BasicStatsProvider", () => {
     expect(y).toEqual({
       address: lender,
       label: "lenderA",
-      tier: "low",
+      slabs: ["low"],
+      sellers: [seller],
       capital: "5000000",
       lent: "0",
       idle: "5000000",
@@ -147,8 +150,11 @@ describe("BasicStatsProvider", () => {
       creditFees: "23013",
       // 1198 / 4_000_000 virtual, annualised over the 35.5 days since the first swap (T0 + 1 day), not the ship time.
       baseApr: 0.31,
-      boostApr: 7,
+      // Principal-weighted over the lender's positions: one of 4 USDC at 7%.
+      creditApr: 7,
       blendedApr: 0.31,
+      // 23_013 credit fee minus what the same 4 USDC would have earned farming for those 10 days (0.31%: 339).
+      extraEarned: "22674",
       strategies: { credit: creditHash, base: baseHash },
     });
     expect((await p.agentStats(lender)).lenderReturnPct).toBe(0.48);
@@ -187,7 +193,7 @@ describe("HCS message fitting", () => {
       id: `0x${"1".repeat(64)}`,
       decision: { approved: false, score: 380, advanceBps: 0, limit: "0", reasons: ["score 380 below 500", "buyer KYA level 2 below 3", "seller KYA level 1 below 2"] },
       hashscan: `https://hashscan.io/testnet/transaction/0x${"2".repeat(64)}`,
-      decisionInputs: { buyerReputation: { onTime: 0, late: 3, defaults: 1 }, sellerLevel: 1, buyerLevel: 2, tenorDays: 90 },
+      decisionInputs: { sellerReputation: { onTime: 0, late: 3, defaults: 1 }, sellerLevel: 1, buyerLevel: 2, tenorDays: 90 },
       jti: "8ec159ac-8439-4988-9dbf-fe3e5dd2583c",
       agentUaid: `uaid:aid:${"x".repeat(66)};uid=0.0.11337988;registry=casheth;proto=mcp;nativeId=hedera:testnet:0.0.11337988`,
       txHash: `0x${"3".repeat(64)}`,

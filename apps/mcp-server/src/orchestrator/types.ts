@@ -3,7 +3,7 @@
  * unit-tested with in-memory fakes; `src/live.ts` implements the ports with viem, the Hiero SDK, the mirror node,
  * `@casheth/aqua` and `@casheth/hedera`.
  */
-import type { AquaAddresses, CreditArgs, LenderStrategy, Plan, ShipResult, SolveInput } from "@casheth/aqua";
+import type { AquaAddresses, CreditArgs, LenderStrategy, Plan, RiskSlab, ShipResult, SolveInput } from "@casheth/aqua";
 import type { EventStore, IdempotencyLedger } from "@casheth/engine";
 import type { X402Result } from "@casheth/hedera";
 import type { Address, Hex } from "viem";
@@ -221,8 +221,11 @@ export type AgentStats = {
   role: AgentRoleName;
   label: string;
   level: number;
+  /** The seller score on the agent's own record at a short tenor (`creditScore`). */
   score: number;
-  tier: "low" | "medium" | "high" | "none";
+  /** Its risk slab and the APR it would pay as a seller now (`pricing.ts`, the same curve the opcode charges). */
+  slab: RiskSlab | "none";
+  aprBps: number;
   onTimePct: number;
   receivablesFunded: number;
   receivablesRepaid: number;
@@ -236,15 +239,22 @@ export type AgentStats = {
 export type LenderYield = {
   address: Address;
   label: string;
-  tier: "low" | "medium" | "high" | "custom" | "none";
+  /** Risk slabs the lender's open credit strategies fund, safest first. */
+  slabs: RiskSlab[];
+  /** Sellers its credit strategies are limited to; empty means any seller in its slabs. */
+  sellers: Address[];
   capital: string;
   lent: string;
   idle: string;
   baseFees: string;
   creditFees: string;
+  /** Yield farming: Aqua swap fees on the base strategy, annualised. */
   baseApr: number;
-  boostApr: number;
+  /** Lending: the principal-weighted APR of the lender's credit positions (each at its seller's rate). */
+  creditApr: number;
   blendedApr: number;
+  /** Credit fees received minus what the same principal would have earned farming for the same time (units). */
+  extraEarned: string;
   strategies: { credit?: Hex; base?: Hex };
 };
 

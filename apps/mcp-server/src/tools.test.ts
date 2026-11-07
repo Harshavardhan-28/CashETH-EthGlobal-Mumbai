@@ -21,7 +21,8 @@ async function setup() {
   const o = fakeOrchestrator();
   o.chain.agents.set(seller.address.toLowerCase(), kyaAgent(2, 1, "seller-co"));
   o.chain.agents.set(buyer.address.toLowerCase(), kyaAgent(3, 2, "buyer-co"));
-  o.chain.reps.set(buyer.address.toLowerCase(), { onTime: 2, late: 0, defaults: 0 });
+  // The seller's record prices its credit: two on-time repayments score 630, medium risk at 10.10%.
+  o.chain.reps.set(seller.address.toLowerCase(), { onTime: 2, late: 0, defaults: 0 });
   const t = await testApp(o);
   const tokens = {
     seller: await t.issuer.mint({ agent: seller.address, role: 1, level: 2, scope: SELLER_SCOPES }),
@@ -181,7 +182,7 @@ describe("receivable intake", () => {
       txHash: expect.stringMatching(/^0x/),
       nftSerial: 1,
       hcsSeq: 2,
-      decision: { approved: true, score: 630, advanceBps: 7500, limit: "1000000000", reasons: [] },
+      decision: { approved: true, score: 630, slab: "medium", aprBps: 1010, advanceBps: 7500, limit: "1000000000", reasons: [] },
     });
     expect(o.chain.sent.map((s) => [s.from, s.call.to])).toEqual([["coordinator", ADDRS.receivableRegistry]]);
     expect(o.minted).toEqual([{ id: up.json.id, hcsSeq: 2 }]);
@@ -231,6 +232,7 @@ describe("receivable intake", () => {
     const { json } = await callTool(app, tokens.seller, "explain_decision", { id: up.json.id });
     expect(json).toMatchObject({ source: "template", decision: { score: 630 } });
     expect(json.explanation).toContain("Score 630");
+    expect(json.explanation).toContain("medium risk: the seller pays 10.1% APR");
     expect(json.explanation).toContain("does not change the decision");
   });
 });
@@ -574,12 +576,13 @@ describe("funding and lender tools", () => {
     expect(empty.json).toMatchObject({ code: "NO_ELIGIBLE_LIQUIDITY" });
 
     const order = { maker: lender, traits: 1n, data: "0x01" as Hex };
-    o.aqua.plan = { fills: [{ order, amount: 6_000_000n, aprBps: 700 }], total: 6_000_000n, skipped: [] };
+    o.aqua.plan = { fills: [{ order, amount: 6_000_000n, aprBps: 1010 }], total: 6_000_000n, skipped: [] };
     const { result, json } = await callTool(app, tokens.seller, "open_facility", { id, idempotencyKey: "open-key-02" });
     expect(result.isError).toBeUndefined();
-    expect(json).toMatchObject({ funded: "6000000", borrowingBase: "6000000", partial: false, fills: [{ maker: lender, amount: "6000000", aprBps: 700 }] });
+    const price = { score: 630, slab: "medium", aprBps: 1010 }; // the seller's live record, not the stored decision
+    expect(json).toMatchObject({ funded: "6000000", borrowingBase: "6000000", partial: false, price, fills: [{ maker: lender, amount: "6000000", aprBps: 1010 }] });
     expect(o.chain.sent.map((s) => [s.from, s.call.to])).toEqual([["coordinator", ADDRS.creditFacility]]);
-    expect(o.events.list().at(-1)).toMatchObject({ type: "FacilityFunded", id, amount: "6000000", makers: [lender] });
+    expect(o.events.list().at(-1)).toMatchObject({ type: "FacilityFunded", id, amount: "6000000", makers: [lender], ...price });
   });
 
   it("open_facility is the receivable seller's only", async () => {
@@ -592,10 +595,10 @@ describe("funding and lender tools", () => {
   it("fund_agents returns calldatas without the lender key and ships (recording StrategyShipped) with it", async () => {
     const { app, issuer, o } = await setup();
     const token = await issuer.mint({ agent: lender, role: 4, scope: "receivable:read credit:read stats:read lend:write" });
-    const args = { tier: "medium", sellerSet: [seller.address], creditUsdc: "2000000", base: { usdc: "1000000", tUsdt: "1000000" }, idempotencyKey: "fund-key-01" };
+    const args = { slabs: ["medium", "high"], sellers: [seller.address], creditUsdc: "2000000", base: { usdc: "1000000", tUsdt: "1000000" }, idempotencyKey: "fund-key-01" };
 
     const calldata = await callTool(app, token, "fund_agents", args);
-    expect(calldata.json).toMatchObject({ mode: "calldata", tier: "medium", aprBps: 850 });
+    expect(calldata.json).toMatchObject({ mode: "calldata", slabs: ["medium", "high"], sellers: [seller.address] });
     expect(o.events.list()).toHaveLength(0);
 
     o.chain.held.add(lender.toLowerCase());
@@ -610,16 +613,17 @@ describe("funding and lender tools", () => {
     };
     const shipped = await callTool(app, token, "fund_agents", { ...args, idempotencyKey: "fund-key-02" });
     expect(shipped.json).toMatchObject({ mode: "shipped", credit: { strategyHash: keccak256(toHex("c")) }, base: { strategyHash: keccak256(toHex("b")) } });
-    expect(plans[0]).toMatchObject({ inProcess: true, plan: { creditUsdc: 2_000_000n, base: { usdc: 1_000_000n, tUsdt: 1_000_000n, feeBps: 30 }, args: { aprBps: 850, sellerSet: [seller.address] } } });
+    expect(plans[0]).toMatchObject({ inProcess: true, plan: { creditUsdc: 2_000_000n, base: { usdc: 1_000_000n, tUsdt: 1_000_000n, feeBps: 30 }, args: { slabMask: 6, sellerSet: [seller.address] } } });
     expect(o.events.list().map((e) => [e.type, e.kind])).toEqual([
       ["StrategyShipped", "credit"],
       ["StrategyShipped", "base"],
     ]);
+    expect(o.events.list()[0]).toMatchObject({ slabs: ["medium", "high"], sellers: [seller.address] });
   });
 
   it("fund_agents and close_strategy are lender-only", async () => {
     const { app, tokens } = await setup();
-    const { json } = await callTool(app, tokens.seller, "fund_agents", { tier: "low", creditUsdc: "1", idempotencyKey: "fund-key-03" });
+    const { json } = await callTool(app, tokens.seller, "fund_agents", { slabs: ["low"], creditUsdc: "1", idempotencyKey: "fund-key-03" });
     expect(json).toMatchObject({ code: "INSUFFICIENT_SCOPE", required: "lend:write" });
   });
 });
@@ -775,7 +779,7 @@ describe("repayment, budgets, registration, quotes and docking", () => {
         maker: lender,
         strategyHash,
         order,
-        args: { maxTenorDays: 60, maxAdvanceBps: 8000, minBuyerOnTime: 0, maxPerBuyer: 5_000_000n, aprBps: 700, minSellerOnTime: 3, maxSellerDefaults: 0, minReserve: 0n, sellerSet: [] },
+        args: { maxTenorDays: 60, maxAdvanceBps: 8000, maxPerBuyer: 5_000_000n, slabMask: 3, minReserve: 0n, sellerSet: [] },
         salt: 1n,
         tokens: [ADDRS.usdc, AQUA_ADDRS.rcn],
         virtual: { [ADDRS.usdc]: 4_000_000n },
@@ -783,14 +787,16 @@ describe("repayment, budgets, registration, quotes and docking", () => {
         allowance: 4_000_000n,
       },
     ];
-    o.aqua.plan = { fills: [{ order, amount: 4_000_000n, aprBps: 700 }], total: 4_000_000n, skipped: [] };
+    o.aqua.plan = { fills: [{ order, amount: 4_000_000n, aprBps: 1010 }], total: 4_000_000n, skipped: [] };
     const { result, json } = await callTool(app, tokens.seller, "get_quotes", { id });
     expect(result.isError).toBeUndefined();
     expect(json).toMatchObject({
       borrowingBase: "7500000",
-      strategies: [{ maker: lender, strategyHash, kind: "credit", aprBps: 700, tier: "low", virtualUsdc: "4000000" }],
-      plan: { fills: [{ maker: lender, strategyHash, amount: "4000000", aprBps: 700 }], total: "4000000" },
+      price: { score: 630, slab: "medium", aprBps: 1010 },
+      strategies: [{ maker: lender, strategyHash, kind: "credit", slabs: ["low", "medium"], virtualUsdc: "4000000" }],
+      plan: { fills: [{ maker: lender, strategyHash, amount: "4000000", aprBps: 1010 }], total: "4000000" },
     });
+    expect(o.aqua.solved.at(-1)).toMatchObject({ price: { slab: "medium", aprBps: 1010 } });
     expect(o.chain.sent).toHaveLength(0);
   });
 
@@ -903,7 +909,8 @@ describe("read API", () => {
         label: "seller",
         level: 2,
         score: 600,
-        tier: "high",
+        slab: "medium",
+        aprBps: 1100,
         onTimePct: 0,
         receivablesFunded: 0,
         receivablesRepaid: 0,

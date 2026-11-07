@@ -2,7 +2,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AquaAddresses, LenderStrategy, Plan } from "@casheth/aqua";
+import type { AquaAddresses, LenderStrategy, Plan, SolveInput } from "@casheth/aqua";
 import { EventStore, IdempotencyLedger } from "@casheth/engine";
 import type { DecodedKey } from "@casheth/hedera";
 import { computeReceivableId, ReceivableRegistryAbi } from "@casheth/shared";
@@ -232,7 +232,10 @@ export class FakeAqua implements AquaPort {
   async discover() {
     return { strategies: this.strategies, skipped: [] };
   }
-  async solve() {
+  /** Every solver input, so tests can check the price the server asked for. */
+  solved: Omit<SolveInput, "coordinator">[] = [];
+  async solve(input: Omit<SolveInput, "coordinator">) {
+    this.solved.push(input);
     return this.plan;
   }
   async fund(_lender: Address, _plan: FundPlan, _inProcess: boolean): Promise<FundResult> {
