@@ -13,7 +13,8 @@
  * Lenders choose risk, not price: every fill pays the seller's own rate (`RiskPricing.sol`). A new seller scores
  * 600 (medium risk, 11%), so A and B fund it, C is skipped for its slab and D for its seller list.
  *
- * Sized to the lenders' real USDC (credit + base never exceeds a wallet), so base-yield swaps can draw on it.
+ * Before a lender ships anything new, the operator tops its wallet up by exactly the shortfall (credit + base minus
+ * its USDC), so every strategy is backed by real USDC; each top-up is recorded with its transaction.
  * Each record also carries the full `order`, which the trader agent rebuilds and hash-checks.
  *
  * Salts are 1 (credit) and 2 (base), the base fee is 30 bps, `maxPerBuyer` 5 USDC, `minReserve` 0. Each
@@ -22,6 +23,8 @@
  * and checking their order, virtual balances and exact allowances.
  */
 import { existsSync } from "node:fs";
+import { hashscan } from "@casheth/shared";
+import { hieroClient, transferUsdc } from "@casheth/hedera";
 import {
   BASE_FEE_BPS,
   buildBaseYieldOrder,
@@ -38,7 +41,7 @@ import {
 } from "@casheth/aqua";
 import { erc20Abi, keccak256, type Address, type Hex } from "viem";
 import { LENDER_NAMES, accountEvm, loadDeployment, walletFor, type LenderName } from "./lib/c4.js";
-import { pub, readJson, ROOT, txRecord, writeJson, type TxRecord } from "./spikes/lib.js";
+import { env, pub, readJson, ROOT, txRecord, writeJson, type TxRecord } from "./spikes/lib.js";
 
 const STRATEGIES_FILE = `${ROOT}deployments/testnet/strategies.json`;
 const USD = (units: number) => BigInt(Math.round(units * 1_000_000));
@@ -71,7 +74,8 @@ type StrategyRecord = {
   order: { maker: Address; traits: string; data: Hex };
   tx: TxRecord;
 };
-type StrategiesFile = { network: "testnet"; chainId: 296; strategies: StrategyRecord[] };
+type TopUp = { lender: LenderName; units: string; transactionId: string; hashscan: string };
+type StrategiesFile = { network: "testnet"; chainId: 296; strategies: StrategyRecord[]; topUps?: TopUp[] };
 
 const { aqua, fromBlock } = loadDeployment();
 
@@ -146,11 +150,32 @@ async function shipOnce(file: StrategiesFile, open: Set<Hex>, lender: LenderName
   console.log(`  ${label}: ${strategyHash} ${tx.hashscan}`);
 }
 
+/** Tops the lender up to what its plan ships, from the operator, when something is still to ship. */
+async function topUp(file: StrategiesFile, open: Set<Hex>, lender: LenderName, maker: Address, shipments: Shipment[]): Promise<void> {
+  const toShip = (await Promise.all(shipments.map(async (s) => (open.has(await s.hash()) ? 0 : 1)))).some(Boolean);
+  if (!toShip) return;
+  const required = shipments.reduce((sum, s) => sum + s.usdc, 0n);
+  const balance = await pub.readContract({ address: aqua.usdc, abi: erc20Abi, functionName: "balanceOf", args: [maker] });
+  if (balance >= required) return;
+  const units = required - balance;
+  const vars = env as unknown as Record<string, string>;
+  const transactionId = await transferUsdc(hieroClient(env), {
+    tokenId: env.USDC_TOKEN_ID,
+    from: env.HEDERA_OPERATOR_ID,
+    fromKey: env.HEDERA_OPERATOR_KEY,
+    to: vars[`LENDER_${lender}_ID`]!,
+    units,
+  });
+  file.topUps = [...(file.topUps ?? []), { lender, units: units.toString(), transactionId, hashscan: hashscan.tx(transactionId) }];
+  writeJson(STRATEGIES_FILE, file);
+  console.log(`  ${lender}: topped up ${units} USDC units from the operator ${hashscan.tx(transactionId)}`);
+}
+
 async function allowanceToAqua(token: Address, owner: Address): Promise<bigint> {
   return pub.readContract({ address: token, abi: erc20Abi, functionName: "allowance", args: [owner, aqua.aqua] });
 }
 
-/** Discovery returns exactly the seven strategies, cheapest credit first, with the shipped balances and exact allowances. */
+/** Discovery returns exactly the seven strategies, credit then base in shipping order, with the shipped balances and exact allowances. */
 async function verify(file: StrategiesFile): Promise<LenderStrategy[]> {
   const found = await listOpenStrategies(pub, aqua, { fromBlock });
   const byHash = new Map(file.strategies.map((r) => [r.strategyHash, r]));
@@ -159,7 +184,7 @@ async function verify(file: StrategiesFile): Promise<LenderStrategy[]> {
     if (!r) throw new Error(`open strategy ${s.strategyHash} of ${s.maker} is not in strategies.json`);
     return `${s.kind}:${r.lender}`;
   });
-  const want = ["credit:A", "credit:D", "credit:B", "credit:C", "base:A", "base:B", "base:C"];
+  const want = ["credit:A", "credit:B", "credit:C", "credit:D", "base:A", "base:B", "base:C"];
   if (seen.length !== file.strategies.length || seen.join() !== want.join()) {
     throw new Error(`discovery order ${seen.join(" ")}, expected ${want.join(" ")}`);
   }
@@ -178,7 +203,9 @@ const open = new Set((await listOpenStrategies(pub, aqua, { fromBlock })).map((s
 for (const lender of LENDER_NAMES) {
   console.log(`lender ${lender}`);
   const wallet = walletFor(`LENDER_${lender}`);
-  for (const shipment of shipmentsOf(wallet, LENDERS[lender])) {
+  const shipments = shipmentsOf(wallet, LENDERS[lender]);
+  await topUp(file, open, lender, wallet.account.address, shipments);
+  for (const shipment of shipments) {
     await shipOnce(file, open, lender, wallet.account.address, shipment);
   }
 }

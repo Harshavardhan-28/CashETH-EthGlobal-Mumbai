@@ -41,8 +41,11 @@ export interface C4State {
   network: "testnet";
   chainId: 296;
   operator: Address;
-  /** Set by a redeploy (scripts/c4-redeploy-prepare.ts): the contracts of the earlier stack that `deploy` reuses. */
-  kept?: Pick<Deploy, "aqua" | "orderBuilder" | "tUsdt">;
+  /**
+   * Set by a redeploy (scripts/c4-redeploy-prepare.ts): the contracts of the earlier stack that `deploy` reuses. The
+   * order builder is kept only while the credit-args encoding is unchanged.
+   */
+  kept?: Pick<Deploy, "aqua" | "tUsdt"> & Partial<Pick<Deploy, "orderBuilder">>;
   deploy?: Deploy;
   wiring?: { rcn: Step; facility: Step };
   tUsdtMints?: Mint[];

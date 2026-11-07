@@ -8,7 +8,7 @@ import { erc20Abi, parseEther, type Hex } from "viem";
 import { LENDER_NAMES, accountEvm, walletFor, type Deployment } from "./c4.js";
 import { env, operator, pub, ROOT, txRecord, writeJson, type TxRecord } from "../spikes/lib.js";
 
-export const ARCHIVE_FILE = `${ROOT}deployments/testnet/archive-2026-11-06-redeploy.json`;
+export const archiveFile = (name: string): string => `${ROOT}deployments/testnet/archive-${name}.json`;
 const TINYBARS_PER_HBAR = 1e8;
 
 const ACCOUNTS = ["HEDERA_OPERATOR", "COORDINATOR", ...LENDER_NAMES.map((n) => `LENDER_${n}` as const), "BUYER", "SELLER"] as const;
@@ -88,7 +88,7 @@ export async function clearAquaAllowances(old: Deployment): Promise<void> {
   }
 }
 
-export function writeArchive(archive: Record<string, unknown> & { archivedAt: string }): void {
-  writeJson(ARCHIVE_FILE, archive);
+export function writeArchive(file: string, archive: Record<string, unknown> & { archivedAt: string; reason: string }): void {
+  writeJson(file, archive);
 }
 

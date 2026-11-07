@@ -10,7 +10,7 @@
  *               AquaRouter(owner = operator), CashEthSwapVMRouter(aqua, WHBAR, operator, "CashETH SwapVM",
  *               "1.0.0", registry, kya, facility), CashEthOrderBuilder, TestStablecoin (tUSDT, owner =
  *               operator) and CashEthTaker(router, USDC, owner = operator), with each creation's block. After a
- *               redeploy (`kept` in c4.json) Aqua, the order builder and tUSDT are reused: only the router and
+ *               redeploy (`kept` in c4.json) Aqua, tUSDT and (when kept) the order builder are reused: the router and
  *               the taker, which hold the facility address, are created.
  *   2. wire   - `rcn.wire(facility, repaymentRouter, swapRouter, aqua)` and
  *               `facility.wire(swapRouter, repaymentRouter)`, both one-time, sent from the operator.
@@ -69,11 +69,16 @@ async function withBlock(d: Deployed): Promise<DeployedAt> {
 
 /** The kept contracts as the deploy script's reuse variables. */
 function keptEnv(kept: NonNullable<C4State["kept"]>): Record<string, string> {
-  return { AQUA_ROUTER: kept.aqua.address, ORDER_BUILDER: kept.orderBuilder.address, TEST_STABLECOIN: kept.tUsdt.address };
+  return {
+    AQUA_ROUTER: kept.aqua.address,
+    TEST_STABLECOIN: kept.tUsdt.address,
+    ...(kept.orderBuilder ? { ORDER_BUILDER: kept.orderBuilder.address } : {}),
+  };
 }
 
 async function deploy(kept: C4State["kept"]): Promise<Deploy> {
-  console.log(`1. deploy: forge script 03_DeployAqua through the Hashio relay${kept ? " (Aqua, order builder and tUSDT kept)" : ""}`);
+  const keptNames = kept ? ["Aqua", "tUSDT", ...(kept.orderBuilder ? ["order builder"] : [])].join(", ") : "";
+  console.log(`1. deploy: forge script 03_DeployAqua through the Hashio relay${kept ? ` (${keptNames} kept)` : ""}`);
   const { created, calls } = await forgeDeploy("03_DeployAqua.s.sol", {
     USDC_EVM_ADDRESS: usdc,
     RECEIVABLE_REGISTRY: receivableRegistry,
@@ -81,7 +86,9 @@ async function deploy(kept: C4State["kept"]): Promise<Deploy> {
     CREDIT_FACILITY: creditFacility,
     ...(kept ? keptEnv(kept) : {}),
   });
-  const names = kept ? ["CashEthSwapVMRouter", "CashEthTaker"] : ["AquaRouter", "CashEthSwapVMRouter", "CashEthOrderBuilder", "TestStablecoin", "CashEthTaker"];
+  const names = kept
+    ? ["CashEthSwapVMRouter", "CashEthTaker", ...(kept.orderBuilder ? [] : ["CashEthOrderBuilder"])]
+    : ["AquaRouter", "CashEthSwapVMRouter", "CashEthOrderBuilder", "TestStablecoin", "CashEthTaker"];
   const missing = names.filter((n) => !created.has(n));
   if (missing.length > 0 || calls.length > 0) {
     throw new Error(`03_DeployAqua: missing ${missing.join(", ") || "none"}, unexpected calls ${calls.length}`);
