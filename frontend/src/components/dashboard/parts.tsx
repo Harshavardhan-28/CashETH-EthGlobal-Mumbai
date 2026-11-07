@@ -3,7 +3,7 @@ import a from "@/components/admin/Admin.module.css";
 import { Avatar, Icon } from "@/components/admin/primitives";
 import type { AgentStats } from "@/lib/admin/api";
 import { formatUsdc, initials, shortAddress } from "@/lib/admin/format";
-import { daysUntil, type Invoice, type InvoiceState } from "@/lib/dashboard/derive";
+import { daysUntil, type EvidenceLink, type Invoice, type InvoiceState } from "@/lib/dashboard/derive";
 import d from "./Dashboard.module.css";
 
 /** A headline number in the admin KPI style, without the sparkline. */
@@ -130,6 +130,27 @@ export function Proof({ url }: { url?: string }) {
     </a>
   ) : (
     <span className={a.proofNone}>—</span>
+  );
+}
+
+/** Every verifiable link behind an invoice (HashScan transactions, audit messages, the NFT, the invoice file), folded until opened. */
+export function EvidenceLinks({ links }: { links: EvidenceLink[] }) {
+  if (!links.length) return <span className={a.proofNone}>—</span>;
+  return (
+    <details className={d.evidence}>
+      <summary className={a.proof}>
+        {links.length} proof link{links.length === 1 ? "" : "s"}
+      </summary>
+      <ol>
+        {links.map((l) => (
+          <li key={`${l.label} ${l.url}`}>
+            <a href={l.url} target="_blank" rel="noopener noreferrer">
+              {l.label} ↗
+            </a>
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
 

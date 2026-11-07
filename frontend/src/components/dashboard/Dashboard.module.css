@@ -940,3 +940,28 @@
     display: none;
   }
 }
+
+/* Evidence: every verifiable link behind an invoice, folded inside its Proof cell. */
+.evidence summary {
+  cursor: pointer;
+  list-style: none;
+}
+.evidence summary::-webkit-details-marker {
+  display: none;
+}
+.evidence[open] summary {
+  margin-bottom: 6px;
+}
+.evidence ol {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+.evidence a {
+  color: var(--accent);
+}
+.evidence a:hover {
+  text-decoration: underline;
+}

@@ -109,7 +109,7 @@ describe("seller console", () => {
     renderAt(`#agent=${addrOf("Seller")}&view=invoices`);
     const invoices = screen.getByRole("region", { name: "Invoices" });
     expect(within(invoices).getAllByText("Repaid")).toHaveLength(2);
-    expect(within(invoices).getAllByText("HashScan ↗")).toHaveLength(3);
+    expect(within(invoices).getAllByText(/^\d+ proof links?$/)).toHaveLength(3);
   });
 
   it("activity log expands a row into its raw record and filters blocked calls", async () => {
@@ -137,7 +137,7 @@ describe("buyer console", () => {
 
   it("payments section lists repayments with proof", () => {
     renderAt(`#agent=${addrOf("Buyer")}&view=payments`);
-    expect(within(screen.getByRole("region", { name: "Payment history" })).getAllByText("HashScan ↗")).toHaveLength(2);
+    expect(within(screen.getByRole("region", { name: "Payment history" })).getAllByText(/^\d+ proof links?$/)).toHaveLength(2);
   });
 });
 

@@ -47,6 +47,40 @@ describe("buildInvoices", () => {
     expect(live[0].lenders).toEqual([{ maker: LENDER_A, principal: "800000000", aprBps: 700, fee: "5000000" }]);
   });
 
+  it("lists the server's evidence for an invoice, then a link to the stored invoice document", () => {
+    const id = invoices[0].id;
+    const keccak = `0x${"ab".repeat(32)}`;
+    const details: ReceivableDetails = {
+      id,
+      state: "Repaid",
+      seller: SELLER,
+      buyer: BUYER,
+      amount: "1000000000",
+      dueDate: 1,
+      funded: "800000000",
+      debt: "0",
+      positions: [],
+      evidence: [
+        { label: "Settlement approval", url: "https://hashscan.io/testnet/transaction/0x2c4f" },
+        { label: "Repaid", url: "https://hashscan.io/testnet/transaction/0xc4" },
+      ],
+      document: { keccak, verified: true },
+    };
+    const live = buildInvoices(events, new Map(), new Map([[id.toLowerCase(), details]]));
+    expect(live.find((i) => i.id === id)!.evidence).toEqual([
+      { label: "Settlement approval", url: "https://hashscan.io/testnet/transaction/0x2c4f" },
+      { label: "Repaid", url: "https://hashscan.io/testnet/transaction/0xc4" },
+      { label: "Invoice document", url: `http://localhost:4030/invoices/${keccak}` },
+    ]);
+  });
+
+  it("without live details, builds an invoice's evidence from its own events", () => {
+    const evidence = invoices[0].evidence;
+    expect(evidence.length).toBeGreaterThan(0);
+    for (const l of evidence) expect(l.url).toMatch(/^https:\/\/hashscan\.io\/testnet\/|\/invoices\//);
+    expect(evidence.every((l) => / · /.test(l.label))).toBe(true); // "<event> · <link>"
+  });
+
   it("ignores ids with no invoice behind them", () => {
     expect(buildInvoices([ev("SpendRejected", { id: "0xdead", worker: W1 })], new Map())).toEqual([]);
   });

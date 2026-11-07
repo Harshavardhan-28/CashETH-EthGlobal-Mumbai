@@ -6,7 +6,7 @@ import { formatRate, slabLabel } from "@/lib/admin/slabs";
 import { owedOn, ratio, sellerSummary, workerBudgets, type Invoice, type SellerSummary, type WorkerBudget } from "@/lib/dashboard/derive";
 import { AgentDetails, Connections, Panel, RecentCalls, ToolUsage, WalletPanel } from "./console";
 import d from "./Dashboard.module.css";
-import { DueLabel, Icons, InvoiceName, KV, Meter, Party, Proof, Stat, StateChip, pct, usd } from "./parts";
+import { DueLabel, EvidenceLinks, Icons, InvoiceName, KV, Meter, Party, Stat, StateChip, pct, usd } from "./parts";
 import type { RoleViewProps, SectionDef } from "./types";
 
 export const SELLER_NAV: SectionDef[] = [
@@ -142,7 +142,7 @@ function InvoiceTable({ invoices, agents, nowMs, compact }: { invoices: Invoice[
               {!compact && <td className={`${d.num} ${a.mono}`}>{usd(owedOn(i))}</td>}
               {!compact && (
                 <td>
-                  <Proof url={i.proofUrl} />
+                  <EvidenceLinks links={i.evidence} />
                 </td>
               )}
             </tr>
@@ -202,6 +202,7 @@ export function SellerPage({ view, ...p }: RoleViewProps & { view: string }) {
                       <th className={d.num}>Buyer paid</th>
                       <th className={d.num}>To lenders</th>
                       <th className={d.num}>To you</th>
+                      <th>Proof</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -213,6 +214,9 @@ export function SellerPage({ view, ...p }: RoleViewProps & { view: string }) {
                         <td className={`${d.num} ${a.mono}`}>{usd(i.repaid)}</td>
                         <td className={`${d.num} ${a.mono}`}>{usd(i.toLenders)}</td>
                         <td className={`${d.num} ${a.mono}`}>{usd(i.toSeller)}</td>
+                        <td>
+                          <EvidenceLinks links={i.evidence} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>

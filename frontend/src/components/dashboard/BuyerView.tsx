@@ -7,7 +7,7 @@ import { addU, buyerSummary, daysUntil, lc, outstanding, subU, type BuyerSummary
 import type { Wallet } from "@/lib/dashboard/live";
 import { AgentDetails, Connections, Panel, RecentCalls, ToolUsage, WalletPanel } from "./console";
 import d from "./Dashboard.module.css";
-import { DueLabel, Icons, InvoiceName, KV, Meter, Party, Proof, Stat, StateChip, usd } from "./parts";
+import { DueLabel, EvidenceLinks, Icons, InvoiceName, KV, Meter, Party, Proof, Stat, StateChip, usd } from "./parts";
 import type { RoleViewProps, SectionDef } from "./types";
 
 export const BUYER_NAV: SectionDef[] = [
@@ -79,7 +79,7 @@ function DueTable({ due, agents, nowMs, compact }: { due: Invoice[]; agents: Rol
               </td>
               {!compact && (
                 <td>
-                  <Proof url={i.proofUrl} />
+                  <EvidenceLinks links={i.evidence} />
                 </td>
               )}
             </tr>
@@ -120,7 +120,7 @@ function PaymentTable({ payments, byId, nowMs }: { payments: AuditEvent[]; byId:
                 <td className={`${d.num} ${a.mono}`}>{usd(typeof p.toSeller === "string" ? p.toSeller : undefined)}</td>
                 <td>{inv && <StateChip state={inv.state} />}</td>
                 <td>
-                  <Proof url={p.hashscan} />
+                  {inv ? <EvidenceLinks links={inv.evidence} /> : <Proof url={p.hashscan} />}
                 </td>
               </tr>
             );

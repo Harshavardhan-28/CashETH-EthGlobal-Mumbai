@@ -3,7 +3,8 @@
  * its workers' budgets, a lender's positions and a buyer's dues. Pure functions; amounts are USDC base-unit strings.
  * Unit maths uses Number (exact up to 9e15 units, i.e. 9 billion USDC), always rounded back to an integer string.
  */
-import type { AgentStats, AuditEvent, LenderYield, ReceivableDetails, ReceivableState } from "@/lib/admin/api";
+import { API_URL, HCS_TOPIC_ID, type AgentStats, type AuditEvent, type LenderYield, type ReceivableDetails, type ReceivableState } from "@/lib/admin/api";
+import { proofLinks } from "@/lib/admin/proofLinks";
 
 export type InvoiceState = ReceivableState | "Rejected";
 
@@ -31,8 +32,12 @@ export type Invoice = {
   repaidAt?: string;
   lastAt: string;
   proofUrl?: string;
+  /** Every verifiable link behind the invoice, in the order it happened. */
+  evidence: EvidenceLink[];
   documentVerified?: boolean;
 };
+
+export type EvidenceLink = { label: string; url: string };
 
 export const lc = (v: unknown): string | undefined => (typeof v === "string" && v.trim() !== "" ? v.toLowerCase() : undefined);
 const num = (u: unknown): number => (typeof u === "string" && /^\d+$/.test(u) ? Number(u) : 0);
@@ -70,6 +75,13 @@ function stateOf(types: Set<string>): InvoiceState {
 }
 
 /** One invoice per receivable id, built from its events (oldest first) and enriched with `/receivables/:id` when known. Newest activity first. */
+/** The server's evidence list when the live details are loaded, otherwise the links carried by the invoice's events. */
+function evidenceOf(evs: AuditEvent[], d: ReceivableDetails | undefined): EvidenceLink[] {
+  if (!d) return evs.flatMap((e) => proofLinks(e, HCS_TOPIC_ID, API_URL).map((l) => ({ label: `${e.type} · ${l.label}`, url: l.url })));
+  const document = d.document ? [{ label: "Invoice document", url: `${API_URL.replace(/\/+$/, "")}/invoices/${d.document.keccak}` }] : [];
+  return [...d.evidence.map(({ label, url }) => ({ label, url })), ...document];
+}
+
 export function buildInvoices(events: AuditEvent[], refs: ReadonlyMap<string, string>, details: ReadonlyMap<string, ReceivableDetails> = new Map()): Invoice[] {
   const byId = new Map<string, AuditEvent[]>();
   for (const e of [...events].sort((a, b) => a.seq - b.seq)) {
@@ -125,6 +137,7 @@ export function buildInvoices(events: AuditEvent[], refs: ReadonlyMap<string, st
       ...(repaid.length ? { repaidAt: repaid[repaid.length - 1].ts } : {}),
       lastAt: evs[evs.length - 1].ts,
       ...(typeof proof === "string" ? { proofUrl: proof } : {}),
+      evidence: evidenceOf(evs, d),
       ...(d?.document ? { documentVerified: d.document.verified } : {}),
     });
   }
