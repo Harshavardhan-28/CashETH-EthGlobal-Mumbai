@@ -166,7 +166,7 @@ export class BasicStatsProvider implements StatsProvider {
     const cacheMs = this.opts.cacheMs ?? DEFAULT_CACHE_MS;
     const stale = Date.now() - this.#snapshotAt >= cacheMs;
     if (!this.#latest) return (this.#refreshing ??= this.#refresh());
-    if (stale) this.#refreshing ??= this.#refresh();
+    if (stale) this.#refreshing ??= this.#refresh().catch((err: unknown) => this.#keepLatest(err));
     return this.#latest;
   }
 
@@ -181,6 +181,12 @@ export class BasicStatsProvider implements StatsProvider {
       .finally(() => {
         this.#refreshing = undefined;
       });
+  }
+
+  /** A failed background refresh (a mirror-node or relay hiccup) keeps the last snapshot; the next read retries. */
+  #keepLatest(err: unknown): Snapshot {
+    console.warn(JSON.stringify({ t: new Date().toISOString(), msg: "stats refresh failed; serving the last snapshot", error: String(err) }));
+    return this.#latest!;
   }
 
   async #build(): Promise<Snapshot> {

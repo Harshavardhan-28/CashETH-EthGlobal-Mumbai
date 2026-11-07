@@ -239,6 +239,37 @@ describe("BasicStatsProvider freshness", () => {
     release();
   });
 
+  it("keeps answering from the last snapshot when a background refresh fails, without an unhandled rejection", async () => {
+    const o = fakeOrchestrator();
+    let loads = 0;
+    const stats = new BasicStatsProvider({
+      chain: o.chain,
+      aqua: o.aqua,
+      logs: {
+        logs: async () => {
+          if (++loads > 4) throw new Error("mirror node 404"); // every read after the first snapshot fails
+          return [];
+        },
+      },
+      events: o.events,
+      directory: () => [],
+      now: () => 1_800_000_000,
+      cacheMs: 0,
+    });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const first = await stats.listLenders();
+      expect(await stats.listLenders()).toEqual(first); // stale: answered from the snapshot, a refresh starts and fails
+      await new Promise((r) => setTimeout(r, 50));
+      expect(await stats.listLenders()).toEqual(first);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("reuses the computed agent and lender rows while fresh, so polling clients cause no per-agent chain reads", async () => {
     const o = fakeOrchestrator();
     let chainReads = 0;
