@@ -1,5 +1,4 @@
-/** On-chain KYA reputation counters of the buyer (`KYARegistry.reputation`). */
-export type BuyerReputation = { onTime: number; late: number; defaults: number };
+import { aprBpsFor, creditScore, type Reputation, type Slab, slabOf } from "./pricing.js";
 
 export type ScoreInput = {
   /** Receivable face value in USDC base units (6 decimals). */
@@ -8,7 +7,8 @@ export type ScoreInput = {
   dueDate: bigint;
   /** Unix seconds. */
   now: bigint;
-  buyerReputation: BuyerReputation;
+  /** The seller's on-chain record: it prices the credit (`pricing.ts`). */
+  sellerReputation: Reputation;
   sellerLevel: number;
   buyerLevel: number;
 };
@@ -16,6 +16,9 @@ export type ScoreInput = {
 export type Decision = {
   approved: boolean;
   score: number;
+  slab: Slab;
+  /** The APR the credit opcode will charge, in basis points; 0 when the score is not financeable. */
+  aprBps: number;
   advanceBps: number;
   /** Most the facility may advance, in USDC base units. */
   limit: bigint;
@@ -23,13 +26,6 @@ export type Decision = {
   reasons: string[];
 };
 
-const BASE_SCORE = 600;
-const ON_TIME_POINTS = 15;
-const ON_TIME_CAP = 10;
-const LATE_PENALTY = 40;
-const DEFAULT_PENALTY = 200;
-const LONG_TENOR_PENALTY = 50;
-const LONG_TENOR_SECONDS = 60n * 86_400n;
 const MIN_BUYER_LEVEL = 3;
 const MIN_SELLER_LEVEL = 2;
 const SELLER_CAP_L3 = 10_000_000_000n; // 10,000 USDC
@@ -43,14 +39,11 @@ function advanceFor(score: number): number {
 }
 
 /**
- * Deterministic credit decision for a receivable: base 600, +15 per on-time repayment (at most 10),
- * -40 per late repayment, -200 per default, -50 when the tenor exceeds 60 days; the score picks the
- * advance rate and the seller's KYA level caps the limit.
+ * Deterministic credit decision for a receivable: the seller's score (`creditScore`: its record and the tenor) picks
+ * the risk slab, the APR and the advance rate; the seller's KYA level caps the limit.
  */
 export function scoreReceivable(input: ScoreInput): Decision {
-  const { onTime, late, defaults } = input.buyerReputation;
-  let score = BASE_SCORE + ON_TIME_POINTS * Math.min(onTime, ON_TIME_CAP) - LATE_PENALTY * late - DEFAULT_PENALTY * defaults;
-  if (input.dueDate - input.now > LONG_TENOR_SECONDS) score -= LONG_TENOR_PENALTY;
+  const score = creditScore(input.sellerReputation, input.dueDate - input.now);
 
   const advanceBps = advanceFor(score);
   const reasons: string[] = [];
@@ -65,6 +58,8 @@ export function scoreReceivable(input: ScoreInput): Decision {
   return {
     approved: reasons.length === 0,
     score,
+    slab: slabOf(score),
+    aprBps: aprBpsFor(score) ?? 0,
     advanceBps,
     limit: advance < cap ? advance : cap,
     reasons,

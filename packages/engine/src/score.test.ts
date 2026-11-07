@@ -10,7 +10,7 @@ function input(over: Partial<ScoreInput> = {}): ScoreInput {
     amount: 10n * USDC,
     dueDate: NOW + 30n * DAY,
     now: NOW,
-    buyerReputation: { onTime: 0, late: 0, defaults: 0 },
+    sellerReputation: { onTime: 0, late: 0, defaults: 0 },
     sellerLevel: 2,
     buyerLevel: 3,
     ...over,
@@ -18,12 +18,19 @@ function input(over: Partial<ScoreInput> = {}): ScoreInput {
 }
 
 const withHistory = (onTime: number, late: number, defaults = 0) =>
-  scoreReceivable(input({ buyerReputation: { onTime, late, defaults } }));
+  scoreReceivable(input({ sellerReputation: { onTime, late, defaults } }));
 
 describe("scoreReceivable", () => {
-  it("demo buyer with zero history scores 600 and gets 7500 bps", () => {
+  it("a seller with no history scores 600: medium risk at 11%, 7500 bps advance", () => {
     const d = scoreReceivable(input());
-    expect(d).toEqual({ approved: true, score: 600, advanceBps: 7500, limit: 7_500_000n, reasons: [] });
+    expect(d).toEqual({ approved: true, score: 600, slab: "medium", aprBps: 1100, advanceBps: 7500, limit: 7_500_000n, reasons: [] });
+  });
+
+  it("prices each seller by its own score", () => {
+    expect(withHistory(10, 0)).toMatchObject({ score: 750, slab: "low", aprBps: 600 });
+    expect(withHistory(2, 0)).toMatchObject({ score: 630, slab: "medium", aprBps: 1010 });
+    expect(withHistory(0, 2)).toMatchObject({ score: 520, slab: "high", aprBps: 1340 });
+    expect(withHistory(0, 0, 1)).toMatchObject({ score: 400, slab: "none", aprBps: 0 });
   });
 
   it("one default declines", () => {
