@@ -22,6 +22,7 @@ import { CreditFacility } from "../src/core/CreditFacility.sol";
 import { ICreditFacility } from "../src/core/interfaces/ICreditFacility.sol";
 import { CashEthTraits } from "../src/core/libs/CashEthTraits.sol";
 import { ReceivableCredit } from "../src/aqua/ReceivableCredit.sol";
+import { RiskPricing } from "../src/core/libs/RiskPricing.sol";
 import { CashEthSwapVMRouter } from "../src/aqua/CashEthSwapVMRouter.sol";
 import { CashEthOrderBuilder } from "../src/aqua/CashEthOrderBuilder.sol";
 import { MockUSDC } from "./mocks/MockUSDC.sol";
@@ -42,10 +43,12 @@ contract CashEthSwapVMRouterTest is Test {
     uint256 internal constant SHIP_B = 2_000_000;
     uint256 internal constant SHIP_C = 3_000_000;
     uint256 internal constant SHIP_D = 5_000_000;
-    uint16 internal constant APR_A = 700;
-    uint16 internal constant APR_B = 850;
-    uint16 internal constant APR_C = 1300;
-    uint16 internal constant APR_D = 1500;
+    /// @dev The seller has no history and the receivable a 30-day tenor: score 600, 11% for every lender.
+    uint16 internal constant SELLER_APR = 1100;
+    uint8 internal constant LOW = 1;
+    uint8 internal constant MEDIUM = 2;
+    uint8 internal constant HIGH = 4;
+    uint8 internal constant ALL_SLABS = LOW | MEDIUM | HIGH;
 
     // Base-yield pool: 1,000 USDC / 1,000 tUSDT, 0.3% FeeFlatIn (FeeFlatIn denominates fees in 1e7).
     uint256 internal constant POOL = 1_000_000_000;
@@ -164,15 +167,12 @@ contract CashEthSwapVMRouterTest is Test {
         assertEq(uint8(registry.state(rid)), uint8(IReceivableRegistry.State.Confirmed));
     }
 
-    function _args(uint16 aprBps) internal pure returns (ReceivableCredit.Args memory a) {
+    function _args(uint8 slabMask) internal pure returns (ReceivableCredit.Args memory a) {
         a = ReceivableCredit.Args({
             maxTenorDays: 60,
             maxAdvanceBps: 8000,
-            minBuyerOnTime: 0,
             maxPerBuyer: 50_000_000,
-            aprBps: aprBps,
-            minSellerOnTime: 0,
-            maxSellerDefaults: 0,
+            slabMask: slabMask,
             minReserve: 0,
             sellerSet: new address[](0)
         });
@@ -204,11 +204,8 @@ contract CashEthSwapVMRouterTest is Test {
     function _assertArgsEq(ReceivableCredit.Args memory x, ReceivableCredit.Args memory y) internal pure {
         assertEq(x.maxTenorDays, y.maxTenorDays, "maxTenorDays");
         assertEq(x.maxAdvanceBps, y.maxAdvanceBps, "maxAdvanceBps");
-        assertEq(x.minBuyerOnTime, y.minBuyerOnTime, "minBuyerOnTime");
         assertEq(x.maxPerBuyer, y.maxPerBuyer, "maxPerBuyer");
-        assertEq(x.aprBps, y.aprBps, "aprBps");
-        assertEq(x.minSellerOnTime, y.minSellerOnTime, "minSellerOnTime");
-        assertEq(x.maxSellerDefaults, y.maxSellerDefaults, "maxSellerDefaults");
+        assertEq(x.slabMask, y.slabMask, "slabMask");
         assertEq(x.minReserve, y.minReserve, "minReserve");
         assertEq(x.sellerSet.length, y.sellerSet.length, "sellerSet.length");
         for (uint256 i; i < x.sellerSet.length; i++) {
@@ -236,7 +233,7 @@ contract CashEthSwapVMRouterTest is Test {
     }
 
     function test_router_dispatchesCreditOpcode() public {
-        (ISwapVM.Order memory order, bytes32 strategyHash) = _shipLender(makerA, _args(APR_A), SHIP_A, 1);
+        (ISwapVM.Order memory order, bytes32 strategyHash) = _shipLender(makerA, _args(ALL_SLABS), SHIP_A, 1);
         bytes memory td = builder.takerData(address(facility), address(rcn), address(usdc), SHIP_A, id, ADVANCE_BPS);
 
         // The 0x21 instruction runs: 1:1 pricing against the live Aqua USDC balance, quoted from the facility.
@@ -378,11 +375,8 @@ contract CashEthSwapVMRouterTest is Test {
         ReceivableCredit.Args memory a = ReceivableCredit.Args({
             maxTenorDays: 45,
             maxAdvanceBps: 9000,
-            minBuyerOnTime: 3,
             maxPerBuyer: 123_456_789,
-            aprBps: 1300,
-            minSellerOnTime: 2,
-            maxSellerDefaults: 1,
+            slabMask: MEDIUM | HIGH,
             minReserve: 5_000_000,
             sellerSet: new address[](2)
         });
@@ -449,8 +443,8 @@ contract CashEthSwapVMRouterTest is Test {
     }
 
     function test_orderHash_equalsAquaStrategyHash() public {
-        (ISwapVM.Order memory order, bytes32 shipped) = _shipLender(makerA, _args(APR_A), SHIP_A, 9);
-        (, bytes memory strategy) = builder.buildLenderOrder(makerA, address(rcn), address(usdc), _args(APR_A), 9);
+        (ISwapVM.Order memory order, bytes32 shipped) = _shipLender(makerA, _args(ALL_SLABS), SHIP_A, 9);
+        (, bytes memory strategy) = builder.buildLenderOrder(makerA, address(rcn), address(usdc), _args(ALL_SLABS), 9);
 
         assertEq(router.hash(order), keccak256(strategy));
         assertEq(router.hash(order), shipped, "Aqua.ship returns keccak256(strategy)");
@@ -459,7 +453,7 @@ contract CashEthSwapVMRouterTest is Test {
         assertEq(balUsdc, SHIP_A);
 
         // A different salt is a different strategy.
-        (ISwapVM.Order memory other,) = builder.buildLenderOrder(makerA, address(rcn), address(usdc), _args(APR_A), 10);
+        (ISwapVM.Order memory other,) = builder.buildLenderOrder(makerA, address(rcn), address(usdc), _args(ALL_SLABS), 10);
         assertTrue(router.hash(other) != shipped);
 
         (ISwapVM.Order memory y, bytes memory yStrategy) =
@@ -471,30 +465,31 @@ contract CashEthSwapVMRouterTest is Test {
     // ------------------------------------------------------------------ end to end
 
     function test_endToEnd_openAndFund_realRouter_fillsAandB_skipsC() public {
-        (ISwapVM.Order memory orderA, bytes32 hashA) = _shipLender(makerA, _args(APR_A), SHIP_A, 1);
-        (ISwapVM.Order memory orderB, bytes32 hashB) = _shipLender(makerB, _args(APR_B), SHIP_B, 2);
-        (, bytes32 hashC) = _shipLender(makerC, _args(APR_C), SHIP_C, 3);
+        (ISwapVM.Order memory orderA, bytes32 hashA) = _shipLender(makerA, _args(ALL_SLABS), SHIP_A, 1);
+        (ISwapVM.Order memory orderB, bytes32 hashB) = _shipLender(makerB, _args(MEDIUM), SHIP_B, 2);
+        (, bytes32 hashC) = _shipLender(makerC, _args(LOW), SHIP_C, 3);
 
-        // C at 1300 bps is left out by the coordinator: A + B already cover the 6 USDC.
+        // C funds low risk only and the seller is medium risk: the coordinator fills A and B, both at the
+        // seller's own price.
         ICreditFacility.Fill[] memory fills = new ICreditFacility.Fill[](2);
-        fills[0] = _fill(orderA, SHIP_A, APR_A);
-        fills[1] = _fill(orderB, SHIP_B, APR_B);
+        fills[0] = _fill(orderA, SHIP_A, SELLER_APR);
+        fills[1] = _fill(orderB, SHIP_B, SELLER_APR);
 
         vm.expectEmit(true, true, false, true, address(facility));
-        emit ICreditFacility.PositionOpened(id, makerA, SHIP_A, APR_A);
+        emit ICreditFacility.PositionOpened(id, makerA, SHIP_A, SELLER_APR);
         vm.expectEmit(true, true, false, true, address(facility));
-        emit ICreditFacility.PositionOpened(id, makerB, SHIP_B, APR_B);
+        emit ICreditFacility.PositionOpened(id, makerB, SHIP_B, SELLER_APR);
         vm.prank(coordinator);
         facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
 
-        // Positions, recorded through the router's onCreditFill callback with the order's own aprBps.
+        // Positions, recorded through the router's onCreditFill callback with the seller's price.
         ICreditFacility.Position memory pA = facility.position(id, makerA);
         assertEq(pA.principal, SHIP_A);
-        assertEq(pA.aprBps, APR_A);
+        assertEq(pA.aprBps, SELLER_APR);
         assertEq(pA.start, uint64(block.timestamp));
         ICreditFacility.Position memory pB = facility.position(id, makerB);
         assertEq(pB.principal, SHIP_B);
-        assertEq(pB.aprBps, APR_B);
+        assertEq(pB.aprBps, SELLER_APR);
         assertEq(facility.position(id, makerC).principal, 0);
         address[] memory m = facility.makers(id);
         assertEq(m.length, 2);
@@ -536,9 +531,9 @@ contract CashEthSwapVMRouterTest is Test {
     }
 
     function test_endToEnd_revertsWhenIdNotConfirmed() public {
-        (ISwapVM.Order memory orderA,) = _shipLender(makerA, _args(APR_A), 2 * SHIP_A, 1);
+        (ISwapVM.Order memory orderA,) = _shipLender(makerA, _args(ALL_SLABS), 2 * SHIP_A, 1);
         ICreditFacility.Fill[] memory fills = new ICreditFacility.Fill[](1);
-        fills[0] = _fill(orderA, SHIP_A, APR_A);
+        fills[0] = _fill(orderA, SHIP_A, SELLER_APR);
 
         // Unknown id: the facility refuses before touching the router.
         vm.prank(coordinator);
@@ -564,7 +559,7 @@ contract CashEthSwapVMRouterTest is Test {
     }
 
     function test_endToEnd_revertsWhenTakerIsNotFacility() public {
-        (ISwapVM.Order memory orderA, bytes32 hashA) = _shipLender(makerA, _args(APR_A), SHIP_A, 1);
+        (ISwapVM.Order memory orderA, bytes32 hashA) = _shipLender(makerA, _args(ALL_SLABS), SHIP_A, 1);
         bytes memory td = builder.takerData(address(facility), address(rcn), address(usdc), SHIP_A, id, ADVANCE_BPS);
 
         vm.prank(stranger);
@@ -583,17 +578,17 @@ contract CashEthSwapVMRouterTest is Test {
     }
 
     function test_endToEnd_skipsLenderNotFundingSeller() public {
-        (ISwapVM.Order memory orderA,) = _shipLender(makerA, _args(APR_A), SHIP_A, 1);
-        (ISwapVM.Order memory orderB,) = _shipLender(makerB, _args(APR_B), SHIP_B, 2);
-        // D is a low-tier lender that only funds one specific other seller.
-        ReceivableCredit.Args memory aD = _args(APR_D);
+        (ISwapVM.Order memory orderA,) = _shipLender(makerA, _args(ALL_SLABS), SHIP_A, 1);
+        (ISwapVM.Order memory orderB,) = _shipLender(makerB, _args(MEDIUM), SHIP_B, 2);
+        // D only funds one specific other seller.
+        ReceivableCredit.Args memory aD = _args(ALL_SLABS);
         aD.sellerSet = new address[](1);
         aD.sellerSet[0] = makeAddr("someOtherSeller");
         (ISwapVM.Order memory orderD, bytes32 hashD) = _shipLender(makerD, aD, SHIP_D, 4);
 
         ICreditFacility.Fill[] memory withD = new ICreditFacility.Fill[](2);
-        withD[0] = _fill(orderA, SHIP_A, APR_A);
-        withD[1] = _fill(orderD, SHIP_B, APR_D);
+        withD[0] = _fill(orderA, SHIP_A, SELLER_APR);
+        withD[1] = _fill(orderD, SHIP_B, SELLER_APR);
         vm.prank(coordinator);
         vm.expectRevert(ReceivableCredit.SELLER_NOT_FUNDED_BY_LENDER.selector);
         facility.openAndFund(id, withD, ADVANCE_BPS, LIMIT);
@@ -607,8 +602,8 @@ contract CashEthSwapVMRouterTest is Test {
 
         // Without D the same receivable funds through A and B.
         ICreditFacility.Fill[] memory fills = new ICreditFacility.Fill[](2);
-        fills[0] = _fill(orderA, SHIP_A, APR_A);
-        fills[1] = _fill(orderB, SHIP_B, APR_B);
+        fills[0] = _fill(orderA, SHIP_A, SELLER_APR);
+        fills[1] = _fill(orderB, SHIP_B, SELLER_APR);
         vm.prank(coordinator);
         facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
 
@@ -618,6 +613,24 @@ contract CashEthSwapVMRouterTest is Test {
         assertEq(usdc.balanceOf(makerD), WALLET);
         (uint256 dUsdc,) = aqua.safeBalances(makerD, address(router), hashD, address(usdc), address(rcn));
         assertEq(dUsdc, SHIP_D);
+    }
+
+    function test_endToEnd_coordinatorCannotChargeADifferentRate() public {
+        (ISwapVM.Order memory orderA,) = _shipLender(makerA, _args(ALL_SLABS), SHIP_A, 1);
+        ICreditFacility.Fill[] memory fills = new ICreditFacility.Fill[](1);
+        fills[0] = _fill(orderA, SHIP_A, SELLER_APR + 100);
+        vm.prank(coordinator);
+        vm.expectRevert(ICreditFacility.FILL_MISMATCH.selector);
+        facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
+    }
+
+    function test_endToEnd_revertsWhenAStrategySkipsTheSellersSlab() public {
+        (ISwapVM.Order memory orderC,) = _shipLender(makerC, _args(LOW), SHIP_C, 3);
+        ICreditFacility.Fill[] memory fills = new ICreditFacility.Fill[](1);
+        fills[0] = _fill(orderC, SHIP_C, SELLER_APR);
+        vm.prank(coordinator);
+        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.SlabNotFunded.selector, RiskPricing.Slab.Medium, LOW));
+        facility.openAndFund(id, fills, ADVANCE_BPS, LIMIT);
     }
 
     // External wrapper: ReceivableCredit.build is internal.

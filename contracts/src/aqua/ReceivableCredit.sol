@@ -14,6 +14,7 @@ import { InstructionBuilder } from "@1inch/swap-vm/contracts/libs/InstructionBui
 
 import { IReceivableRegistry } from "../core/interfaces/IReceivableRegistry.sol";
 import { IKYARegistry } from "../core/interfaces/IKYARegistry.sol";
+import { RiskPricing } from "../core/libs/RiskPricing.sol";
 
 /// @notice Minimal view of the credit facility the opcode notifies on every non-static fill.
 interface ICreditFillReceiver {
@@ -25,7 +26,8 @@ interface ICreditFillReceiver {
 ///         strategy into a credit line: the lender ships USDC (and RCN at 0) and the program
 ///         `Salt ‖ ReceivableCredit(args)` sells that USDC 1:1 for Receivable Credit Notes, but only to the
 ///         CashETH credit facility and only against a buyer-confirmed receivable that meets the lender's
-///         own risk rules, read live from on-chain state on every fill.
+///         own rules, read live from on-chain state on every fill. The price is not the lender's: the opcode scores
+///         the seller from its on-chain record (`RiskPricing`) and every fill pays the seller's own APR.
 /// @dev Checks, in order (first failure reverts the whole swap):
 ///        1. `taker == facility`. This replaces a KycNFT-style taker gate: identity checks (KYA levels,
 ///           owner separation, buyer signature) already ran when the receivable was registered, and the
@@ -33,29 +35,26 @@ interface ICreditFillReceiver {
 ///        2. Taker args carry exactly what the facility vouches for: `[bytes32 id, uint16 advanceBps]`
 ///           (34 bytes, consumed with `tryChopTakerArgs`).
 ///        3. `registry.get(id).state == Confirmed` (not yet financed, cancelled, ...).
-///        4. Seller filter: if `sellerSet` is non-empty the seller must be in it (score ignored), else the
-///           seller's KYA reputation must satisfy `onTime >= minSellerOnTime && defaults <= maxSellerDefaults`.
+///        4. Seller list: if `sellerSet` is non-empty the seller must be in it (it narrows; the score still applies).
 ///        5. Remaining tenor `dueDate - now` is positive and at most `maxTenorDays` days.
 ///        6. `advanceBps <= maxAdvanceBps`.
-///        7. Buyer KYA reputation `onTime >= minBuyerOnTime`.
+///        7. The seller's score (its KYA reputation and the tenor) is financeable (500 or more) and its risk slab
+///           is one the lender funds (`slabMask`: bit 0 low, bit 1 medium, bit 2 high).
 ///        8. `tokenOut` is the receivable's currency (USDC); the swap direction is RCN -> USDC.
 ///        9. `amount` (the taker-specified side) fits the strategy's Aqua USDC balance, the lender's per-buyer
 ///           exposure cap across all of its strategies, and leaves at least `minReserve` USDC in the
 ///           lender's wallet.
-///       Pricing is 1:1 (the other register is set to `amount`); the yield is the `aprBps` the facility
-///       records for the lender. In a non-static context (`swap`, not `quote`) the opcode adds `amount` to
-///       `exposure[maker][buyer]` and calls `facility.onCreditFill(id, maker, amount, aprBps)`.
+///       Pricing is 1:1 (the other register is set to `amount`); the yield is the seller's `RiskPricing.aprBps`,
+///       which the facility records for the lender. In a non-static context (`swap`, not `quote`) the opcode adds
+///       `amount` to `exposure[maker][buyer]` and calls `facility.onCreditFill(id, maker, amount, aprBps)`.
 ///
-///       Encoding (big-endian, packed; 47 + 20 * n bytes, n in [0, 3] derived from the args length):
+///       Encoding (big-endian, packed; 37 + 20 * n bytes, n in [0, 3] derived from the args length):
 ///         offset  0  uint16  maxTenorDays
 ///         offset  2  uint16  maxAdvanceBps
-///         offset  4  uint32  minBuyerOnTime
-///         offset  8  uint128 maxPerBuyer
-///         offset 24  uint16  aprBps
-///         offset 26  uint32  minSellerOnTime
-///         offset 30  uint8   maxSellerDefaults
-///         offset 31  uint128 minReserve
-///         offset 47  address sellerSet[n]   (20 bytes each)
+///         offset  4  uint128 maxPerBuyer
+///         offset 20  uint8   slabMask       (1..7)
+///         offset 21  uint128 minReserve
+///         offset 37  address sellerSet[n]   (20 bytes each)
 ///       Taker args: `abi.encodePacked(bytes32 id, uint16 advanceBps)`.
 ///       Exposure lives in the router's storage at `keccak256("casheth.ReceivableCredit.v1")`.
 library ReceivableCredit {
@@ -65,7 +64,8 @@ library ReceivableCredit {
     // forge-lint: disable-next-line(screaming-snake-case-const)
     Opcode constant opcode = Opcode._21; // name fixed by the SwapVM instruction-library convention
 
-    uint256 internal constant FIXED_ARGS_LENGTH = 47;
+    uint256 internal constant FIXED_ARGS_LENGTH = 37;
+    uint8 internal constant ALL_SLABS = 7;
     uint256 internal constant MAX_SELLERS = 3;
     uint256 internal constant TAKER_ARGS_LENGTH = 34;
     bytes32 internal constant STORAGE_SLOT = keccak256("casheth.ReceivableCredit.v1");
@@ -73,11 +73,8 @@ library ReceivableCredit {
     struct Args {
         uint16 maxTenorDays;
         uint16 maxAdvanceBps;
-        uint32 minBuyerOnTime;
         uint128 maxPerBuyer;
-        uint16 aprBps;
-        uint32 minSellerOnTime;
-        uint8 maxSellerDefaults;
+        uint8 slabMask;
         uint128 minReserve;
         address[] sellerSet;
     }
@@ -90,7 +87,8 @@ library ReceivableCredit {
     error ReceivableNotConfirmed(bytes32 id);
     error TenorTooLong(uint256 tenorDays, uint16 max);
     error AdvanceTooHigh(uint16 req, uint16 max);
-    error BuyerReputationTooLow(uint32 onTime, uint32 min);
+    error SlabNotFunded(RiskPricing.Slab slab, uint8 slabMask);
+    error InvalidSlabMask(uint8 slabMask);
     error WrongTokenOut(address tokenOut);
     error InsufficientLiquidity(uint256 need, uint256 have);
     error BuyerExposureExceeded(uint256 would, uint128 max);
@@ -111,11 +109,11 @@ library ReceivableCredit {
 
     function build(MemoryPtr ptrStart, Args memory a) internal pure returns (MemoryPtr ptr) {
         require(a.sellerSet.length <= MAX_SELLERS, TooManySellers(a.sellerSet.length));
+        require(_validMask(a.slabMask), InvalidSlabMask(a.slabMask));
 
         ptr = ptrStart.pushHeader(opcode);
-        ptr = ptr.push(a.maxTenorDays, 2).push(a.maxAdvanceBps, 2).push(a.minBuyerOnTime, 4);
-        ptr = ptr.push(a.maxPerBuyer, 16).push(a.aprBps, 2).push(a.minSellerOnTime, 4);
-        ptr = ptr.push(a.maxSellerDefaults).push(a.minReserve, 16);
+        ptr = ptr.push(a.maxTenorDays, 2).push(a.maxAdvanceBps, 2).push(a.maxPerBuyer, 16);
+        ptr = ptr.push(a.slabMask).push(a.minReserve, 16);
         for (uint256 i; i < a.sellerSet.length; i++) {
             ptr = ptr.push(a.sellerSet[i]);
         }
@@ -132,12 +130,10 @@ library ReceivableCredit {
 
         a.maxTenorDays = args.at(0).asU16();
         a.maxAdvanceBps = args.at(2).asU16();
-        a.minBuyerOnTime = args.at(4).asU32();
-        a.maxPerBuyer = args.at(8).asU128();
-        a.aprBps = args.at(24).asU16();
-        a.minSellerOnTime = args.at(26).asU32();
-        a.maxSellerDefaults = args.at(30).asU8();
-        a.minReserve = args.at(31).asU128();
+        a.maxPerBuyer = args.at(4).asU128();
+        a.slabMask = args.at(20).asU8();
+        a.minReserve = args.at(21).asU128();
+        require(_validMask(a.slabMask), InvalidSlabMask(a.slabMask));
 
         uint256 count = (length - FIXED_ARGS_LENGTH) / 20;
         a.sellerSet = new address[](count);
@@ -171,7 +167,7 @@ library ReceivableCredit {
         IReceivableRegistry.Receivable memory r = registry.get(id);
         require(r.state == IReceivableRegistry.State.Confirmed, ReceivableNotConfirmed(id));
 
-        _checkSeller(a, kya, r.seller);
+        _checkSellerListed(a, r.seller);
 
         require(r.dueDate > block.timestamp, ReceivablePastDue(id, r.dueDate));
         uint256 tenor = r.dueDate - block.timestamp;
@@ -179,8 +175,7 @@ library ReceivableCredit {
 
         require(advanceBps <= a.maxAdvanceBps, AdvanceTooHigh(advanceBps, a.maxAdvanceBps));
 
-        (uint32 buyerOnTime,,) = kya.reputation(r.buyer);
-        require(buyerOnTime >= a.minBuyerOnTime, BuyerReputationTooLow(buyerOnTime, a.minBuyerOnTime));
+        uint16 aprBps = _sellerPrice(a, kya, r.seller, tenor);
 
         address usdc = ctx.query.tokenOut;
         require(usdc == r.currency, WrongTokenOut(usdc));
@@ -201,20 +196,31 @@ library ReceivableCredit {
 
         if (!ctx.vm.isStaticContext) {
             s.exposure[maker][r.buyer] = wouldBe;
-            ICreditFillReceiver(facility).onCreditFill(id, maker, amount, a.aprBps);
+            ICreditFillReceiver(facility).onCreditFill(id, maker, amount, aprBps);
         }
     }
 
-    /// @dev A non-empty `sellerSet` is an explicit allow-list that overrides the reputation thresholds.
-    function _checkSeller(Args memory a, IKYARegistry kya, address seller) private view {
+    /// @dev A non-empty `sellerSet` limits the strategy to those sellers; it never overrides the price or the slab.
+    function _checkSellerListed(Args memory a, address seller) private pure {
         uint256 count = a.sellerSet.length;
-        if (count > 0) {
-            for (uint256 i; i < count; i++) {
-                if (a.sellerSet[i] == seller) return;
-            }
-            revert SELLER_NOT_FUNDED_BY_LENDER();
+        if (count == 0) return;
+        for (uint256 i; i < count; i++) {
+            if (a.sellerSet[i] == seller) return;
         }
-        (uint32 onTime,, uint32 defaults) = kya.reputation(seller);
-        require(onTime >= a.minSellerOnTime && defaults <= a.maxSellerDefaults, SELLER_NOT_FUNDED_BY_LENDER());
+        revert SELLER_NOT_FUNDED_BY_LENDER();
+    }
+
+    /// @return The seller's APR, after checking its score is financeable and its slab is one the lender funds.
+    function _sellerPrice(Args memory a, IKYARegistry kya, address seller, uint256 tenor) private view returns (uint16) {
+        (uint32 onTime, uint32 late, uint32 defaults) = kya.reputation(seller);
+        int256 score = RiskPricing.score(onTime, late, defaults, tenor);
+        uint16 aprBps = RiskPricing.aprBps(score); // reverts NotFinanceable below 500
+        RiskPricing.Slab slab = RiskPricing.slabOf(score);
+        require(a.slabMask & (uint8(1) << (uint8(slab) - 1)) != 0, SlabNotFunded(slab, a.slabMask));
+        return aprBps;
+    }
+
+    function _validMask(uint8 mask) private pure returns (bool) {
+        return mask != 0 && mask <= ALL_SLABS;
     }
 }

@@ -15,6 +15,7 @@ import { IReceivableRegistry } from "../src/core/interfaces/IReceivableRegistry.
 import { ReceivableCreditNote } from "../src/core/ReceivableCreditNote.sol";
 import { CashEthTraits } from "../src/core/libs/CashEthTraits.sol";
 import { ReceivableCredit } from "../src/aqua/ReceivableCredit.sol";
+import { RiskPricing } from "../src/core/libs/RiskPricing.sol";
 import { CashEthSwapVMRouter } from "../src/aqua/CashEthSwapVMRouter.sol";
 import { MockUSDC } from "./mocks/MockUSDC.sol";
 
@@ -80,7 +81,10 @@ contract ReceivableCreditTest is Test {
     uint256 internal constant FILL = 9_000_000; // 90% advance
     uint256 internal constant MAKER_WALLET = 1_000_000_000; // 1,000 USDC in the lender's wallet
     uint256 internal constant SHIP = 100_000_000; // 100 USDC shipped to the strategy
-    uint16 internal constant APR_BPS = 1200;
+    uint16 internal constant NEW_SELLER_APR = 1100; // score 600: no history, 30-day tenor
+    uint8 internal constant LOW = 1;
+    uint8 internal constant MEDIUM = 2;
+    uint8 internal constant HIGH = 4;
 
     AquaRouter internal aqua;
     KYARegistry internal kya;
@@ -178,11 +182,8 @@ contract ReceivableCreditTest is Test {
         a = ReceivableCredit.Args({
             maxTenorDays: 60,
             maxAdvanceBps: 9000,
-            minBuyerOnTime: 0,
             maxPerBuyer: 50_000_000,
-            aprBps: APR_BPS,
-            minSellerOnTime: 0,
-            maxSellerDefaults: 0,
+            slabMask: LOW | MEDIUM | HIGH,
             minReserve: 0,
             sellerSet: new address[](0)
         });
@@ -308,11 +309,8 @@ contract ReceivableCreditTest is Test {
     function _assertArgsEq(ReceivableCredit.Args memory x, ReceivableCredit.Args memory y) internal pure {
         assertEq(x.maxTenorDays, y.maxTenorDays, "maxTenorDays");
         assertEq(x.maxAdvanceBps, y.maxAdvanceBps, "maxAdvanceBps");
-        assertEq(x.minBuyerOnTime, y.minBuyerOnTime, "minBuyerOnTime");
         assertEq(x.maxPerBuyer, y.maxPerBuyer, "maxPerBuyer");
-        assertEq(x.aprBps, y.aprBps, "aprBps");
-        assertEq(x.minSellerOnTime, y.minSellerOnTime, "minSellerOnTime");
-        assertEq(x.maxSellerDefaults, y.maxSellerDefaults, "maxSellerDefaults");
+        assertEq(x.slabMask, y.slabMask, "slabMask");
         assertEq(x.minReserve, y.minReserve, "minReserve");
         assertEq(x.sellerSet.length, y.sellerSet.length, "sellerSet.length");
         for (uint256 i; i < x.sellerSet.length; i++) {
@@ -326,11 +324,8 @@ contract ReceivableCreditTest is Test {
         ReceivableCredit.Args memory a = ReceivableCredit.Args({
             maxTenorDays: 0xA1B2,
             maxAdvanceBps: 0xC3D4,
-            minBuyerOnTime: 0xE5F60718,
             maxPerBuyer: type(uint128).max - 7,
-            aprBps: 0x1234,
-            minSellerOnTime: 0x89ABCDEF,
-            maxSellerDefaults: 0xFE,
+            slabMask: MEDIUM | HIGH,
             minReserve: 0x0102030405060708090A0B0C0D0E0F10,
             sellerSet: new address[](3)
         });
@@ -340,9 +335,9 @@ contract ReceivableCreditTest is Test {
 
         bytes memory built = this.buildExt(a);
         assertEq(built.length, ReceivableCredit.sizeOf(3), "size");
-        assertEq(built.length, 2 + 47 + 60, "2 header + 47 fixed + 3 x 20");
+        assertEq(built.length, 2 + 37 + 60, "2 header + 37 fixed + 3 x 20");
         assertEq(uint8(built[0]), 0x21, "opcode byte");
-        assertEq(uint8(built[1]), 47 + 60, "args length byte");
+        assertEq(uint8(built[1]), 37 + 60, "args length byte");
 
         bytes memory args = this.slice(built, 2, built.length);
         assertEq(
@@ -350,11 +345,8 @@ contract ReceivableCreditTest is Test {
             abi.encodePacked(
                 a.maxTenorDays,
                 a.maxAdvanceBps,
-                a.minBuyerOnTime,
                 a.maxPerBuyer,
-                a.aprBps,
-                a.minSellerOnTime,
-                a.maxSellerDefaults,
+                a.slabMask,
                 a.minReserve,
                 a.sellerSet[0],
                 a.sellerSet[1],
@@ -364,11 +356,11 @@ contract ReceivableCreditTest is Test {
         );
         _assertArgsEq(this.parseExt(args), a);
 
-        // Empty seller set: 47-byte fixed part only.
+        // Empty seller set: 37-byte fixed part only.
         ReceivableCredit.Args memory b = _args();
         bytes memory builtB = this.buildExt(b);
         assertEq(builtB.length, ReceivableCredit.sizeOf(0));
-        assertEq(uint8(builtB[1]), 47);
+        assertEq(uint8(builtB[1]), 37);
         _assertArgsEq(this.parseExt(this.slice(builtB, 2, builtB.length)), b);
     }
 
@@ -380,12 +372,24 @@ contract ReceivableCreditTest is Test {
     }
 
     function test_parse_revertsMalformedLength() public {
-        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.InvalidArgsLength.selector, 46));
-        this.parseExt(new bytes(46));
-        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.InvalidArgsLength.selector, 48));
-        this.parseExt(new bytes(48));
-        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.InvalidArgsLength.selector, 47 + 80));
-        this.parseExt(new bytes(47 + 80));
+        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.InvalidArgsLength.selector, 36));
+        this.parseExt(new bytes(36));
+        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.InvalidArgsLength.selector, 38));
+        this.parseExt(new bytes(38));
+        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.InvalidArgsLength.selector, 37 + 80));
+        this.parseExt(new bytes(37 + 80));
+    }
+
+    function test_build_and_parse_revertInvalidSlabMask() public {
+        ReceivableCredit.Args memory a = _args();
+        a.slabMask = 0;
+        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.InvalidSlabMask.selector, 0));
+        this.buildExt(a);
+        a.slabMask = 8;
+        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.InvalidSlabMask.selector, 8));
+        this.buildExt(a);
+        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.InvalidSlabMask.selector, 0));
+        this.parseExt(new bytes(37)); // all zero: mask 0
     }
 
     function test_storageSlot() public pure {
@@ -436,33 +440,36 @@ contract ReceivableCreditTest is Test {
         facility.fill(order, FILL, _takerData(FILL));
     }
 
-    function test_exec_allowsSellerInSet_ignoringScore() public {
+    function test_exec_sellerSetNarrows_butTheSlabStillApplies() public {
         ReceivableCredit.Args memory a = _args();
-        a.minSellerOnTime = 5; // seller has 0 on-time repayments: the score gate alone would reject
         a.sellerSet = new address[](3);
         (a.sellerSet[0], a.sellerSet[1], a.sellerSet[2]) = (makeAddr("s0"), seller, makeAddr("s2"));
-        ISwapVM.Order memory order = _ship(a);
-
-        (uint256 amountIn, uint256 amountOut,) = facility.fill(order, FILL, _takerData(FILL));
+        ISwapVM.Order memory listed = _ship(a);
+        (uint256 amountIn, uint256 amountOut,) = facility.fill(listed, FILL, _takerData(FILL));
         assertEq(amountIn, FILL);
         assertEq(amountOut, FILL);
-        assertEq(usdc.balanceOf(address(facility)), FILL);
+
+        // Listed but in a slab the lender does not fund (a new seller scores 600: medium risk).
+        a.slabMask = LOW;
+        ISwapVM.Order memory lowOnly = _ship(a);
+        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.SlabNotFunded.selector, RiskPricing.Slab.Medium, LOW));
+        facility.fill(lowOnly, FILL, _takerData(FILL));
     }
 
-    function test_exec_revertsSellerScoreTooLow() public {
+    function test_exec_fillsOnlyTheSlabsTheLenderFunds() public {
         ReceivableCredit.Args memory a = _args();
-        a.minSellerOnTime = 2;
+        a.slabMask = LOW;
         ISwapVM.Order memory order = _ship(a);
 
-        // One on-time repayment for the seller: still below 2.
-        kya.recordRepayment(makeAddr("someBuyer"), seller, true);
-        vm.expectRevert(ReceivableCredit.SELLER_NOT_FUNDED_BY_LENDER.selector);
+        // Score 600 + 15 x 6 = 690: still medium risk.
+        for (uint256 i; i < 6; i++) kya.recordRepayment(makeAddr("someBuyer"), seller, true);
+        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.SlabNotFunded.selector, RiskPricing.Slab.Medium, LOW));
         facility.fill(order, FILL, _takerData(FILL));
 
-        // Second one reaches the threshold: the fill goes through.
+        // One more on-time repayment: 705, low risk, fills at 8% - 4 bps x 5 = 7.80%.
         kya.recordRepayment(makeAddr("someBuyer"), seller, true);
-        (, uint256 amountOut,) = facility.fill(order, FILL, _takerData(FILL));
-        assertEq(amountOut, FILL);
+        facility.fill(order, FILL, _takerData(FILL));
+        assertEq(facility.fills(0).aprBps, 780);
     }
 
     function test_exec_revertsTenor() public {
@@ -506,19 +513,28 @@ contract ReceivableCreditTest is Test {
         facility.fill(order, FILL, _takerData(FILL));
     }
 
-    function test_exec_revertsReputation() public {
-        ReceivableCredit.Args memory a = _args();
-        a.minBuyerOnTime = 2;
-        ISwapVM.Order memory order = _ship(a);
-
-        kya.recordRepayment(buyer, makeAddr("someSeller"), true);
-        kya.recordRepayment(buyer, makeAddr("someSeller"), false); // late does not count
-        vm.expectRevert(abi.encodeWithSelector(ReceivableCredit.BuyerReputationTooLow.selector, 1, 2));
+    function test_exec_revertsNotFinanceable() public {
+        ISwapVM.Order memory order = _ship(_args());
+        kya.recordRepayment(makeAddr("someBuyer"), seller, false); // late: 560, still financeable
+        kya.recordRepayment(makeAddr("someBuyer"), seller, false); // late: 520
         facility.fill(order, FILL, _takerData(FILL));
+        assertEq(facility.fills(0).aprBps, 1340, "high risk, 13.4%");
 
-        kya.recordRepayment(buyer, makeAddr("someSeller"), true);
-        (, uint256 amountOut,) = facility.fill(order, FILL, _takerData(FILL));
-        assertEq(amountOut, FILL);
+        vm.prank(address(facility));
+        kya.recordDefault(makeAddr("someBuyer"), seller); // -200: 320, below 500
+        vm.expectRevert(abi.encodeWithSelector(RiskPricing.NotFinanceable.selector, int256(320)));
+        facility.fill(order, FILL, _takerData(FILL));
+    }
+
+    function test_exec_pricesFromTheSellersRecord_notTheBuyers() public {
+        ISwapVM.Order memory order = _ship(_args());
+        // A buyer with a long on-time record does not change the seller's price.
+        for (uint256 i; i < 10; i++) kya.recordRepayment(buyer, makeAddr("someSeller"), true);
+        // Two on-time repayments as a seller: 630, 11% - 3 bps x 30 = 10.10%.
+        kya.recordRepayment(makeAddr("someBuyer"), seller, true);
+        kya.recordRepayment(makeAddr("someBuyer"), seller, true);
+        facility.fill(order, FILL, _takerData(FILL));
+        assertEq(facility.fills(0).aprBps, 1010);
     }
 
     function test_exec_revertsWrongTokenOut() public {
@@ -695,7 +711,7 @@ contract ReceivableCreditTest is Test {
         assertEq(f.id, id);
         assertEq(f.maker, maker);
         assertEq(f.usdcIn, FILL);
-        assertEq(f.aprBps, APR_BPS);
+        assertEq(f.aprBps, NEW_SELLER_APR, "the seller's price, not the lender's");
         assertEq(router.exposure(maker, buyer), FILL);
     }
 
