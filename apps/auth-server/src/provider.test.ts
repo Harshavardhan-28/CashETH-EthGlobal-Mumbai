@@ -70,33 +70,31 @@ describe("demo grant switch", () => {
 });
 
 describe("auth code + PKCE (demo grant page)", () => {
-  it("auth-code + PKCE round trip issues a token for the chosen agent", async () => {
+  it("auth-code + PKCE round trip issues a token for the approved seller", async () => {
     const { app, kya } = await testApp(DEMO_GRANT);
     const seller = newAgent(1, 2, {}, kya);
-    const buyer = newAgent(2, 2, {}, kya);
     const clientId = await registerClient(app);
     const { verifier, challenge } = pkce();
 
     const page = await request(app).get("/authorize").query(authorizeQuery(clientId, challenge)).expect(200);
     expect(page.headers["content-type"]).toMatch(/text\/html/);
     expect(page.text).toContain(seller.address);
-    expect(page.text).toContain(buyer.address);
 
-    const code = await codeFor(app, clientId, challenge, { agent: buyer.address, grant: "1", scope: "receivable:confirm repay:write facility:open" });
+    const code = await codeFor(app, clientId, challenge, { agent: seller.address, grant: "1", scope: "receivable:write facility:open repay:write" });
 
     const res = await request(app)
       .post("/token")
       .type("form")
       .send({ grant_type: "authorization_code", client_id: clientId, code, code_verifier: verifier, redirect_uri: REDIRECT, resource: RESOURCE.href })
       .expect(200);
-    expect(res.body).toMatchObject({ token_type: "Bearer", expires_in: 600, scope: "receivable:confirm repay:write" });
+    expect(res.body).toMatchObject({ token_type: "Bearer", expires_in: 600, scope: "receivable:write facility:open" });
 
     const jwks = (await request(app).get("/.well-known/jwks.json").expect(200)).body as JSONWebKeySet;
     const { payload } = await jwtVerify<AccessTokenClaims>(res.body.access_token, createLocalJWKSet(jwks), {
       issuer: ISSUER.href,
       audience: RESOURCE.href,
     });
-    expect(payload).toMatchObject({ agent: buyer.address, role: 2, kya_level: 2, owner_group: buyer.record.ownerGroup, scope: "receivable:confirm repay:write" });
+    expect(payload).toMatchObject({ agent: seller.address, role: 1, kya_level: 2, owner_group: seller.record.ownerGroup, scope: "receivable:write facility:open" });
 
     // codes are single-use
     await request(app)
@@ -146,54 +144,84 @@ describe("auth code + PKCE (demo grant page)", () => {
     expect(new URL(adminOnly.headers.location as string).searchParams.get("error")).toBe("invalid_scope");
   });
 
-  it("the consent page offers one choice per demo role (seller, buyer, worker, lender)", async () => {
+  it("the consent page shows only the seller, with one Approve button that has the focus", async () => {
     const { app, kya } = await testApp(DEMO_GRANT);
-    const agents = [newAgent(1, 2, {}, kya), newAgent(2, 3, {}, kya), newAgent(3, 2, {}, kya), newAgent(4, 2, {}, kya)];
+    const [seller, ...others] = [newAgent(1, 2, {}, kya), newAgent(2, 3, {}, kya), newAgent(3, 2, {}, kya), newAgent(4, 2, {}, kya)];
     const clientId = await registerClient(app);
 
     const page = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge)).expect(200);
-    for (const [i, role] of ["seller", "buyer", "worker", "lender"].entries()) {
-      expect(page.text).toContain(`Act as ${role}`);
-      expect(page.text).toContain(agents[i]!.address);
-    }
-  });
-
-  it("pre-selects the agents whose role covers the requested scopes (one MCP server name per role in Claude Code)", async () => {
-    const { app, kya } = await testApp(DEMO_GRANT);
-    const seller = newAgent(1, 2, {}, kya);
-    const buyer = newAgent(2, 3, {}, kya);
-    const clientId = await registerClient(app);
-
-    const buyerScopes = scopesForRole(2, 3).join(" ");
-    const page = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge, { scope: buyerScopes })).expect(200);
-    const buyerRow = page.text.indexOf(buyer.address);
-    expect(buyerRow).toBeGreaterThan(-1);
-    expect(buyerRow).toBeLessThan(page.text.indexOf(seller.address));
+    expect(page.text).toContain(seller!.address);
+    for (const other of others) expect(page.text).not.toContain(other.address);
+    expect(page.text).toContain("demo IDE");
+    expect(page.text.match(/name="grant" value="1"/g)).toHaveLength(1);
     expect(page.text.match(/autofocus/g)).toHaveLength(1);
-    const autofocusAt = page.text.indexOf("autofocus");
-    expect(autofocusAt).toBeLessThan(page.text.indexOf(seller.address));
-    expect(page.text).toContain("Matches the requested scopes");
-    expect(page.text).toContain("Other demo agents");
+    expect(page.text).toMatch(/<button[^>]*autofocus[^>]*>Approve</);
+    // Enter submits a form's first submit button, so it must be Approve, not Cancel.
+    expect(page.text.indexOf(">Approve<")).toBeLessThan(page.text.indexOf(">Cancel<"));
   });
 
-  it("lists every agent without a pre-selection when no scope is requested", async () => {
+  it("lists the seller's permissions in plain words", async () => {
     const { app, kya } = await testApp(DEMO_GRANT);
     newAgent(1, 2, {}, kya);
-    newAgent(2, 3, {}, kya);
+    const clientId = await registerClient(app);
+
+    const page = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge, { scope: scopesForRole(1, 2).join(" ") })).expect(200);
+    expect(page.text).toContain("Upload invoices and register receivables");
+    expect(page.text).toContain("Open a credit facility");
+    expect(page.text).toContain("receivable:write");
+  });
+
+  it("with several sellers, preselects the first and lets you pick another", async () => {
+    const { app, kya } = await testApp(DEMO_GRANT);
+    const sellers = [newAgent(1, 2, {}, kya), newAgent(1, 2, {}, kya)];
     const clientId = await registerClient(app);
 
     const page = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge)).expect(200);
-    expect(page.text).not.toContain("autofocus");
-    expect(page.text).not.toContain("Matches the requested scopes");
+    for (const s of sellers) expect(page.text).toContain(`type="radio" name="agent" value="${s.address}"`);
+    expect(page.text.match(/ checked/g)).toHaveLength(1);
+    expect(page.text.indexOf(" checked")).toBeLessThan(page.text.indexOf(sellers[1]!.address));
+  });
+
+  it("says so when no seller is registered, and offers nothing to approve", async () => {
+    const { app, kya } = await testApp(DEMO_GRANT);
+    newAgent(2, 2, {}, kya);
+    const clientId = await registerClient(app);
+
+    const page = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge)).expect(200);
+    expect(page.text).toContain("No seller agent is registered");
+    expect(page.text).not.toContain(">Approve<");
+  });
+
+  it("refuses to grant an agent that is not a seller", async () => {
+    const { app, kya } = await testApp(DEMO_GRANT);
+    const buyer = newAgent(2, 2, {}, kya);
+    const clientId = await registerClient(app);
+
+    const res = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge, { agent: buyer.address, grant: "1" })).expect(302);
+    const location = new URL(res.headers.location as string);
+    expect(location.searchParams.get("error")).toBe("access_denied");
+    expect(location.searchParams.get("code")).toBeNull();
+  });
+
+  it("Cancel sends access_denied back to the client", async () => {
+    const { app, kya } = await testApp(DEMO_GRANT);
+    const seller = newAgent(1, 2, {}, kya);
+    const clientId = await registerClient(app);
+
+    const res = await request(app).get("/authorize").query(authorizeQuery(clientId, pkce().challenge, { agent: seller.address, grant: "0" })).expect(302);
+    const location = new URL(res.headers.location as string);
+    expect(location.searchParams.get("error")).toBe("access_denied");
+    expect(location.searchParams.get("state")).toBe("st-123");
+    expect(location.searchParams.get("code")).toBeNull();
   });
 
   it("issues a rotating refresh token bound to the client, the agent and the granted scopes", async () => {
     const { app, kya } = await testApp(DEMO_GRANT);
-    const worker = newAgent(3, 2, {}, kya);
+    const seller = newAgent(1, 2, {}, kya);
     const clientId = await registerClient(app);
     const otherClient = await registerClient(app);
     const { verifier, challenge } = pkce();
-    const code = await codeFor(app, clientId, challenge, { agent: worker.address, grant: "1" });
+    const code = await codeFor(app, clientId, challenge, { agent: seller.address, grant: "1" });
     const first = await request(app)
       .post("/token")
       .type("form")
@@ -208,7 +236,7 @@ describe("auth code + PKCE (demo grant page)", () => {
     expect(second.body.refresh_token).not.toBe(first.body.refresh_token);
     const jwks = (await request(app).get("/.well-known/jwks.json").expect(200)).body as JSONWebKeySet;
     const { payload } = await jwtVerify<AccessTokenClaims>(second.body.access_token, createLocalJWKSet(jwks), { issuer: ISSUER.href, audience: RESOURCE.href });
-    expect(payload).toMatchObject({ agent: worker.address, role: 3 });
+    expect(payload).toMatchObject({ agent: seller.address, role: 1 });
 
     // Rotation: the used refresh token is gone.
     expect((await refresh({ client_id: clientId, refresh_token: first.body.refresh_token }).expect(400)).body.error).toBe("invalid_grant");
@@ -218,7 +246,7 @@ describe("auth code + PKCE (demo grant page)", () => {
     expect(narrowed.body.scope).toBe("receivable:read");
 
     // A revoked agent cannot refresh.
-    kya.set(worker.address, { ...worker.record, revoked: true });
+    kya.set(seller.address, { ...seller.record, revoked: true });
     const revoked = await refresh({ client_id: clientId, refresh_token: narrowed.body.refresh_token }).expect(400);
     expect(revoked.body).toMatchObject({ error: "invalid_grant", error_description: expect.stringMatching(/KYA_FAIL/) });
   });

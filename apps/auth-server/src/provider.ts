@@ -3,9 +3,10 @@
  * `mcpAuthRouter` (dynamic client registration, client_id/redirect_uri validation, PKCE S256). Served only with
  * `AUTH_DEMO_GRANT=true`.
  *
- * DEMO ONLY: there is no owner login. `GET /authorize` renders a consent page with one "Act as <role>" choice per
- * agent known to the KYA reader; choosing one issues a code bound to that agent, the requested scopes (filtered to
- * the agent's role and KYA level, never `agent:admin`) and the PKCE challenge. The code exchange also returns a
+ * DEMO ONLY: there is no owner login. `GET /authorize` renders a seller approval card (`consentPage.ts`): Claude Code
+ * signs in as the seller agent, so only sellers known to the KYA reader can be granted. Approving issues a code bound
+ * to that seller, the requested scopes (filtered to its role and KYA level, never `agent:admin`) and the PKCE
+ * challenge; Cancel returns `access_denied`. The code exchange also returns a
  * rotating refresh token. A production AS must authenticate the owner and check they own the agent.
  */
 import { randomBytes } from "node:crypto";
@@ -25,6 +26,7 @@ import type { OAuthClientInformationFull, OAuthTokens } from "@modelcontextproto
 import type { Response } from "express";
 import { getAddress, isAddress } from "viem";
 import { mintAccessToken, verifyAccessTokenJwt } from "./accessToken.js";
+import { consentPage, SELLER_ROLE } from "./consentPage.js";
 import { AuthError } from "./assertion.js";
 import type { SigningKey } from "./keys.js";
 import { type KyaReader, requireKyaAgent } from "./kya.js";
@@ -71,11 +73,6 @@ export interface ProviderDeps {
   resource: URL;
 }
 
-const escapeHtml = (s: string): string =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
-const ROLE_NAMES: Record<number, string> = { 1: "seller", 2: "buyer", 3: "worker", 4: "lender" };
-
 function kyaToOAuth(error: unknown): never {
   if (error instanceof AuthError) throw new AccessDeniedError(`${error.code}: ${error.description}`);
   throw error;
@@ -100,6 +97,7 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
     const req = res.req;
     const input = (req.method === "POST" ? req.body : req.query) as Record<string, unknown>;
 
+    if (input.grant === "0") throw new AccessDeniedError("the sign-in was cancelled");
     if (input.grant !== "1") {
       await this.renderGrantPage(client, params, res);
       return;
@@ -109,6 +107,7 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
     const agent = getAddress(input.agent);
     const nowSeconds = Math.floor(Date.now() / 1000);
     const record = await requireKyaAgent(this.deps.kya, agent, { nowSeconds }).catch(kyaToOAuth);
+    if (record.role !== SELLER_ROLE) throw new AccessDeniedError("the demo sign-in grants the seller agent only");
 
     const allowed = scopesForRole(record.role, record.level);
     const requested = params.scopes ?? [];
@@ -130,8 +129,9 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
     res.redirect(302, target.href);
   }
 
+  /** The seller approval card; only sellers can be granted, since Claude Code always signs in as the seller. */
   private async renderGrantPage(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response) {
-    const hidden: Record<string, string | undefined> = {
+    const fields: Record<string, string | undefined> = {
       response_type: "code",
       client_id: client.client_id,
       redirect_uri: params.redirectUri,
@@ -140,39 +140,19 @@ export class CashEthOAuthProvider implements OAuthServerProvider {
       state: params.state,
       scope: params.scopes?.length ? params.scopes.join(" ") : undefined,
       resource: params.resource?.href,
-      grant: "1",
     };
-    const fields = Object.entries(hidden)
-      .filter((entry): entry is [string, string] => entry[1] !== undefined)
-      .map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`)
-      .join("");
-    const action = escapeHtml(new URL("/authorize", this.deps.issuer).href);
-    const agents = (await this.deps.kya.listAgents()).filter((a) => ROLE_NAMES[a.role] !== undefined).sort((x, y) => x.role - y.role);
-    // A client that pins its scopes (Claude Code `oauth.scopes`, one MCP server name per role) names its role through
-    // them: the agents that can hold every requested scope come first and the first one has the focus.
-    const requested = params.scopes ?? [];
-    const covers = (a: (typeof agents)[number]) => {
-      const allowed = scopesForRole(a.role, a.level);
-      return requested.length > 0 && requested.every((s) => allowed.includes(s));
-    };
-    const row = (a: (typeof agents)[number], focus: boolean) =>
-      `<li><form method="post" action="${action}">${fields}<input type="hidden" name="agent" value="${a.address}">` +
-      `<button type="submit"${focus ? " autofocus" : ""}>Act as ${ROLE_NAMES[a.role]}</button> <code>${a.address}</code> (KYA level ${a.level}: ` +
-      `${escapeHtml(scopesForRole(a.role, a.level).join(" ") || "no scopes")})</form></li>`;
-    const matching = agents.filter(covers);
-    const others = agents.filter((a) => !covers(a));
-    const rows = matching.length
-      ? `<li><strong>Matches the requested scopes</strong><ul>${matching.map((a, i) => row(a, i === 0)).join("")}</ul></li>` +
-        (others.length ? `<li>Other demo agents<ul>${others.map((a) => row(a, false)).join("")}</ul></li>` : "")
-      : agents.map((a) => row(a, false)).join("");
+    const sellers = (await this.deps.kya.listAgents()).filter((a) => a.role === SELLER_ROLE);
     res
       .status(200)
       .set({ "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'" })
       .send(
-        `<!doctype html><html><head><meta charset="utf-8"><title>CashETH grant</title></head><body>` +
-          `<h1>Grant access to ${escapeHtml(client.client_name ?? client.client_id)}</h1>` +
-          `<p>Demo only: no owner login. Pick the demo role this client will act as; its token carries that agent's scopes.</p>` +
-          `<ul>${rows || "<li>No registered agents.</li>"}</ul></body></html>`,
+        consentPage({
+          clientName: client.client_name ?? client.client_id,
+          action: new URL("/authorize", this.deps.issuer).href,
+          fields: Object.fromEntries(Object.entries(fields).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+          sellers,
+          requested: params.scopes ?? [],
+        }),
       );
   }
 
