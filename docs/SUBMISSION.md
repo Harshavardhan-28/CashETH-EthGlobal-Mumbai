@@ -2,7 +2,7 @@
 
 **Autonomous working capital for AI agents, on Hedera testnet.** A seller agent turns a receivable that a buyer agent has signed into USDC credit. Its worker agents spend that credit through x402, and when the buyer pays, lenders are repaid first, on-chain. Credit is funded by lenders' own wallets through a redeployed 1inch Aqua registry and a modified SwapVM router whose new opcode checks the receivable's on-chain state on every fill.
 
-> **Snapshot note.** This is the submission record as written before risk-priced credit landed (2026-11-07). Sections 4.2 and 5 describe fixed lender tiers (700, 850, 1300 bps). On `main`, the rate now comes from the seller's on-chain score and lenders choose risk slabs: see the [README](../README.md#risk-priced-credit) and the [design spec](superpowers/specs/2026-11-07-risk-priced-credit-design.md). The deployed addresses and transactions below are those recorded at submission time.
+> **Snapshot note.** This is the submission record as written before risk-priced credit landed (2026-11-07). Sections 4.2 and 5 describe fixed lender tiers (700, 850, 1300 bps). On `main`, the rate now comes from the seller's on-chain score and lenders choose risk slabs: see the [README](../README.md#risk-priced-credit) and the [design spec](superpowers/specs/2026-11-07-risk-priced-credit-design.md). The deployed addresses and transactions below are those recorded at submission time. Current per-track write-ups: [HEDERA.md](HEDERA.md) and [1INCH.md](1INCH.md).
 
 Built for ETHGlobal Mumbai. Targets: Hedera "AI Agents That Pay (x402)" and 1inch "Build an Aqua App".
 

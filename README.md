@@ -17,6 +17,7 @@ Borrow against a buyer-signed invoice. Spend the credit over x402. Lenders are r
 ![Node](https://img.shields.io/badge/node-%E2%89%A5%2022-339933)
 ![Status](https://img.shields.io/badge/status-hackathon%20prototype-orange)
 
+[Prize tracks](#prize-tracks) ·
 [How it works](#how-it-works) ·
 [Architecture](#architecture) ·
 [Quick start](#quick-start) ·
@@ -35,9 +36,16 @@ CashETH is that lender. A **seller agent** takes an invoice that a **buyer agent
 
 Credit comes from lenders' own wallets through a redeployed [1inch Aqua](https://github.com/1inch/aqua) registry and a modified SwapVM router. The router adds one opcode, `ReceivableCredit`, which checks the receivable's on-chain state on every fill. Lender capital can only move against a confirmed receivable.
 
-Built for **ETHGlobal Mumbai**. Prize targets: Hedera *AI Agents That Pay (x402)* and 1inch *Build an Aqua App*.
+Built for **ETHGlobal Mumbai**. Prize targets: Hedera *AI Agents That Pay (x402)* ([docs/HEDERA.md](docs/HEDERA.md)) and 1inch *Build an Aqua App* ([docs/1INCH.md](docs/1INCH.md)).
 
-> **Status:** a testnet prototype. This README describes the code on `main`. The contract addresses below are the last recorded testnet deployment and may predate the latest contract changes (see [deployments/testnet](deployments/testnet)). Amounts are small, keys are demo keys, and some limits are documented in [Known limitations](#known-limitations). Do not use it with real funds.
+> **Status:** a testnet prototype. This README describes the code on `main`. The contract addresses below are the testnet stack deployed on 2026-11-06, which prices credit with fixed lender tiers. Risk-priced credit is on `main` and tested, and its testnet redeploy is scripted but has not run yet (see [deployments/testnet](deployments/testnet)). Amounts are small, keys are demo keys, and some limits are documented in [Known limitations](#known-limitations). Do not use it with real funds.
+
+## Prize tracks
+
+| Track | What we built for it | Headline evidence | Write-up |
+|---|---|---|---|
+| **Hedera: AI Agents That Pay (x402)** | Worker agents pay x402 endpoints in HTS USDC through the official facilitator, from 2-of-2 co-signed wallets, under budgets enforced by a contract. They also have HCS-14 identities, an HCS audit log, Hedera Schedule Service lifecycle calls and the Hedera Agent Kit. | Settled x402 payment [`0.0.9185802@1793985365.210563681`](https://hashscan.io/testnet/transaction/0.0.9185802@1793985365.210563681) | [docs/HEDERA.md](docs/HEDERA.md) |
+| **1inch: Build an Aqua App** | A receivable-backed credit line written as a SwapVM program on the official Aqua registry. It uses a new SwapVM instruction, `ReceivableCredit`, which checks the receivable's state and prices the seller from its on-chain score on every fill. The same lender balance also backs a constant-product base-yield strategy. | Aqua-funded [`openAndFund`](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985) | [docs/1INCH.md](docs/1INCH.md) |
 
 ## Highlights
 
@@ -268,15 +276,19 @@ Hedera testnet, chain id `296`. Everything reads [deployments/testnet/addresses.
 | USDC (HTS) | [`0.0.429274`](https://hashscan.io/testnet/token/0.0.429274) |
 | HCS audit topic | [`0.0.11338927`](https://hashscan.io/testnet/topic/0.0.11338927) |
 
-Headline transactions: the [Aqua-funded `openAndFund`](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985) and the [settled x402 payment](https://hashscan.io/testnet/transaction/0.0.9185802@1793985365.210563681). Every transaction is listed in [docs/EVIDENCE.md](docs/EVIDENCE.md), and `pnpm verify:evidence` checks the links against the mirror node.
+Headline transactions: the [Aqua-funded `openAndFund`](https://hashscan.io/testnet/transaction/0.0.7314364@1793982496.157443985) and the [settled x402 payment](https://hashscan.io/testnet/transaction/0.0.9185802@1793985365.210563681). There is also a full lifecycle driven by Claude Code as the seller agent: [funding](https://hashscan.io/testnet/transaction/0xd04beb759bdf890a4968be001705b71fca9e1950cc20be9d9b1d9ed38efc04df), [x402 purchase](https://hashscan.io/testnet/transaction/0.0.9185802@1794005127.517122456) and [repayment, lenders first](https://hashscan.io/testnet/transaction/0x21e99be537f5673a192c6be9236aa533c699825dd4c223d161cdaab50d03c92c). Every transaction is listed in [docs/EVIDENCE.md](docs/EVIDENCE.md), and `pnpm verify:evidence` checks the links against the mirror node.
 
 ## Documentation
 
 | Document | What it covers |
 |---|---|
-| [docs/SUBMISSION.md](docs/SUBMISSION.md) | The full hackathon record: prize requirements, every contract, evidence tables, hardening and limitations. |
+| [docs/HEDERA.md](docs/HEDERA.md) | The Hedera x402 track: requirements and extra points with evidence, the payment flow, the Hedera services we use, spending controls. |
+| [docs/1INCH.md](docs/1INCH.md) | The 1inch Aqua track: the DeFi position, the modified SwapVM and its opcode, risk pricing, on-chain fills, tests. |
+| [docs/SUBMISSION.md](docs/SUBMISSION.md) | The full hackathon record (a snapshot from before risk pricing): every contract, evidence tables, hardening and limitations. |
 | [docs/API.md](docs/API.md) | The 24 MCP tools, error codes and the read API contract. |
 | [docs/EVIDENCE.md](docs/EVIDENCE.md) | Every on-chain action with its HashScan link. |
+| [docs/VERIFICATION.md](docs/VERIFICATION.md) | How to check the evidence yourself. |
+| [docs/PITCH.md](docs/PITCH.md), [docs/FEEDBACK.md](docs/FEEDBACK.md) | Pitch outline and user feedback log. |
 | [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md), [docs/DEMO.md](docs/DEMO.md) | Demo walkthroughs. |
 | [docs/CLAUDE_CODE_DEMO.md](docs/CLAUDE_CODE_DEMO.md) | Running the lifecycle from Claude Code. |
 | [docs/LLM_AGENTS.md](docs/LLM_AGENTS.md) | Running the agents with a local or hosted model. |

@@ -24,7 +24,7 @@ CashETH is a hackathon prototype running on **Hedera testnet**. Contributions th
 - **Improve the docs.** Fixes to the README, `docs/` and code comments are always useful.
 - **Fix a known limitation.** The list is in the README under [Known limitations](README.md#known-limitations) and in [docs/SUBMISSION.md](docs/SUBMISSION.md#8-known-limitations-and-rulings). Good starting points are a pull-based repayment router, returning undrawn funds on default, and more tests.
 - **Add tests.** More fuzz and invariant coverage for the contracts is welcome.
-- **Build on the read API.** The frontend does not yet show agent stats, lender yield, tiers or evidence links, even though the data is served (`docs/API.md`, section 4).
+- **Build on the read API.** The `/admin` console and the public `/dashboard` already read it (`docs/API.md`, section 4). New views, such as per-buyer exposure or a lender's history over time, are welcome.
 
 For anything larger than a small fix, please open an issue first so we can agree on the approach before you spend time on it.
 
